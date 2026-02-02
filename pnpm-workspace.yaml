@@ -1,3 +1,6 @@
 packages:
-  - 'packages/*'
-  - 'taskpacks/*'
+  - packages/*
+  - taskpacks/*
+
+ignoredBuiltDependencies:
+  - esbuild
