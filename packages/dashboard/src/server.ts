@@ -1710,12 +1710,17 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     if (!requireToken(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
-    const { sessionId, limit, filter } = req.body;
+    const { sessionId, limit, filter, compact } = req.body;
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
     }
     try {
-      const list = networkList(sessionId, limit ?? 50, filter ?? 'all');
+      // UI endpoint: default to 'all' filter and non-compact (full headers) for debugging
+      const list = networkList(sessionId, {
+        limit: limit ?? 50,
+        filter: filter ?? 'all',
+        compact: compact ?? false,
+      });
       res.json(list);
     } catch (error) {
       res.status(500).json({

@@ -89,9 +89,42 @@ export type NetworkEntrySummary = Omit<NetworkEntry, 'responseBodySnippet'> & {
   responseBodyAvailable?: boolean;
 };
 
+/** Compact entry with minimal fields for list overview */
+export interface NetworkEntryCompact {
+  id: string;
+  method: string;
+  url: string;
+  status?: number;
+  resourceType?: string;
+  isLikelyApi?: boolean;
+  /** First ~100 chars of response body for quick inspection */
+  responsePreview?: string;
+}
+
+/** How many chars to include in compact response preview */
+const COMPACT_RESPONSE_PREVIEW_LENGTH = 100;
+
 function entryToSummary(entry: NetworkEntry): NetworkEntrySummary {
   const { responseBodySnippet, ...rest } = entry;
   return { ...rest, responseBodyAvailable: !!responseBodySnippet };
+}
+
+function entryToCompact(entry: NetworkEntry): NetworkEntryCompact {
+  const result: NetworkEntryCompact = {
+    id: entry.id,
+    method: entry.method,
+    url: entry.url,
+    status: entry.status,
+    resourceType: entry.resourceType,
+    isLikelyApi: entry.isLikelyApi,
+  };
+  if (entry.responseBodySnippet) {
+    const preview = entry.responseBodySnippet.slice(0, COMPACT_RESPONSE_PREVIEW_LENGTH);
+    result.responsePreview = preview.length < entry.responseBodySnippet.length
+      ? preview + '...'
+      : preview;
+  }
+  return result;
 }
 
 /** Full request data for replay only; never expose via API/MCP */
@@ -724,11 +757,18 @@ export function getLastActions(sessionId: string, limit = 10) {
 
 export type NetworkListFilter = 'all' | 'api' | 'xhr';
 
+export interface NetworkListOptions {
+  limit?: number;
+  filter?: NetworkListFilter;
+  /** If true (default), return compact entries (id, method, url, status). Set false for full headers. */
+  compact?: boolean;
+}
+
 export function networkList(
   sessionId: string,
-  limit = 50,
-  filter: NetworkListFilter = 'all'
-): NetworkEntrySummary[] {
+  options: NetworkListOptions = {}
+): NetworkEntryCompact[] | NetworkEntrySummary[] {
+  const { limit = 50, filter = 'api', compact = true } = options;
   const session = sessions.get(sessionId);
   if (!session) {
     throw new Error(`Session not found: ${sessionId}`);
@@ -738,7 +778,7 @@ export function networkList(
   if (filter === 'api' || filter === 'xhr') {
     list = list.filter((e) => e.isLikelyApi || e.resourceType === 'xhr' || e.resourceType === 'fetch');
   }
-  return list.map(entryToSummary);
+  return compact ? list.map(entryToCompact) : list.map(entryToSummary);
 }
 
 const NETWORK_SEARCH_DEFAULT_LIMIT = 20;

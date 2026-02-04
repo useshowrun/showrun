@@ -278,13 +278,14 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_network_list',
-      description: 'List recent network requests (redacted). Use filter "api" or "xhr" to see likely API calls.',
+      description: 'List recent network requests. Returns compact format (id, method, url, status, responsePreview) by default. responsePreview shows first ~100 chars of response body. Use filter "all" to include static resources. Use browser_network_get for full headers or browser_network_get_response for full body.',
       parameters: {
         type: 'object',
         properties: {
           sessionId: { type: 'string' },
-          limit: { type: 'number', description: 'Default 50' },
-          filter: { type: 'string', enum: ['all', 'api', 'xhr'], description: 'Default all' },
+          limit: { type: 'number', description: 'Max requests to return (default 50)' },
+          filter: { type: 'string', enum: ['all', 'api', 'xhr'], description: 'Filter type (default "api" - likely API calls only)' },
+          compact: { type: 'boolean', description: 'If true (default), return minimal fields. Set false to include request/response headers.' },
         },
         required: ['sessionId'],
       },
@@ -779,8 +780,9 @@ export async function executeAgentTool(
         const sessionId = args.sessionId as string;
         if (!sessionId) throw new Error('sessionId required');
         const limit = (args.limit as number) ?? 50;
-        const filter = (args.filter as 'all' | 'api' | 'xhr') ?? 'all';
-        const list = browserInspector.networkList(sessionId, limit, filter);
+        const filter = (args.filter as 'all' | 'api' | 'xhr') ?? 'api';
+        const compact = args.compact !== false; // default true
+        const list = browserInspector.networkList(sessionId, { limit, filter, compact });
         return wrap(JSON.stringify(list, null, 2));
       }
       case 'network_search': {
