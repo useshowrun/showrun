@@ -5,6 +5,20 @@ import type { InputSchema, PrimitiveType } from './types.js';
  */
 export class InputValidator {
   /**
+   * Apply default values from schema to inputs.
+   * Returns a new object with defaults applied for missing fields.
+   */
+  static applyDefaults(inputs: Record<string, unknown>, schema: InputSchema): Record<string, unknown> {
+    const result = { ...inputs };
+    for (const [fieldName, fieldDef] of Object.entries(schema)) {
+      if (!(fieldName in result) && fieldDef.default !== undefined) {
+        result[fieldName] = fieldDef.default;
+      }
+    }
+    return result;
+  }
+
+  /**
    * Validate inputs against schema
    */
   static validate(inputs: Record<string, unknown>, schema: InputSchema): void {

@@ -39,7 +39,7 @@ function NewPackModal({ onClose, onCreate }: NewPackModalProps) {
         left: 0,
         right: 0,
         bottom: 0,
-        background: 'rgba(0,0,0,0.5)',
+        background: 'rgba(0,0,0,0.7)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
@@ -108,10 +108,10 @@ function NewPackModal({ onClose, onCreate }: NewPackModalProps) {
             />
           </div>
           <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-            <button type="button" onClick={onClose} disabled={creating}>
+            <button className="btn-secondary" type="button" onClick={onClose} disabled={creating}>
               Cancel
             </button>
-            <button type="submit" disabled={creating}>
+            <button className="btn-primary" type="submit" disabled={creating}>
               {creating ? 'Creating...' : 'Create Pack'}
             </button>
           </div>

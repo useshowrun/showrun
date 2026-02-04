@@ -3,45 +3,62 @@
  * Converts Target types to Playwright Locators
  */
 
-import type { Locator, Page } from 'playwright';
+import type { Locator, Page, Frame } from 'playwright';
 import type { Target, TargetOrAnyOf } from './types.js';
+
+/**
+ * Type that can resolve locators (Page, Frame, or Locator)
+ */
+export type LocatorSource = Page | Frame | Locator;
+
+/**
+ * Check if the source is a Page (has goto method)
+ */
+function isPage(source: LocatorSource): source is Page {
+  return 'goto' in source && typeof source.goto === 'function';
+}
+
+/**
+ * Check if the source is a Frame (has url method but not goto)
+ */
+function isFrame(source: LocatorSource): source is Frame {
+  return 'url' in source && typeof source.url === 'function' && !('goto' in source);
+}
 
 /**
  * Resolves a single Target to a Playwright Locator
  */
 export function resolveTarget(
-  pageOrLocator: Page | Locator,
+  source: LocatorSource,
   target: Target
 ): Locator {
-  // Check if it's a Page (has locator method) or Locator
-  if ('locator' in pageOrLocator && typeof (pageOrLocator as Page).goto === 'function') {
-    // It's a Page
-    const page = pageOrLocator as Page;
+  // Check if it's a Page or Frame (both have similar locator methods)
+  if (isPage(source) || isFrame(source)) {
     switch (target.kind) {
       case 'css':
-        return page.locator(target.selector);
+        return source.locator(target.selector);
       case 'text':
-        return page.getByText(target.text, { exact: target.exact ?? false });
+        return source.getByText(target.text, { exact: target.exact ?? false });
       case 'role':
-        return page.getByRole(target.role, {
+        return source.getByRole(target.role, {
           name: target.name,
           exact: target.exact ?? false,
         });
       case 'label':
-        return page.getByLabel(target.text, { exact: target.exact ?? false });
+        return source.getByLabel(target.text, { exact: target.exact ?? false });
       case 'placeholder':
-        return page.getByPlaceholder(target.text, { exact: target.exact ?? false });
+        return source.getByPlaceholder(target.text, { exact: target.exact ?? false });
       case 'altText':
-        return page.getByAltText(target.text, { exact: target.exact ?? false });
+        return source.getByAltText(target.text, { exact: target.exact ?? false });
       case 'testId':
-        return page.getByTestId(target.id);
+        return source.getByTestId(target.id);
       default:
         const _exhaustive: never = target;
         throw new Error(`Unknown target kind: ${(_exhaustive as Target).kind}`);
     }
   } else {
     // It's a Locator
-    const locator = pageOrLocator as Locator;
+    const locator = source as Locator;
     switch (target.kind) {
       case 'css':
         return locator.locator(target.selector);
@@ -72,12 +89,12 @@ export function resolveTarget(
  * Tries each target in order until one yields at least one element
  */
 export async function resolveTargetWithFallback(
-  pageOrLocator: Page | Locator,
+  source: LocatorSource,
   targetOrAnyOf: TargetOrAnyOf,
   scope?: Target
 ): Promise<{ locator: Locator; matchedTarget: Target; matchedCount: number }> {
   // Resolve scope first if provided
-  const baseLocator = scope ? resolveTarget(pageOrLocator, scope) : pageOrLocator;
+  const baseLocator = scope ? resolveTarget(source, scope) : source;
 
   // Handle single target
   if (!('anyOf' in targetOrAnyOf)) {

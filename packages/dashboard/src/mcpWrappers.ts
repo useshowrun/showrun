@@ -4,14 +4,15 @@
  * These can be called directly without MCP protocol overhead
  */
 
-import type { DslStep, CollectibleDefinition } from '@mcpify/core';
+import type { DslStep, CollectibleDefinition, TaskPackManifest } from '@mcpify/core';
 import { TaskPackLoader, validateJsonTaskPack } from '@mcpify/core';
 import { discoverPacks } from '@mcpify/mcp-server/dist/packDiscovery.js';
-import { readJsonFile, writeFlowJson, validatePathInAllowedDir } from './packUtils.js';
+import { readJsonFile, writeFlowJson, validatePathInAllowedDir, ensureDir, writeTaskPackManifest, sanitizePackId } from './packUtils.js';
 import { runTaskPack } from '@mcpify/core';
 import { JSONLLogger } from '@mcpify/harness/dist/index.js';
 import { randomBytes } from 'crypto';
 import { resolve } from 'path';
+import { existsSync } from 'fs';
 
 /**
  * Flow patch operation
@@ -26,12 +27,9 @@ export type FlowPatchOp =
 
 /**
  * Result of running a task pack
+ * Simplified for AI agent consumption - no paths or IDs that fill context
  */
 export interface RunPackResult {
-  runId: string;
-  runDir: string;
-  eventsPath: string;
-  artifactsDir: string;
   success: boolean;
   collectibles: Record<string, unknown>;
   meta: { url?: string; durationMs: number; notes?: string };
@@ -51,14 +49,73 @@ export class TaskPackEditorWrapper {
 
   async listPacks() {
     const currentPacks = await discoverPacks({ directories: this.packDirs });
-    return currentPacks.map(({ pack }) => {
+    return currentPacks.map(({ pack, path }) => {
       return {
         id: pack.metadata.id,
         name: pack.metadata.name,
         version: pack.metadata.version,
         description: pack.metadata.description || '',
+        path, // Include path for secrets management
       };
     });
+  }
+
+  async createPack(id: string, name: string, description?: string): Promise<{
+    id: string;
+    name: string;
+    version: string;
+    description: string;
+    path: string;
+  }> {
+    // Validate pack ID format
+    if (!/^[a-zA-Z0-9._-]+$/.test(id)) {
+      throw new Error('Pack ID must contain only alphanumeric characters, dots, underscores, and hyphens');
+    }
+
+    // Check if pack already exists
+    const currentPacks = await discoverPacks({ directories: this.packDirs });
+    const existingPack = currentPacks.find(({ pack }) => pack.metadata.id === id);
+    if (existingPack) {
+      throw new Error(`Pack with ID "${id}" already exists`);
+    }
+
+    // Create directory
+    const sanitizedId = sanitizePackId(id);
+    const packDir = resolve(this.workspaceDir, sanitizedId);
+
+    if (existsSync(packDir)) {
+      throw new Error(`Pack directory already exists: ${sanitizedId}`);
+    }
+
+    ensureDir(packDir);
+
+    // Create taskpack.json
+    const manifest: TaskPackManifest = {
+      id,
+      name,
+      version: '0.1.0',
+      description: description || '',
+      kind: 'json-dsl',
+    };
+
+    writeTaskPackManifest(packDir, manifest);
+
+    // Create empty flow.json
+    const flowData = {
+      inputs: {},
+      collectibles: [],
+      flow: [],
+    };
+
+    writeFlowJson(packDir, flowData, true); // Skip validation for empty flow
+
+    return {
+      id,
+      name,
+      version: '0.1.0',
+      description: description || '',
+      path: packDir,
+    };
   }
 
   async readPack(packId: string) {
@@ -300,13 +357,10 @@ export class TaskPackEditorWrapper {
         logger,
         headless: !this.headful,
         profileId: packId,
+        packPath: packInfo.path,
       });
 
       return {
-        runId,
-        runDir: result.runDir,
-        eventsPath: result.eventsPath,
-        artifactsDir: result.artifactsDir,
         success: true,
         collectibles: result.collectibles,
         meta: result.meta,
@@ -314,10 +368,6 @@ export class TaskPackEditorWrapper {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       return {
-        runId,
-        runDir,
-        eventsPath: resolve(runDir, 'events.jsonl'),
-        artifactsDir: resolve(runDir, 'artifacts'),
         success: false,
         collectibles: {},
         meta: { durationMs: 0 },

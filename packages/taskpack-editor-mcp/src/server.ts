@@ -8,7 +8,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { resolve, join } from 'path';
 import * as z from 'zod';
 import { readFileSync, existsSync, writeFileSync, renameSync } from 'fs';
-import type { TaskPackManifest, DslStep, CollectibleDefinition, InputSchema } from '@mcpify/core';
+import type { TaskPackManifest, DslStep, CollectibleDefinition, InputSchema, SecretDefinition } from '@mcpify/core';
 import { TaskPackLoader, validateJsonTaskPack } from '@mcpify/core';
 import { discoverPacks } from '@mcpify/mcp-server/dist/packDiscovery.js';
 import { runTaskPack } from '@mcpify/core';
@@ -220,6 +220,71 @@ export async function createTaskPackEditorServer(
         structuredContent: {
           taskpackJson: manifest,
           flowJson,
+        },
+      };
+    }
+  );
+
+  // Tool: list_secrets
+  server.registerTool(
+    'list_secrets',
+    {
+      title: 'List Secrets',
+      description: 'List secrets for a pack. Returns names and descriptions only (no values for security). Use {{secret.NAME}} in templates.',
+      inputSchema: z.object({
+        packId: z.string().describe('Pack ID'),
+      }),
+    },
+    async ({ packId }) => {
+      const packInfo = packMap.get(packId);
+      if (!packInfo) {
+        throw new Error(`Pack not found: ${packId}`);
+      }
+
+      // Validate path is in workspace
+      try {
+        validatePathInAllowedDir(packInfo.packPath, resolvedWorkspaceDir);
+      } catch {
+        throw new Error(`Pack ${packId} is not in workspace directory`);
+      }
+
+      // Get secret definitions from manifest
+      const definitions = TaskPackLoader.getSecretDefinitions(packInfo.packPath);
+
+      // Get which secrets have values (without revealing values)
+      const secrets = TaskPackLoader.loadSecrets(packInfo.packPath);
+      const secretsInfo = definitions.map((def) => ({
+        name: def.name,
+        description: def.description,
+        required: def.required,
+        hasValue: !!secrets[def.name],
+      }));
+
+      // Also include any secrets that exist but aren't defined
+      for (const name of Object.keys(secrets)) {
+        if (!definitions.find((d) => d.name === name)) {
+          secretsInfo.push({
+            name,
+            description: undefined,
+            required: undefined,
+            hasValue: true,
+          });
+        }
+      }
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: JSON.stringify({
+              secrets: secretsInfo,
+              note: 'Use {{secret.NAME}} in templates to reference secret values. Never ask for secret values.',
+            }, null, 2),
+          },
+        ],
+        structuredContent: {
+          secrets: secretsInfo,
+          note: 'Use {{secret.NAME}} in templates to reference secret values. Never ask for secret values.',
         },
       };
     }

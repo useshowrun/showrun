@@ -315,6 +315,42 @@ Convert approved roadmap to DSL steps using `editor_apply_flow_patch`.
 | `network_replay` | Replay request with overrides | `requestId`, `overrides`, `auth`, `out` |
 | `network_extract` | Extract from response | `fromVar`, `as`, `jsonPath`, `out` |
 
+### Storage: vars vs collectibles
+
+**IMPORTANT**: Understand where step outputs are stored:
+
+| Step | Parameter | Stores To | Notes |
+|------|-----------|-----------|-------|
+| `set_var` | `name` | **vars** | For intermediate values, templates |
+| `network_find` | `saveAs` | **vars** | Request ID for replay |
+| `network_replay` | `out` | **vars** | Response data for extraction |
+| `extract_text` | `out` | **collectibles** | Final output |
+| `extract_attribute` | `out` | **collectibles** | Final output |
+| `network_extract` | `out` | **collectibles** | Final output |
+
+**Output filtering**: Only collectibles explicitly defined in `flow.json` `collectibles` array are returned. Intermediate data stored in vars or undefined collectibles is automatically filtered out.
+
+**Example - correct pattern for API extraction**:
+```json
+{
+  "collectibles": [
+    { "name": "companies", "type": "array", "description": "Company list" }
+  ],
+  "flow": [
+    // 1. Find request - saveAs stores to vars (internal)
+    { "id": "find_api", "type": "network_find", "params": { "where": {...}, "saveAs": "reqId" } },
+
+    // 2. Replay - out stores to vars (internal)
+    { "id": "replay_api", "type": "network_replay", "params": { "requestId": "{{vars.reqId}}", "out": "response", ... } },
+
+    // 3. Extract - out stores to collectibles (output) - use jsonPath to extract exactly what you need
+    { "id": "get_companies", "type": "network_extract", "params": { "fromVar": "response", "jsonPath": "$.results[0].hits[*].name", "out": "companies" } }
+  ]
+}
+```
+
+**DO NOT** try to transform data with `set_var` - templates return strings, not arrays/objects. Use `jsonPath` in `network_extract` to extract exactly the data you need.
+
 ### Conditional Steps (`skip_if`)
 
 Steps can be conditionally skipped at runtime using the `skip_if` field. This is useful for:
@@ -762,11 +798,39 @@ If test fails:
 | Tool | Purpose |
 |------|---------|
 | `editor_list_packs` | List available task packs |
+| `editor_create_pack(id, name, description?)` | **Create a new Task Pack**. Call this FIRST when starting a new automation. |
 | `editor_read_pack(packId)` | Read pack contents (MUST call before editing) |
 | `editor_list_secrets(packId)` | List secrets (names only, no values). Use to check if auth secrets exist. |
 | `editor_validate_flow(flowJsonText)` | Validate flow JSON |
 | `editor_apply_flow_patch(packId, op, ...)` | Apply patch (append/insert/replace/delete/update_collectibles/update_inputs) |
 | `editor_run_pack(packId, inputs)` | Run pack and get results: `success`, `collectibles`, `meta`, `error` |
+
+#### Pack Creation Workflow
+
+When starting a **new** automation (no existing packId), follow this workflow:
+
+1. **Create the pack**: Call `editor_create_pack(id, name, description)` with:
+   - `id`: Unique identifier (e.g., "mycompany.sitename.collector"). Use dots to namespace.
+   - `name`: Human-readable name (e.g., "MySite Data Collector")
+   - `description`: Brief description of what the flow does
+
+2. **Link to conversation**: Call `conversation_link_pack(packId)` to associate the new pack with the current conversation
+
+3. **Add steps**: Use `editor_apply_flow_patch(packId, ...)` to add steps one at a time
+
+4. **Test**: Use `editor_run_pack(packId, inputs)` to verify the flow works
+
+**Example**:
+```
+// 1. Create pack
+editor_create_pack("acme.orders.export", "ACME Orders Exporter", "Export orders from ACME portal")
+// Returns: { id: "acme.orders.export", name: "ACME Orders Exporter", ... }
+
+// 2. Link to conversation
+conversation_link_pack("acme.orders.export")
+
+// 3. Add steps via editor_apply_flow_patch...
+```
 
 #### editor_run_pack Response Format
 
@@ -833,6 +897,36 @@ Camoufox is Firefox-based with anti-fingerprinting. It's slower to start but bet
 - Plans saved with `agent_save_plan` survive summarization
 - Include: goal, steps, progress, key decisions
 - Call `agent_save_plan` proactively when working on multi-step tasks
+
+### Conversation Management Tools
+| Tool | Purpose |
+|------|---------|
+| `conversation_update_title(title)` | Set conversation title. Call after first user message with a concise title. |
+| `conversation_update_description(description)` | Update progress description. Call as work progresses. |
+| `conversation_set_status(status)` | Set status: "active", "ready", "needs_input", "error". Use "ready" when flow is complete. |
+| `conversation_link_pack(packId)` | Link a pack to this conversation. **REQUIRED** after creating a new pack. |
+
+**Conversation status meanings:**
+- `active` - Work in progress
+- `ready` - Flow is complete and tested, ready for use
+- `needs_input` - Waiting for user decision or input
+- `error` - Something went wrong
+
+**Example workflow:**
+```
+// After first user message, set a descriptive title
+conversation_update_title("YCombinator Batch Scraper")
+
+// As work progresses, update description
+conversation_update_description("Exploring site structure...")
+
+// After creating a pack, link it
+conversation_link_pack("yc.batch.scraper")
+
+// When flow is complete and tested
+conversation_update_description("Flow complete: extracts company names by batch")
+conversation_set_status("ready")
+```
 
 ---
 

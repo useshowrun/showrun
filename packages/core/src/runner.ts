@@ -1,9 +1,10 @@
-import { chromium, type Browser, type Page } from 'playwright';
+import { type Browser, type Page } from 'playwright';
 import { mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import type { TaskPack, RunResult, RunContext } from './types.js';
-import { InputValidator, RunContextFactory, runFlow, attachNetworkCapture } from './index.js';
+import { InputValidator, RunContextFactory, runFlow, attachNetworkCapture, TaskPackLoader } from './index.js';
 import type { Logger } from './types.js';
+import { launchBrowser, type BrowserSession } from './browserLauncher.js';
 
 /**
  * Options for running a task pack
@@ -33,6 +34,14 @@ export interface RunTaskPackOptions {
    * Directory for profile cache storage (typically the pack directory)
    */
   cacheDir?: string;
+  /**
+   * Pack directory path (used for loading secrets)
+   */
+  packPath?: string;
+  /**
+   * Pre-loaded secrets (if not provided, will be loaded from packPath)
+   */
+  secrets?: Record<string, string>;
 }
 
 /**
@@ -62,9 +71,12 @@ export async function runTaskPack(
   inputs: Record<string, unknown>,
   options: RunTaskPackOptions
 ): Promise<RunTaskPackResult> {
-  const { runDir, logger, headless: requestedHeadless = true } = options;
+  const { runDir, logger, headless: requestedHeadless = true, packPath, secrets: providedSecrets } = options;
   const artifactsDir = join(runDir, 'artifacts');
   const eventsPath = join(runDir, 'events.jsonl');
+
+  // Load secrets from pack directory if not provided and packPath is given
+  const secrets = providedSecrets ?? (packPath ? TaskPackLoader.loadSecrets(packPath) : {});
 
   // Ensure directories exist
   mkdirSync(runDir, { recursive: true });
@@ -83,13 +95,14 @@ export async function runTaskPack(
   }
 
   const startTime = Date.now();
-  let browser: Browser | null = null;
+  let browserSession: BrowserSession | null = null;
   let page: Page | null = null;
   let runContext: RunContext | null = null;
 
   try {
-    // Validate inputs
-    InputValidator.validate(inputs, taskPack.inputs);
+    // Apply defaults and validate inputs
+    const inputsWithDefaults = InputValidator.applyDefaults(inputs, taskPack.inputs);
+    InputValidator.validate(inputsWithDefaults, taskPack.inputs);
 
     // Log run start
     logger.log({
@@ -97,22 +110,37 @@ export async function runTaskPack(
       data: {
         packId: taskPack.metadata.id,
         packVersion: taskPack.metadata.version,
-        inputs,
+        inputs: inputsWithDefaults,
       },
     });
 
-    // Launch browser
-    browser = await chromium.launch({ headless });
-    const context = await browser.newContext();
-    page = await context.newPage();
+    // Launch browser with unified launcher
+    browserSession = await launchBrowser({
+      browserSettings: taskPack.browser,
+      headless,
+      sessionId: options.sessionId,
+      packPath: options.packPath ?? options.cacheDir,
+    });
+    page = browserSession.page;
 
     // Attach network capture (rolling buffer, redacted for logs; full headers in-memory for replay only)
     const networkCapture = attachNetworkCapture(page);
 
     // Create run context
+    // Note: browserSession.browser may be null for persistent contexts or Camoufox
+    // We pass a proxy that satisfies the Browser type for the RunContext
+    const browserProxy = browserSession.browser ?? {
+      close: async () => browserSession?.close(),
+      contexts: () => [browserSession?.context],
+      isConnected: () => true,
+      newContext: async () => browserSession?.context,
+      newPage: async () => browserSession?.page,
+      version: () => 'unknown',
+    } as unknown as Browser;
+
     runContext = RunContextFactory.create(
       page,
-      browser,
+      browserProxy,
       logger,
       artifactsDir,
       networkCapture
@@ -123,15 +151,29 @@ export async function runTaskPack(
     if (taskPack.flow) {
       // Use declarative DSL flow
       const flowResult = await runFlow(runContext, taskPack.flow, {
-        inputs,
+        inputs: inputsWithDefaults,
         auth: taskPack.auth,
         sessionId: options.sessionId,
         profileId: options.profileId,
         cacheDir: options.cacheDir,
+        secrets,
       });
+
+      // Filter collectibles to only include those defined in the pack
+      // This prevents intermediate variables from polluting the output
+      const definedCollectibleNames = new Set(
+        (taskPack.collectibles || []).map(c => c.name)
+      );
+      const filteredCollectibles: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(flowResult.collectibles)) {
+        if (definedCollectibleNames.has(key)) {
+          filteredCollectibles[key] = value;
+        }
+      }
+
       // Convert RunFlowResult to RunResult format
       result = {
-        collectibles: flowResult.collectibles,
+        collectibles: filteredCollectibles,
         meta: {
           url: flowResult.meta.url,
           durationMs: flowResult.meta.durationMs,
@@ -140,7 +182,7 @@ export async function runTaskPack(
       };
     } else if (taskPack.run) {
       // Use imperative run function
-      result = await taskPack.run(runContext, inputs);
+      result = await taskPack.run(runContext, inputsWithDefaults);
     } else {
       throw new Error(
         'Task pack must have either a "flow" array or a "run" function'
@@ -218,12 +260,9 @@ export async function runTaskPack(
       artifactsDir,
     };
   } finally {
-    // Cleanup
-    if (page) {
-      await page.close().catch(() => {});
-    }
-    if (browser) {
-      await browser.close().catch(() => {});
+    // Cleanup using unified browser session close
+    if (browserSession) {
+      await browserSession.close();
     }
   }
 }

@@ -9,8 +9,10 @@
     "build": "tsc"
   },
   "dependencies": {
+    "camoufox-js": "^0.8.5",
     "jsonpath-plus": "^10.3.0",
     "nunjucks": "^3.2.4",
+    "otplib": "^12.0.1",
     "playwright": "^1.58.0"
   },
   "devDependencies": {

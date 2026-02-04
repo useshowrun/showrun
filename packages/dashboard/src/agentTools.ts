@@ -8,6 +8,10 @@ import * as browserInspector from './browserInspector.js';
 import { getSecretNamesWithValues } from './secretsUtils.js';
 import { resolveTemplates, TaskPackLoader } from '@mcpify/core';
 import { executePlanTool } from './contextManager.js';
+import {
+  updateConversation,
+  type Conversation,
+} from './db.js';
 
 /** OpenAI-format tool definitions: Editor MCP + Browser MCP (always on) */
 export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
@@ -102,6 +106,26 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
           },
         },
         required: ['packId', 'op'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'editor_create_pack',
+      description:
+        'Create a new JSON Task Pack. Call this FIRST when starting work on a new automation flow. Returns the created pack info including packId. After creating, use editor_apply_flow_patch to add steps to the flow. Also call conversation_link_pack to associate the pack with the current conversation.',
+      parameters: {
+        type: 'object',
+        properties: {
+          id: {
+            type: 'string',
+            description: 'Pack ID (e.g., "mycompany.sitename.collector"). Use reverse domain notation. Only alphanumeric, dots, underscores, hyphens.',
+          },
+          name: { type: 'string', description: 'Human-readable name (e.g., "Site Name Collector")' },
+          description: { type: 'string', description: 'Brief description of what this pack does' },
+        },
+        required: ['id', 'name'],
       },
     },
   },
@@ -409,6 +433,76 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       },
     },
   },
+  // Conversation management tools
+  {
+    type: 'function',
+    function: {
+      name: 'conversation_update_title',
+      description: 'Update the conversation title based on the user\'s goal. Call after the first user message to set a concise title (e.g., "Gmail Email Scraper", "YC Batch Collector").',
+      parameters: {
+        type: 'object',
+        properties: {
+          title: {
+            type: 'string',
+            description: 'A concise title (3-6 words) describing the user\'s goal.',
+          },
+        },
+        required: ['title'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'conversation_update_description',
+      description: 'Update the conversation description/summary. Call when progress is made to reflect current status (e.g., "Creating login flow", "Ready to collect emails").',
+      parameters: {
+        type: 'object',
+        properties: {
+          description: {
+            type: 'string',
+            description: 'A brief description of current progress or status.',
+          },
+        },
+        required: ['description'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'conversation_set_status',
+      description: 'Set the conversation status. Use "ready" when the flow is complete and working, "needs_input" when waiting for user decision, "error" on failure. Status defaults to "active" during work.',
+      parameters: {
+        type: 'object',
+        properties: {
+          status: {
+            type: 'string',
+            enum: ['active', 'ready', 'needs_input', 'error'],
+            description: 'The conversation status.',
+          },
+        },
+        required: ['status'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'conversation_link_pack',
+      description: 'Link the conversation to a created/edited pack. Call when you create or complete editing a pack to associate it with this conversation.',
+      parameters: {
+        type: 'object',
+        properties: {
+          packId: {
+            type: 'string',
+            description: 'The pack ID to link to this conversation.',
+          },
+        },
+        required: ['packId'],
+      },
+    },
+  },
 ];
 
 export interface AgentToolContext {
@@ -419,6 +513,8 @@ export interface AgentToolContext {
   packId?: string | null;
   /** Session key for plan storage (typically packId or a unique session identifier) */
   sessionKey?: string;
+  /** Current conversation ID (optional; needed for conversation_* tools) */
+  conversationId?: string | null;
 }
 
 /**
@@ -461,11 +557,12 @@ async function resolveTemplateValue(
   }
 }
 
-/** Strip editor_, browser_, or agent_ prefix for internal dispatch (OpenAI allows only [a-zA-Z0-9_-] in tool names) */
+/** Strip editor_, browser_, agent_, or conversation_ prefix for internal dispatch (OpenAI allows only [a-zA-Z0-9_-] in tool names) */
 function toolNameToInternal(name: string): string {
   if (name.startsWith('editor_')) return name.slice(7);
   if (name.startsWith('browser_')) return name.slice(8);
   if (name.startsWith('agent_')) return name.slice(6);
+  if (name.startsWith('conversation_')) return name.slice(13);
   return name;
 }
 
@@ -565,6 +662,18 @@ export async function executeAgentTool(
         if (!patch.op) throw new Error('op required (append, insert, replace, delete, update_collectibles, or update_inputs)');
         const result = await taskPackEditor.applyFlowPatch(packId, patch as any);
         return wrap(JSON.stringify(result, null, 2));
+      }
+      case 'create_pack': {
+        const id = args.id as string;
+        const name = args.name as string;
+        const description = args.description as string | undefined;
+        if (!id) throw new Error('id required');
+        if (!name) throw new Error('name required');
+        const result = await taskPackEditor.createPack(id, name, description);
+        return wrap(JSON.stringify({
+          ...result,
+          message: `Pack "${id}" created successfully. Use editor_apply_flow_patch to add steps, and conversation_link_pack to associate it with this conversation.`,
+        }, null, 2));
       }
       case 'run_pack': {
         const packId = args.packId as string;
@@ -724,6 +833,49 @@ export async function executeAgentTool(
         const sessionKey = ctx.sessionKey || ctx.packId || 'default';
         const result = executePlanTool(`agent_${internal}`, args, sessionKey);
         return wrap(result);
+      }
+      // Conversation management tools (conversation_ prefix -> update_title, etc.)
+      case 'update_title': {
+        const title = args.title as string;
+        if (!title) throw new Error('title required');
+        if (!ctx.conversationId) {
+          return wrap(JSON.stringify({ warning: 'No conversation context, title not saved but noted' }));
+        }
+        const updated = updateConversation(ctx.conversationId, { title });
+        if (!updated) throw new Error('Conversation not found');
+        return wrap(JSON.stringify({ success: true, title }));
+      }
+      case 'update_description': {
+        const description = args.description as string;
+        if (!description) throw new Error('description required');
+        if (!ctx.conversationId) {
+          return wrap(JSON.stringify({ warning: 'No conversation context, description not saved but noted' }));
+        }
+        const updated = updateConversation(ctx.conversationId, { description });
+        if (!updated) throw new Error('Conversation not found');
+        return wrap(JSON.stringify({ success: true, description }));
+      }
+      case 'set_status': {
+        const status = args.status as Conversation['status'];
+        if (!status || !['active', 'ready', 'needs_input', 'error'].includes(status)) {
+          throw new Error('status must be active, ready, needs_input, or error');
+        }
+        if (!ctx.conversationId) {
+          return wrap(JSON.stringify({ warning: 'No conversation context, status not saved but noted' }));
+        }
+        const updated = updateConversation(ctx.conversationId, { status });
+        if (!updated) throw new Error('Conversation not found');
+        return wrap(JSON.stringify({ success: true, status }));
+      }
+      case 'link_pack': {
+        const packId = args.packId as string;
+        if (!packId) throw new Error('packId required');
+        if (!ctx.conversationId) {
+          return wrap(JSON.stringify({ warning: 'No conversation context, pack link not saved but noted' }));
+        }
+        const updated = updateConversation(ctx.conversationId, { packId });
+        if (!updated) throw new Error('Conversation not found');
+        return wrap(JSON.stringify({ success: true, packId }));
       }
       default:
         return wrap(JSON.stringify({ error: `Unknown tool: ${name}` }));

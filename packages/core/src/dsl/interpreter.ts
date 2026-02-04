@@ -14,6 +14,7 @@ import {
   type StepOutput,
 } from '../authResilience.js';
 import type { NetworkCaptureApi, NetworkEntrySerializable } from '../networkCapture.js';
+import { evaluateCondition, conditionToString } from './conditions.js';
 
 /**
  * Capture the delta of vars and collectibles produced by a step,
@@ -72,6 +73,33 @@ export interface RunFlowOptionsWithAuth extends RunFlowOptions {
    * Directory for profile cache storage (typically the pack directory)
    */
   cacheDir?: string;
+  /**
+   * Secrets for template resolution ({{secret.NAME}})
+   */
+  secrets?: Record<string, string>;
+}
+
+/**
+ * Redacts secret values from an object before logging.
+ * Replaces any occurrence of secret values with [REDACTED].
+ */
+function redactSecrets<T>(obj: T, secretValues: string[]): T {
+  if (secretValues.length === 0) return obj;
+
+  let str = JSON.stringify(obj);
+  for (const value of secretValues) {
+    // Only redact secrets that are at least 3 characters long
+    if (value && value.length >= 3) {
+      // Escape special regex characters in the secret value
+      const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      str = str.replace(new RegExp(escaped, 'g'), '[REDACTED]');
+    }
+  }
+  try {
+    return JSON.parse(str) as T;
+  } catch {
+    return obj;
+  }
 }
 
 /**
@@ -89,17 +117,22 @@ export async function runFlow(
   const sessionId = options?.sessionId;
   const profileId = options?.profileId;
   const cacheDir = options?.cacheDir;
+  const secrets = options?.secrets ?? {};
+
+  // Get secret values for redaction (only values >= 3 chars)
+  const secretValues = Object.values(secrets).filter((v) => v && v.length >= 3);
 
   // Validate flow before execution
   validateFlow(steps);
 
   const collectibles: Record<string, unknown> = {};
   const vars: Record<string, unknown> = {};
-  
-  // Initialize variable context
+
+  // Initialize variable context (including secrets for templating)
   const variableContext = {
     inputs,
     vars,
+    secrets,
   };
 
   // Initialize auth resilience components: load persisted "once" cache when sessionId/profileId provided
@@ -195,14 +228,43 @@ export async function runFlow(
         continue;
       }
 
+      // Check if step should be skipped due to skip_if condition
+      if (step.skip_if) {
+        try {
+          const shouldSkip = await evaluateCondition(
+            { page: ctx.page, vars },
+            step.skip_if
+          );
+          if (shouldSkip) {
+            ctx.logger.log({
+              type: 'step_skipped',
+              data: {
+                stepId: step.id,
+                type: step.type,
+                reason: 'condition_met',
+                condition: conditionToString(step.skip_if),
+              },
+            });
+            stepsExecuted++;
+            continue;
+          }
+        } catch (conditionError) {
+          // Log condition evaluation error but continue with step execution
+          console.warn(
+            `[interpreter] Error evaluating skip_if for step ${step.id}:`,
+            conditionError
+          );
+        }
+      }
+
       // Resolve templates in step params before execution
       const resolvedStep = {
         ...step,
         params: resolveTemplates(step.params, variableContext),
       } as DslStep;
 
-      // Log step start with resolved params (safe for logging)
-      const logParams = JSON.parse(JSON.stringify(resolvedStep.params));
+      // Log step start with resolved params (redact secrets for safe logging)
+      const logParams = redactSecrets(JSON.parse(JSON.stringify(resolvedStep.params)), secretValues);
       ctx.logger.log({
         type: 'step_started',
         data: {

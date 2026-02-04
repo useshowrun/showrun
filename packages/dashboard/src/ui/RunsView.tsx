@@ -20,6 +20,8 @@ interface Run {
     notes?: string;
   };
   error?: string;
+  conversationId?: string;
+  source?: 'dashboard' | 'mcp' | 'cli' | 'agent';
 }
 
 interface RunEvent {
@@ -36,6 +38,7 @@ interface RunsViewProps {
 function RunsView({ runs, socket }: RunsViewProps) {
   const [selectedRun, setSelectedRun] = useState<Run | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
+  const [sourceFilter, setSourceFilter] = useState<string>('all');
 
   useEffect(() => {
     if (!selectedRun) {
@@ -43,17 +46,10 @@ function RunsView({ runs, socket }: RunsViewProps) {
       return;
     }
 
-    // Listen for events for this run
     const eventChannel = `runs:events:${selectedRun.runId}`;
     socket.on(eventChannel, (event: RunEvent) => {
       setEvents((prev) => [...prev, event]);
     });
-
-    // Load existing events from file if available
-    if (selectedRun.eventsPath) {
-      // Note: In a real implementation, you might want to fetch events from the server
-      // For now, we'll only show live events
-    }
 
     return () => {
       socket.off(eventChannel);
@@ -70,15 +66,53 @@ function RunsView({ runs, socket }: RunsViewProps) {
     return `${(ms / 1000).toFixed(2)}s`;
   };
 
+  const getSourceLabel = (source?: string) => {
+    switch (source) {
+      case 'dashboard':
+        return 'Dashboard';
+      case 'mcp':
+        return 'MCP';
+      case 'cli':
+        return 'CLI';
+      case 'agent':
+        return 'Agent';
+      default:
+        return 'Unknown';
+    }
+  };
+
+  // Filter runs by source
+  const filteredRuns =
+    sourceFilter === 'all' ? runs : runs.filter((r) => r.source === sourceFilter);
+
   return (
     <div>
       <div className="card">
-        <h2>Run History</h2>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+          <h2 style={{ margin: 0 }}>Run History</h2>
+          <select
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value)}
+            style={{ padding: '8px 12px', minWidth: '120px' }}
+          >
+            <option value="all">All Sources</option>
+            <option value="dashboard">Dashboard</option>
+            <option value="mcp">MCP</option>
+            <option value="cli">CLI</option>
+            <option value="agent">Agent</option>
+          </select>
+        </div>
+
         <div className="runs-list">
-          {runs.length === 0 ? (
-            <div className="loading">No runs yet</div>
+          {filteredRuns.length === 0 ? (
+            <div className="empty-state">
+              <div className="empty-state-title">No runs yet</div>
+              <div className="empty-state-description">
+                Runs will appear here when you execute task packs.
+              </div>
+            </div>
           ) : (
-            runs.map((run) => (
+            filteredRuns.map((run) => (
               <div
                 key={run.runId}
                 className={`run-item ${selectedRun?.runId === run.runId ? 'selected' : ''}`}
@@ -86,12 +120,18 @@ function RunsView({ runs, socket }: RunsViewProps) {
               >
                 <div className="run-item-header">
                   <h3>{run.packName}</h3>
-                  <span className={`status-badge ${run.status}`}>
-                    {run.status}
-                  </span>
+                  <span className={`status-badge ${run.status}`}>{run.status}</span>
                 </div>
                 <div className="run-item-meta">
-                  {formatDate(run.createdAt)} • {formatDuration(run.durationMs)}
+                  <span>{formatDate(run.createdAt)}</span>
+                  <span style={{ margin: '0 8px' }}>|</span>
+                  <span>{formatDuration(run.durationMs)}</span>
+                  {run.source && (
+                    <>
+                      <span style={{ margin: '0 8px' }}>|</span>
+                      <span style={{ color: 'var(--accent-orange)' }}>{getSourceLabel(run.source)}</span>
+                    </>
+                  )}
                 </div>
               </div>
             ))
@@ -108,9 +148,10 @@ function RunsView({ runs, socket }: RunsViewProps) {
             <div className="run-detail-info">
               <p>
                 <strong>Status:</strong>{' '}
-                <span className={`status-badge ${selectedRun.status}`}>
-                  {selectedRun.status}
-                </span>
+                <span className={`status-badge ${selectedRun.status}`}>{selectedRun.status}</span>
+              </p>
+              <p>
+                <strong>Source:</strong> {getSourceLabel(selectedRun.source)}
               </p>
               <p>
                 <strong>Created:</strong> {formatDate(selectedRun.createdAt)}
@@ -158,7 +199,9 @@ function RunsView({ runs, socket }: RunsViewProps) {
             <div className="run-detail-section">
               <h3>Collectibles</h3>
               <div className="run-detail-info">
-                <pre>{JSON.stringify(selectedRun.collectibles, null, 2)}</pre>
+                <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'var(--text-secondary)' }}>
+                  {JSON.stringify(selectedRun.collectibles, null, 2)}
+                </pre>
               </div>
             </div>
           )}

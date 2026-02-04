@@ -17,6 +17,7 @@ runs-dashboard/
 .env
 .env.local
 .env.*.local
+.secrets.json
 
 # Logs and debug
 *.log
@@ -35,6 +36,9 @@ mcpify-once-cache/
 
 # Task pack once-cache (stored in pack directories)
 .once-cache/
+
+# Browser profile persistence (stored in pack directories)
+.browser-profile/
 
 # Turbo (if used later)
 .turbo

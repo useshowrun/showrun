@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import type { Socket } from 'socket.io-client';
 import TeachMode from './TeachMode.js';
+import SecretsEditor from './SecretsEditor.js';
 
 interface Pack {
   id: string;
@@ -336,6 +337,15 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
             </div>
           )}
         </div>
+      </div>
+
+      {/* Secrets Management */}
+      <div className="card" style={{ marginTop: '24px' }}>
+        <h3>Secrets</h3>
+        <p style={{ color: '#666', fontSize: '14px', marginBottom: '12px' }}>
+          Manage credentials and API keys securely. Values are stored locally and never exposed to AI.
+        </p>
+        <SecretsEditor packId={packId} token={token} />
       </div>
 
       {/* Teach Mode: AI + browser; flow updates reflected in editor above in real time */}

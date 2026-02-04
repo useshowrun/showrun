@@ -1,4 +1,4 @@
-import type { Page } from 'playwright';
+import type { Page, BrowserContext, Frame } from 'playwright';
 import type {
   DslStep,
   NavigateStep,
@@ -14,6 +14,12 @@ import type {
   NetworkFindStep,
   NetworkReplayStep,
   NetworkExtractStep,
+  SelectOptionStep,
+  PressKeyStep,
+  UploadFileStep,
+  FrameStep,
+  NewTabStep,
+  SwitchTabStep,
   VariableContext,
 } from './types.js';
 import type { NetworkCaptureApi, NetworkFindWhere, NetworkReplayOverrides } from '../networkCapture.js';
@@ -36,6 +42,14 @@ export interface StepContext {
   authMonitor?: AuthFailureMonitor;
   /** Current step ID for auth failure tracking */
   currentStepId?: string;
+  /** Browser context for multi-tab operations */
+  browserContext?: BrowserContext;
+  /** Current frame context (for iframe operations) */
+  currentFrame?: Frame;
+  /** Previous tab index (for switch_tab with 'previous') */
+  previousTabIndex?: number;
+  /** Task pack directory path (for resolving relative file paths) */
+  packDir?: string;
 }
 
 /**
@@ -437,7 +451,58 @@ async function executeNetworkFind(
     }
   }
   if (requestId == null) {
-    const msg = `network_find: no request matched (where: ${JSON.stringify(where)}, pick: ${pick})${waitForMs > 0 ? ` within ${waitForMs}ms` : ''}. Ensure the request is triggered before this step (e.g. by navigation or a prior interaction), or increase waitForMs.`;
+    // Get ALL captured requests to help debug (larger buffer to catch the request)
+    const allRequests = ctx.networkCapture.list(100, 'all');
+
+    // Build search terms from the where clause for relevance filtering
+    const searchTerms: string[] = [];
+    if (where.urlIncludes) {
+      // Split URL pattern into searchable terms (e.g., "/api/discovery/search" -> ["api", "discovery", "search"])
+      searchTerms.push(...where.urlIncludes.split(/[\/\-_.]/).filter(s => s.length > 2));
+    }
+    if (where.urlRegex) {
+      // Extract alphanumeric words from regex
+      searchTerms.push(...where.urlRegex.match(/[a-zA-Z]{3,}/g) || []);
+    }
+
+    // Find relevant requests (those that match any search term)
+    let relevantRequests = allRequests;
+    if (searchTerms.length > 0) {
+      relevantRequests = allRequests.filter(r => {
+        const urlLower = r.url.toLowerCase();
+        return searchTerms.some(term => urlLower.includes(term.toLowerCase()));
+      });
+    }
+
+    // If no relevant requests found, fall back to API requests, then all
+    let displayRequests = relevantRequests;
+    let filterDesc = `matching "${searchTerms.join('", "')}"`;
+
+    if (displayRequests.length === 0) {
+      displayRequests = allRequests.filter(r =>
+        r.resourceType === 'xhr' ||
+        r.resourceType === 'fetch' ||
+        /\/api\//i.test(r.url) ||
+        /graphql/i.test(r.url)
+      );
+      filterDesc = 'API/XHR';
+    }
+
+    if (displayRequests.length === 0) {
+      displayRequests = allRequests;
+      filterDesc = 'all';
+    }
+
+    const sampleUrls = displayRequests
+      .slice(-15)
+      .map(r => `  ${r.method} ${r.url}`)
+      .join('\n');
+
+    const debugInfo = displayRequests.length > 0
+      ? `\n\nCaptured requests (${filterDesc}, showing ${Math.min(displayRequests.length, 15)} of ${allRequests.length} total):\n${sampleUrls}`
+      : `\n\nNo requests captured (0 total). The request may not have been triggered yet.`;
+
+    const msg = `network_find: no request matched (where: ${JSON.stringify(where)}, pick: ${pick})${waitForMs > 0 ? ` within ${waitForMs}ms` : ''}. Ensure the request is triggered before this step (e.g. by navigation or a prior interaction), or increase waitForMs.${debugInfo}`;
     console.warn(`[${step.id}] ${msg}`);
     throw new Error(msg);
   }
@@ -581,6 +646,247 @@ async function executeNetworkExtract(
 }
 
 /**
+ * Executes a select_option step
+ */
+async function executeSelectOption(
+  ctx: StepContext,
+  step: SelectOptionStep
+): Promise<void> {
+  // Support both legacy selector and new target
+  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+
+  if (!targetOrAnyOf) {
+    throw new Error('SelectOption step must have either "target" or "selector"');
+  }
+
+  // Resolve target with fallback and scope
+  const { locator, matchedTarget, matchedCount } = await resolveTargetWithFallback(
+    ctx.currentFrame ?? ctx.page,
+    targetOrAnyOf,
+    step.params.scope
+  );
+
+  // Log matched target for diagnostics
+  if (step.params.hint) {
+    console.log(`[SelectOption:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+  }
+
+  const target = step.params.first ?? true ? locator.first() : locator;
+
+  // Convert value to Playwright's selectOption format
+  const values = Array.isArray(step.params.value) ? step.params.value : [step.params.value];
+  const selectOptions = values.map(v => {
+    if (typeof v === 'string') {
+      return { value: v };
+    } else if ('label' in v) {
+      return { label: v.label };
+    } else if ('index' in v) {
+      return { index: v.index };
+    }
+    return v;
+  });
+
+  await target.selectOption(selectOptions);
+}
+
+/**
+ * Executes a press_key step
+ */
+async function executePressKey(
+  ctx: StepContext,
+  step: PressKeyStep
+): Promise<void> {
+  const times = step.params.times ?? 1;
+  const delayMs = step.params.delayMs ?? 0;
+
+  // If target is specified, focus it first
+  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+
+  if (targetOrAnyOf) {
+    const { locator, matchedTarget, matchedCount } = await resolveTargetWithFallback(
+      ctx.currentFrame ?? ctx.page,
+      targetOrAnyOf,
+      step.params.scope
+    );
+
+    if (step.params.hint) {
+      console.log(`[PressKey:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+    }
+
+    await locator.first().focus();
+  }
+
+  // Press the key the specified number of times
+  // Note: keyboard is accessed from the page, not the frame
+  for (let i = 0; i < times; i++) {
+    await ctx.page.keyboard.press(step.params.key);
+    if (delayMs > 0 && i < times - 1) {
+      await sleepMs(delayMs);
+    }
+  }
+}
+
+/**
+ * Executes an upload_file step
+ */
+async function executeUploadFile(
+  ctx: StepContext,
+  step: UploadFileStep
+): Promise<void> {
+  const path = await import('path');
+
+  // Support both legacy selector and new target
+  const targetOrAnyOf = step.params.target ?? (step.params.selector ? selectorToTarget(step.params.selector) : null);
+
+  if (!targetOrAnyOf) {
+    throw new Error('UploadFile step must have either "target" or "selector"');
+  }
+
+  // Resolve target with fallback and scope
+  const { locator, matchedTarget, matchedCount } = await resolveTargetWithFallback(
+    ctx.currentFrame ?? ctx.page,
+    targetOrAnyOf,
+    step.params.scope
+  );
+
+  if (step.params.hint) {
+    console.log(`[UploadFile:${step.id}] Matched target: ${JSON.stringify(matchedTarget)}, count: ${matchedCount}, hint: ${step.params.hint}`);
+  }
+
+  const target = step.params.first ?? true ? locator.first() : locator;
+
+  // Resolve file paths (relative to pack directory if not absolute)
+  const files = Array.isArray(step.params.files) ? step.params.files : [step.params.files];
+  const resolvedFiles = files.map(f => {
+    if (path.isAbsolute(f)) {
+      return f;
+    }
+    return ctx.packDir ? path.join(ctx.packDir, f) : f;
+  });
+
+  await target.setInputFiles(resolvedFiles);
+}
+
+/**
+ * Executes a frame step
+ */
+async function executeFrame(
+  ctx: StepContext,
+  step: FrameStep
+): Promise<void> {
+  if (step.params.action === 'exit') {
+    // Return to main frame
+    ctx.currentFrame = undefined;
+    return;
+  }
+
+  // Enter frame
+  const frameSpec = step.params.frame;
+  let frame: Frame | null = null;
+
+  if (typeof frameSpec === 'string') {
+    // Try as name first, then as CSS selector
+    frame = ctx.page.frame(frameSpec);
+    if (!frame) {
+      // Try as CSS selector - get the frame from the iframe element
+      // We need to use elementHandle to get the actual frame
+      const iframeElement = await ctx.page.locator(frameSpec).first().elementHandle();
+      if (iframeElement) {
+        frame = await iframeElement.contentFrame();
+      }
+    }
+  } else if ('name' in frameSpec) {
+    frame = ctx.page.frame({ name: frameSpec.name });
+  } else if ('url' in frameSpec) {
+    frame = ctx.page.frame({ url: frameSpec.url });
+  }
+
+  if (!frame) {
+    throw new Error(`Frame not found: ${JSON.stringify(frameSpec)}`);
+  }
+
+  ctx.currentFrame = frame;
+}
+
+/**
+ * Executes a new_tab step
+ */
+async function executeNewTab(
+  ctx: StepContext,
+  step: NewTabStep
+): Promise<void> {
+  if (!ctx.browserContext) {
+    throw new Error('new_tab requires a browser context. Make sure the runner provides browserContext in StepContext.');
+  }
+
+  const pages = ctx.browserContext.pages();
+  const currentTabIndex = pages.indexOf(ctx.page);
+
+  // Create new page
+  const newPage = await ctx.browserContext.newPage();
+
+  // Navigate if URL provided
+  if (step.params.url) {
+    await newPage.goto(step.params.url, { waitUntil: 'networkidle' });
+  }
+
+  // Save tab index if requested
+  if (step.params.saveTabIndexAs) {
+    const newPages = ctx.browserContext.pages();
+    ctx.vars[step.params.saveTabIndexAs] = newPages.indexOf(newPage);
+  }
+
+  // Store previous tab index and switch to new tab
+  ctx.previousTabIndex = currentTabIndex;
+  // Note: The runner should update ctx.page to newPage after this step
+  ctx.vars['__newPage'] = newPage;
+}
+
+/**
+ * Executes a switch_tab step
+ */
+async function executeSwitchTab(
+  ctx: StepContext,
+  step: SwitchTabStep
+): Promise<void> {
+  if (!ctx.browserContext) {
+    throw new Error('switch_tab requires a browser context. Make sure the runner provides browserContext in StepContext.');
+  }
+
+  const pages = ctx.browserContext.pages();
+  const currentTabIndex = pages.indexOf(ctx.page);
+  let targetIndex: number;
+
+  if (step.params.tab === 'last') {
+    targetIndex = pages.length - 1;
+  } else if (step.params.tab === 'previous') {
+    if (ctx.previousTabIndex === undefined) {
+      throw new Error('switch_tab: no previous tab to switch to');
+    }
+    targetIndex = ctx.previousTabIndex;
+  } else {
+    targetIndex = step.params.tab;
+  }
+
+  if (targetIndex < 0 || targetIndex >= pages.length) {
+    throw new Error(`switch_tab: tab index ${targetIndex} out of range (0-${pages.length - 1})`);
+  }
+
+  const targetPage = pages[targetIndex];
+
+  // Close current tab if requested
+  if (step.params.closeCurrentTab) {
+    await ctx.page.close();
+  }
+
+  // Store previous tab index and switch
+  ctx.previousTabIndex = currentTabIndex;
+  // Note: The runner should update ctx.page to targetPage after this step
+  ctx.vars['__newPage'] = targetPage;
+  await targetPage.bringToFront();
+}
+
+/**
  * Executes a single DSL step
  */
 export async function executeStep(
@@ -626,6 +932,24 @@ export async function executeStep(
       break;
     case 'network_extract':
       await executeNetworkExtract(ctx, step);
+      break;
+    case 'select_option':
+      await executeSelectOption(ctx, step);
+      break;
+    case 'press_key':
+      await executePressKey(ctx, step);
+      break;
+    case 'upload_file':
+      await executeUploadFile(ctx, step);
+      break;
+    case 'frame':
+      await executeFrame(ctx, step);
+      break;
+    case 'new_tab':
+      await executeNewTab(ctx, step);
+      break;
+    case 'switch_tab':
+      await executeSwitchTab(ctx, step);
       break;
     default:
       // TypeScript exhaustiveness check

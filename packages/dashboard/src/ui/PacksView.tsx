@@ -147,8 +147,8 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
       )}
       <div className="card">
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h2>Available Task Packs</h2>
-          <button onClick={() => setShowNewModal(true)}>New JSON Pack</button>
+          <h2 style={{ margin: 0 }}>Available Task Packs</h2>
+          <button className="btn-primary" onClick={() => setShowNewModal(true)}>New JSON Pack</button>
         </div>
         <div className="pack-list">
           {packsList.length === 0 ? (
@@ -175,6 +175,7 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
                 </div>
                 {pack.kind === 'json-dsl' && (
                   <button
+                    className="btn-secondary"
                     onClick={(e) => {
                       e.stopPropagation();
                       setEditingPackId(pack.id);
@@ -204,7 +205,7 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
               onChange={(e) => setInputsJson((e.target as HTMLTextAreaElement).value)}
               placeholder='{"key": "value"}'
             />
-            <button onClick={() => handleRun(selectedPack.id)} disabled={isRunning}>
+            <button className="btn-primary" onClick={() => handleRun(selectedPack.id)} disabled={isRunning}>
               {isRunning ? 'Running...' : 'Run Task Pack'}
             </button>
           </div>

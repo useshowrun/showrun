@@ -87,6 +87,20 @@ export interface TargetWithMetadata {
 export type TargetOrAnyOf = Target | { anyOf: Target[] };
 
 /**
+ * Skip condition for conditional step execution
+ */
+export type SkipCondition =
+  | { url_includes: string }
+  | { url_matches: string }
+  | { element_visible: TargetOrAnyOf }
+  | { element_exists: TargetOrAnyOf }
+  | { var_equals: { name: string; value: unknown } }
+  | { var_truthy: string }
+  | { var_falsy: string }
+  | { all: SkipCondition[] }
+  | { any: SkipCondition[] };
+
+/**
  * Base step interface with common fields
  */
 export interface BaseDslStep {
@@ -114,6 +128,12 @@ export interface BaseDslStep {
    * - "profile": cached per profileId (cleared on auth recovery)
    */
   once?: 'session' | 'profile';
+  /**
+   * Skip condition: if true, the step is skipped
+   * Evaluated before step execution. If the condition evaluates to true,
+   * the step is skipped with reason 'condition_met'.
+   */
+  skip_if?: SkipCondition;
 }
 
 /**
@@ -431,6 +451,163 @@ export interface NetworkExtractStep extends BaseDslStep {
 }
 
 /**
+ * Select option step - selects an option from a dropdown/select element
+ */
+export interface SelectOptionStep extends BaseDslStep {
+  type: 'select_option';
+  params: {
+    /**
+     * Target for element selection (supports selector for backward compatibility)
+     * @deprecated Use target instead of selector
+     */
+    selector?: string;
+    /**
+     * Target for element selection (human-stable selectors)
+     */
+    target?: TargetOrAnyOf;
+    /**
+     * Value(s) to select. Can be:
+     * - string: select by value attribute
+     * - { label: string }: select by visible text
+     * - { index: number }: select by index (0-based)
+     * - Array of any of the above for multi-select
+     */
+    value: string | { label: string } | { index: number } | Array<string | { label: string } | { index: number }>;
+    /**
+     * If true, only target first match (default: true)
+     */
+    first?: boolean;
+    /**
+     * Optional metadata for Teach Mode
+     */
+    hint?: string;
+    scope?: Target;
+    near?: { kind: 'text'; text: string; exact?: boolean };
+  };
+}
+
+/**
+ * Press key step - presses a keyboard key
+ */
+export interface PressKeyStep extends BaseDslStep {
+  type: 'press_key';
+  params: {
+    /**
+     * Key to press. Examples: 'Enter', 'Tab', 'Escape', 'ArrowDown', 'Control+a', 'Meta+c'
+     * See Playwright keyboard documentation for full list.
+     */
+    key: string;
+    /**
+     * Target element to focus before pressing key (optional)
+     * @deprecated Use target instead of selector
+     */
+    selector?: string;
+    /**
+     * Target element to focus before pressing key (optional)
+     */
+    target?: TargetOrAnyOf;
+    /**
+     * Number of times to press the key (default: 1)
+     */
+    times?: number;
+    /**
+     * Delay between key presses in milliseconds (default: 0)
+     */
+    delayMs?: number;
+    /**
+     * Optional metadata for Teach Mode
+     */
+    hint?: string;
+    scope?: Target;
+    near?: { kind: 'text'; text: string; exact?: boolean };
+  };
+}
+
+/**
+ * Upload file step - uploads file(s) to a file input element
+ */
+export interface UploadFileStep extends BaseDslStep {
+  type: 'upload_file';
+  params: {
+    /**
+     * Target for element selection (supports selector for backward compatibility)
+     * @deprecated Use target instead of selector
+     */
+    selector?: string;
+    /**
+     * Target for element selection (human-stable selectors)
+     */
+    target?: TargetOrAnyOf;
+    /**
+     * File path(s) to upload. Can be a single path or array of paths.
+     * Paths can be absolute or relative to the task pack directory.
+     */
+    files: string | string[];
+    /**
+     * If true, only target first match (default: true)
+     */
+    first?: boolean;
+    /**
+     * Optional metadata for Teach Mode
+     */
+    hint?: string;
+    scope?: Target;
+    near?: { kind: 'text'; text: string; exact?: boolean };
+  };
+}
+
+/**
+ * Frame step - switches context to an iframe for subsequent steps
+ */
+export interface FrameStep extends BaseDslStep {
+  type: 'frame';
+  params: {
+    /**
+     * Frame selector (CSS selector, name, or URL pattern)
+     */
+    frame: string | { name: string } | { url: string | RegExp };
+    /**
+     * Action: 'enter' to switch into frame, 'exit' to return to main frame
+     */
+    action: 'enter' | 'exit';
+  };
+}
+
+/**
+ * New tab step - opens a new browser tab
+ */
+export interface NewTabStep extends BaseDslStep {
+  type: 'new_tab';
+  params: {
+    /**
+     * URL to navigate to in the new tab (optional)
+     */
+    url?: string;
+    /**
+     * Variable name to store the new tab index (optional)
+     */
+    saveTabIndexAs?: string;
+  };
+}
+
+/**
+ * Switch tab step - switches to a different browser tab
+ */
+export interface SwitchTabStep extends BaseDslStep {
+  type: 'switch_tab';
+  params: {
+    /**
+     * Tab index (0-based) or 'last' for the last tab, 'previous' for the previous tab
+     */
+    tab: number | 'last' | 'previous';
+    /**
+     * If true, close the current tab before switching (default: false)
+     */
+    closeCurrentTab?: boolean;
+  };
+}
+
+/**
  * Union type of all supported DSL steps
  */
 export type DslStep =
@@ -446,7 +623,13 @@ export type DslStep =
   | SetVarStep
   | NetworkFindStep
   | NetworkReplayStep
-  | NetworkExtractStep;
+  | NetworkExtractStep
+  | SelectOptionStep
+  | PressKeyStep
+  | UploadFileStep
+  | FrameStep
+  | NewTabStep
+  | SwitchTabStep;
 
 /**
  * Options for running a flow
@@ -464,6 +647,7 @@ export interface RunFlowOptions {
 export interface VariableContext {
   inputs: Record<string, unknown>;
   vars: Record<string, unknown>;
+  secrets?: Record<string, string>;
 }
 
 /**

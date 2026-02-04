@@ -6,6 +6,8 @@ export * from './context.js';
 export * from './runner.js';
 export * from './jsonPackValidator.js';
 export * from './authResilience.js';
+export * from './browserLauncher.js';
+export * from './browserPersistence.js';
 
 // DSL exports
 export * from './dsl/types.js';
@@ -14,3 +16,4 @@ export * from './dsl/interpreter.js';
 export * from './dsl/validation.js';
 export * from './dsl/templating.js';
 export * from './dsl/target.js';
+export * from './dsl/conditions.js';

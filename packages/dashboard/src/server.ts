@@ -17,6 +17,18 @@ import { createMCPServerOverHTTP, type MCPServerHTTPHandle } from '@mcpify/mcp-s
 import { SocketLogger } from './logger.js';
 import { RunManager, type RunInfo } from './runManager.js';
 import {
+  initDatabase,
+  createConversation,
+  getConversation,
+  getAllConversations,
+  updateConversation,
+  deleteConversation,
+  addMessage,
+  getMessagesForConversation,
+  type Conversation,
+  type Message,
+} from './db.js';
+import {
   sanitizePackId,
   ensureDir,
   writeTaskPackManifest,
@@ -72,13 +84,18 @@ export interface DashboardOptions {
   headful: boolean;
   baseRunDir: string;
   workspaceDir?: string; // Writable directory for JSON pack creation/editing
+  dataDir?: string; // Database directory (default: ./data)
 }
 
 /**
  * Starts the dashboard server
  */
 export async function startDashboard(options: DashboardOptions): Promise<void> {
-  const { packs: packDirs, port, host = '127.0.0.1', headful, baseRunDir, workspaceDir } = options;
+  const { packs: packDirs, port, host = '127.0.0.1', headful, baseRunDir, workspaceDir, dataDir = './data' } = options;
+
+  // Initialize database
+  console.log(`[Dashboard] Initializing database...`);
+  initDatabase(dataDir);
 
   // Generate session token for security
   const sessionToken = randomBytes(32).toString('hex');
@@ -212,7 +229,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { packId, inputs } = req.body;
+    const { packId, inputs, conversationId, source } = req.body;
 
     if (!packId || typeof packId !== 'string') {
       return res.status(400).json({ error: 'packId is required' });
@@ -228,17 +245,14 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
       return res.status(404).json({ error: `Task pack not found: ${packId}` });
     }
 
-    // Create run
-    const runId = randomBytes(16).toString('hex');
-    const runInfo: RunInfo = {
-      runId,
+    // Create run using database-backed manager
+    const runInfo = runManager.addRunAndGet(
       packId,
-      packName: packInfo.pack.metadata.name,
-      status: 'queued',
-      createdAt: Date.now(),
-    };
-
-    runManager.addRun(runInfo);
+      packInfo.pack.metadata.name,
+      source || 'dashboard',
+      conversationId
+    );
+    const runId = runInfo.runId;
 
     // Emit run list update
     io.emit('runs:list', runManager.getAllRuns());
@@ -302,9 +316,13 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     res.json({ runId });
   });
 
-  // REST API: List runs
-  app.get('/api/runs', (_req: Request, res: Response) => {
-    res.json(runManager.getAllRuns());
+  // REST API: List runs (with optional filters)
+  app.get('/api/runs', (req: Request, res: Response) => {
+    const source = req.query.source as 'dashboard' | 'mcp' | 'cli' | 'agent' | undefined;
+    const conversationId = req.query.conversationId as string | undefined;
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : undefined;
+
+    res.json(runManager.getAllRuns({ source, conversationId, limit }));
   });
 
   // REST API: Get run details
@@ -315,6 +333,156 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
       return res.status(404).json({ error: 'Run not found' });
     }
     res.json(run);
+  });
+
+  // ============================================================================
+  // REST API: Conversations
+  // ============================================================================
+
+  // List all conversations
+  app.get('/api/conversations', (_req: Request, res: Response) => {
+    const conversations = getAllConversations();
+    res.json(conversations);
+  });
+
+  // Create new conversation
+  app.post('/api/conversations', (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { title, description } = req.body;
+    const conversationTitle = title || 'New Conversation';
+
+    try {
+      const conversation = createConversation(conversationTitle, description || null);
+      io.emit('conversations:updated', getAllConversations());
+      res.json(conversation);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // Get conversation with messages
+  app.get('/api/conversations/:id', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const conversation = getConversation(id);
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    const messages = getMessagesForConversation(id);
+    res.json({
+      ...conversation,
+      messages,
+    });
+  });
+
+  // Update conversation
+  app.put('/api/conversations/:id', (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id } = req.params;
+    const { title, description, status, packId } = req.body;
+
+    try {
+      const updated = updateConversation(id, {
+        ...(title !== undefined && { title }),
+        ...(description !== undefined && { description }),
+        ...(status !== undefined && { status }),
+        ...(packId !== undefined && { packId }),
+      });
+
+      if (!updated) {
+        return res.status(404).json({ error: 'Conversation not found' });
+      }
+
+      io.emit('conversations:updated', getAllConversations());
+      res.json(updated);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // Delete conversation
+  app.delete('/api/conversations/:id', (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id } = req.params;
+
+    try {
+      const deleted = deleteConversation(id);
+      if (!deleted) {
+        return res.status(404).json({ error: 'Conversation not found' });
+      }
+
+      io.emit('conversations:updated', getAllConversations());
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // Get messages for conversation
+  app.get('/api/conversations/:id/messages', (req: Request, res: Response) => {
+    const { id } = req.params;
+    const conversation = getConversation(id);
+
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    const messages = getMessagesForConversation(id);
+    res.json(messages);
+  });
+
+  // Add message to conversation
+  app.post('/api/conversations/:id/messages', (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { id } = req.params;
+    const { role, content, toolCalls, thinkingContent } = req.body;
+
+    if (!role) {
+      return res.status(400).json({ error: 'role is required' });
+    }
+
+    // Allow empty content if there are tool calls (AI might only use tools without text response)
+    const hasToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0;
+    if (!content && !hasToolCalls) {
+      return res.status(400).json({ error: 'content is required (unless toolCalls are provided)' });
+    }
+
+    if (!['user', 'assistant', 'system'].includes(role)) {
+      return res.status(400).json({ error: 'role must be user, assistant, or system' });
+    }
+
+    const conversation = getConversation(id);
+    if (!conversation) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    try {
+      const message = addMessage(id, role, content, toolCalls, thinkingContent);
+      res.json(message);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
   });
 
   // REST API: MCP server over HTTP/SSE
@@ -906,10 +1074,9 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
       }
     }
     if (!TEACH_CHAT_SYSTEM_PROMPT) {
-      TEACH_CHAT_SYSTEM_PROMPT = `You are an assistant helping the user write browser automation flows for MCPify Task Packs.
-The user is in Teach Mode: they can pick elements, propose steps, and edit flow.json (JSON-DSL).
-Help them describe steps, suggest DSL: navigate, click, fill, extract_text, extract_attribute, wait_for, set_var, assert; and network_find, network_replay, network_extract for API-first flows (find captured request, replay with overrides, extract from response). Use human-stable targets (role/text/label first, css as fallback), and structure collectibles.
-Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
+      console.error('[Dashboard] ERROR: No system prompt found. Create AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md in the project root.');
+      console.error('[Dashboard] The agent will not work correctly without a system prompt.');
+      TEACH_CHAT_SYSTEM_PROMPT = 'System prompt not configured. Please create AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md in the project root.';
     }
   }
 
@@ -964,7 +1131,12 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
   const TEACH_AGENT_ACTION_FIRST =
     `\n\nTEACH MODE AGENT RULES (MANDATORY):
 - You MUST use tools. Editor MCP and Browser MCP are ALWAYS available. Tool calls are expected, not optional.
-- If packId is provided: FIRST call editor.read_pack(packId) before proposing any flow changes.
+- PACK CREATION WORKFLOW: When starting a NEW automation (no packId provided), you MUST:
+  1. First call editor_create_pack with a unique id (e.g., "mycompany.sitename.collector"), name, and description
+  2. Then call conversation_link_pack with the new packId to associate it with this conversation
+  3. Then use editor_apply_flow_patch to add steps to the flow
+  4. Use editor_run_pack to test the flow
+- If packId IS provided: FIRST call editor_read_pack(packId) before proposing any flow changes.
 - If the user asks to create a flow, add a step, or extract data: propose a DSL step and apply it via editor_apply_flow_patch. One step per patch; multiple steps = multiple patches in sequence. Supported step types include navigate, click, fill, extract_text, extract_attribute, wait_for, set_var, and network_find, network_replay, network_extract (for API-first flows: find a captured request, replay it with overrides, optionally extract from the response). Steps can include an optional "once" field ("session" or "profile") to mark them as run-once steps that are skipped on subsequent runs when auth is still valid (useful for login/setup steps).
 - When the user asks to execute/run the flow in the browser or to run the steps in the open browser: use browser_* tools (browser_goto, browser_click, browser_type, etc.) to perform the steps. Do NOT use editor_run_pack for this—editor_run_pack runs the pack in a separate run, not in the current browser session.
 - When the user asks you to CLICK a link or button (e.g. "click the Sign in link"): use browser_click with linkText and role "link" or "button". For batch names, filter options, tabs, or list items (e.g. "Winter 2026", "Spring 2026") that are not <a> or <button>, use browser_click with linkText and role "text".
@@ -981,7 +1153,8 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
 - Never refuse to use network tools or suggest manual extraction instead; use browser_network_* when the user cares about a request, and use browser_click/browser_type/extract steps for page interaction.
 - When the user wants to add "capture this request" or "replay this API" to the flow: propose network_find (where, pick, saveAs) then network_replay (requestId from vars, overrides, auth: browser_context, out, response.as). Use network_extract when extracting from a replayed response stored in vars.
 - Templating: step params use Nunjucks. Use {{inputs.x}} and {{vars.x}}; for values that go in URLs (e.g. urlReplace.replace, setQuery, fill) use the urlencode filter: {{ inputs.x | urlencode }}.
-- If a tool call returns an error: do NOT retry the same call. Reply to the user with the error message and suggest a different action or ask them to fix the issue. One retry at most; then stop and respond.`;
+- If a tool call returns an error: do NOT retry the same call. Reply to the user with the error message and suggest a different action or ask them to fix the issue. One retry at most; then stop and respond.
+- CONVERSATION MANAGEMENT: Use conversation_update_title to set a concise title (e.g., "Gmail Email Scraper") after the first user message. Use conversation_update_description to update progress (e.g., "Creating login flow"). Use conversation_set_status("ready") when the flow is complete and working. Use conversation_link_pack to associate a packId with this conversation.`;
 
   // REST API: Teach Mode agent (MCPs ALWAYS ON – action-first)
   // MAX_NON_EDITOR_ITERATIONS: limits consecutive browser-only rounds (set to 0 to disable)
@@ -996,10 +1169,11 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
       return res.status(503).json({ error: 'LLM provider with tool support not configured' });
     }
 
-    const { messages, packId, browserSessionId, stream: streamFlowUpdates } = req.body as {
+    const { messages, packId, browserSessionId, conversationId, stream: streamFlowUpdates } = req.body as {
       messages: Array<{ role: 'user' | 'assistant' | 'tool'; content: string; name?: string }>;
       packId?: string | null;
       browserSessionId?: string | null;
+      conversationId?: string | null;
       /** If true, stream flow_updated after each editor_apply_flow_patch so the UI can update in real time */
       stream?: boolean;
     };
@@ -1036,7 +1210,8 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
       | undefined = undefined;
 
     let nonEditorRounds = 0;
-    const streamFlow = !!streamFlowUpdates && !!packId;
+    // Enable streaming whenever client requests it (stream: true)
+    const streamFlow = !!streamFlowUpdates;
     if (streamFlow) {
       res.setHeader('Content-Type', 'application/x-ndjson');
       res.setHeader('Transfer-Encoding', 'chunked');
@@ -1156,6 +1331,7 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
             browserSessionId: lastBrowserSessionId,
             packId: packId ?? null,
             sessionKey,
+            conversationId: conversationId ?? null,
           };
           for (const tc of result.toolCalls) {
             let toolArgs: Record<string, unknown> = {};
@@ -1178,6 +1354,11 @@ Be concise. When suggesting flow JSON, output valid JSON the user can apply.`;
             }
             const success = !(resultParsed && typeof resultParsed === 'object' && 'error' in resultParsed);
             toolTrace.push({ tool: tc.name, args: toolArgs, result: resultParsed, success });
+
+            // Emit conversation updates when conversation_* tools are called
+            if (tc.name.startsWith('conversation_') && success && conversationId) {
+              io.emit('conversations:updated', getAllConversations());
+            }
 
             // Emit tool_result event after executing the tool
             writeStreamLine({ type: 'tool_result', tool: tc.name, args: toolArgs, result: resultParsed, success });

@@ -55,6 +55,93 @@ function entryToSummary(entry: NetworkEntry): Omit<NetworkEntry, 'responseBodySn
   return { ...rest, responseBodyAvailable: !!responseBodySnippet };
 }
 
+/** Suggested pattern for network_find */
+interface SuggestedPattern {
+  where: {
+    urlIncludes?: string;
+    urlRegex?: string;
+    method?: string;
+  };
+  description: string;
+}
+
+/**
+ * Generate suggested URL patterns for matching a network request.
+ * Returns multiple patterns from most specific to most general.
+ */
+function generateSuggestedPatterns(entry: NetworkEntry): SuggestedPattern[] {
+  const patterns: SuggestedPattern[] = [];
+  const url = entry.url;
+  const method = entry.method;
+
+  try {
+    const parsed = new URL(url);
+    const pathname = parsed.pathname;
+    const pathWithoutLeadingSlash = pathname.startsWith('/') ? pathname.slice(1) : pathname;
+
+    // Pattern 1: Full path (most specific)
+    if (pathname && pathname !== '/') {
+      patterns.push({
+        where: { urlIncludes: pathname, method },
+        description: `Exact path match: "${pathname}"`,
+      });
+    }
+
+    // Pattern 2: Path without leading slash (handles double-slash edge cases)
+    if (pathWithoutLeadingSlash && pathWithoutLeadingSlash !== pathname) {
+      patterns.push({
+        where: { urlIncludes: pathWithoutLeadingSlash, method },
+        description: `Path without leading slash: "${pathWithoutLeadingSlash}"`,
+      });
+    }
+
+    // Pattern 3: Last path segment(s) - useful for API endpoints
+    const segments = pathname.split('/').filter(Boolean);
+    if (segments.length >= 2) {
+      const lastTwo = segments.slice(-2).join('/');
+      patterns.push({
+        where: { urlIncludes: lastTwo, method },
+        description: `Last path segments: "${lastTwo}"`,
+      });
+    }
+    if (segments.length >= 1) {
+      const lastOne = segments[segments.length - 1];
+      if (lastOne && !patterns.some(p => p.where.urlIncludes === lastOne)) {
+        patterns.push({
+          where: { urlIncludes: lastOne, method },
+          description: `Last path segment: "${lastOne}"`,
+        });
+      }
+    }
+
+    // Pattern 4: Host + path (for cross-origin APIs)
+    if (parsed.host) {
+      patterns.push({
+        where: { urlIncludes: `${parsed.host}${pathname}`, method },
+        description: `Host + path: "${parsed.host}${pathname}"`,
+      });
+    }
+
+    // Add notes about unusual URL features
+    if (url.includes('//') && url.indexOf('//') !== url.indexOf('://') + 1) {
+      // Has double slash not at protocol
+      const doubleSlashPattern = patterns[0];
+      if (doubleSlashPattern) {
+        doubleSlashPattern.description += ' (note: URL contains double slash)';
+      }
+    }
+
+  } catch {
+    // URL parsing failed, use simple string matching
+    patterns.push({
+      where: { urlIncludes: url, method },
+      description: 'Full URL (parsing failed)',
+    });
+  }
+
+  return patterns;
+}
+
 /** Full request data for replay only; never expose via API */
 interface ReplayData {
   requestHeadersFull: Record<string, string>;
@@ -748,7 +835,12 @@ export async function createBrowserInspectorServer(
       if (!entry) {
         throw new Error(`Request not found: ${requestId}`);
       }
-      const result = { entry: entryToSummary(entry), replayPossible: true };
+      const suggestedPatterns = generateSuggestedPatterns(entry);
+      const result = {
+        entry: entryToSummary(entry),
+        replayPossible: true,
+        suggestedPatterns,
+      };
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
         structuredContent: result as unknown as Record<string, unknown>,

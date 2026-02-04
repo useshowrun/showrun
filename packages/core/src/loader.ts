@@ -1,8 +1,16 @@
 import { readFileSync, existsSync } from 'fs';
 import { join, resolve } from 'path';
 import { pathToFileURL } from 'url';
-import type { TaskPack, TaskPackManifest, InputSchema, CollectibleDefinition } from './types.js';
+import type { TaskPack, TaskPackManifest, InputSchema, CollectibleDefinition, SecretDefinition, BrowserSettings } from './types.js';
 import type { DslStep } from './dsl/types.js';
+
+/**
+ * Structure of the .secrets.json file
+ */
+export interface SecretsFile {
+  version: 1;
+  secrets: Record<string, string>;
+}
 
 /**
  * Loads a Task Pack from a directory path
@@ -90,6 +98,8 @@ export class TaskPackLoader {
         inputs: flowData.inputs || manifest.inputs || {},
         collectibles: flowData.collectibles || manifest.collectibles || [],
         flow: flowData.flow,
+        auth: manifest.auth,
+        browser: manifest.browser,
       };
     }
 
@@ -105,6 +115,8 @@ export class TaskPackLoader {
         inputs: manifest.inputs || {},
         collectibles: manifest.collectibles || [],
         flow: manifest.flow,
+        auth: manifest.auth,
+        browser: manifest.browser,
       };
     }
 
@@ -151,6 +163,46 @@ export class TaskPackLoader {
         throw new Error(`Failed to load task pack module: ${mainPath}. Make sure the pack is built.`);
       }
       throw error;
+    }
+  }
+
+  /**
+   * Load secrets from .secrets.json file in pack directory
+   * Returns empty object if file doesn't exist
+   */
+  static loadSecrets(packPath: string): Record<string, string> {
+    const secretsPath = join(packPath, '.secrets.json');
+
+    if (!existsSync(secretsPath)) {
+      return {};
+    }
+
+    try {
+      const content = readFileSync(secretsPath, 'utf-8');
+      const secretsFile = JSON.parse(content) as SecretsFile;
+
+      // Validate version
+      if (secretsFile.version !== 1) {
+        console.warn(`[TaskPackLoader] Unsupported secrets file version: ${secretsFile.version}, expected 1`);
+        return {};
+      }
+
+      return secretsFile.secrets || {};
+    } catch (error) {
+      console.warn(`[TaskPackLoader] Failed to load secrets from ${secretsPath}: ${error instanceof Error ? error.message : String(error)}`);
+      return {};
+    }
+  }
+
+  /**
+   * Get secret definitions from manifest
+   */
+  static getSecretDefinitions(packPath: string): SecretDefinition[] {
+    try {
+      const manifest = this.loadManifest(packPath);
+      return manifest.secrets || [];
+    } catch {
+      return [];
     }
   }
 }

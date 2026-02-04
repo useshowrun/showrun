@@ -1,8 +1,11 @@
 import React, { useState, useEffect } from 'react';
 import { io, type Socket } from 'socket.io-client';
-import PacksView from './PacksView.js';
+import Sidebar, { type Conversation } from './Sidebar.js';
+import ChatView, { type Message } from './ChatView.js';
+import BottomNav, { type NavView } from './BottomNav.js';
 import RunsView from './RunsView.js';
 import MCPServerView from './MCPServerView.js';
+import PacksView from './PacksView.js';
 
 interface Pack {
   id: string;
@@ -12,6 +15,7 @@ interface Pack {
   inputs: Record<string, any>;
   collectibles: Array<{ name: string; type: string; description?: string }>;
   path: string;
+  kind?: string;
 }
 
 interface Run {
@@ -33,6 +37,8 @@ interface Run {
     notes?: string;
   };
   error?: string;
+  conversationId?: string;
+  source?: 'dashboard' | 'mcp' | 'cli' | 'agent';
 }
 
 interface Config {
@@ -40,15 +46,23 @@ interface Config {
   packsCount: number;
 }
 
+interface ConversationWithMessages extends Conversation {
+  messages?: Message[];
+}
+
 function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
   const [packs, setPacks] = useState<Pack[]>([]);
   const [runs, setRuns] = useState<Run[]>([]);
-  const [activeTab, setActiveTab] = useState<'packs' | 'runs' | 'mcp'>('packs');
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
+  const [selectedConversation, setSelectedConversation] = useState<ConversationWithMessages | null>(null);
+  const [activeView, setActiveView] = useState<NavView>('chat');
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // Fetch config and initialize socket
+  // Fetch config and initialize
   useEffect(() => {
     async function init() {
       try {
@@ -56,7 +70,7 @@ function App() {
         if (!configRes.ok) {
           throw new Error('Failed to fetch config');
         }
-        const configData = await configRes.json() as Config;
+        const configData = (await configRes.json()) as Config;
         setConfig(configData);
 
         // Initialize socket with token
@@ -78,8 +92,11 @@ function App() {
           setRuns(runsList);
         });
 
+        newSocket.on('conversations:updated', (convList: Conversation[]) => {
+          setConversations(convList);
+        });
+
         newSocket.on('packs:updated', () => {
-          // Reload packs when updated
           fetch('/api/packs')
             .then((res) => res.json())
             .then((data) => setPacks(data as Pack[]))
@@ -88,23 +105,31 @@ function App() {
 
         setSocket(newSocket);
 
-        // Fetch packs
-        const packsRes = await fetch('/api/packs');
-        if (!packsRes.ok) {
-          throw new Error('Failed to fetch packs');
-        }
-        const packsData: Pack[] = await packsRes.json();
-        setPacks(packsData);
+        // Fetch initial data in parallel
+        const [packsRes, runsRes, convsRes] = await Promise.all([
+          fetch('/api/packs'),
+          fetch('/api/runs'),
+          fetch('/api/conversations'),
+        ]);
 
-        // Fetch runs
-        const runsRes = await fetch('/api/runs');
-        if (!runsRes.ok) {
-          throw new Error('Failed to fetch runs');
+        if (packsRes.ok) {
+          const packsData: Pack[] = await packsRes.json();
+          setPacks(packsData);
         }
-        const runsData = await runsRes.json() as Run[];
-        setRuns(runsData);
+
+        if (runsRes.ok) {
+          const runsData = (await runsRes.json()) as Run[];
+          setRuns(runsData);
+        }
+
+        if (convsRes.ok) {
+          const convsData = (await convsRes.json()) as Conversation[];
+          setConversations(convsData);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setLoading(false);
       }
     }
 
@@ -117,63 +142,204 @@ function App() {
     };
   }, []);
 
+  // Load full conversation when selection changes
+  useEffect(() => {
+    if (!selectedConversationId || !config) {
+      setSelectedConversation(null);
+      return;
+    }
+
+    async function loadConversation() {
+      try {
+        const res = await fetch(`/api/conversations/${selectedConversationId}`);
+        if (res.ok) {
+          const data = await res.json();
+          setSelectedConversation(data);
+        }
+      } catch (err) {
+        console.error('Failed to load conversation:', err);
+      }
+    }
+
+    loadConversation();
+  }, [selectedConversationId, config]);
+
+  const handleNewChat = async () => {
+    if (!config) return;
+
+    try {
+      const res = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-mcpify-token': config.token,
+        },
+        body: JSON.stringify({
+          title: 'New Conversation',
+        }),
+      });
+
+      if (res.ok) {
+        const newConv = (await res.json()) as Conversation;
+        setConversations((prev) => [newConv, ...prev]);
+        setSelectedConversationId(newConv.id);
+        setActiveView('chat');
+      }
+    } catch (err) {
+      console.error('Failed to create conversation:', err);
+    }
+  };
+
+  const handleEditTitle = async (id: string, title: string) => {
+    if (!config) return;
+
+    try {
+      const res = await fetch(`/api/conversations/${id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-mcpify-token': config.token,
+        },
+        body: JSON.stringify({ title }),
+      });
+
+      if (res.ok) {
+        const updated = (await res.json()) as Conversation;
+        setConversations((prev) =>
+          prev.map((c) => (c.id === id ? updated : c))
+        );
+        if (selectedConversation?.id === id) {
+          setSelectedConversation((prev) => (prev ? { ...prev, title } : null));
+        }
+      }
+    } catch (err) {
+      console.error('Failed to update title:', err);
+    }
+  };
+
+  const handleConversationUpdate = (updates: Partial<Conversation>) => {
+    if (!selectedConversation) return;
+    setSelectedConversation((prev) => (prev ? { ...prev, ...updates } : null));
+    setConversations((prev) =>
+      prev.map((c) => (c.id === selectedConversation.id ? { ...c, ...updates } : c))
+    );
+  };
+
   if (error) {
     return (
-      <div className="container">
-        <div className="error">{error}</div>
+      <div className="app-container" style={{ justifyContent: 'center', alignItems: 'center' }}>
+        <div className="error" style={{ maxWidth: '400px', textAlign: 'center' }}>
+          <h2 style={{ marginBottom: '8px' }}>Connection Error</h2>
+          <p>{error}</p>
+        </div>
       </div>
     );
   }
 
-  if (!config || !socket) {
+  if (loading || !config || !socket) {
     return (
-      <div className="container">
-        <div className="loading">Loading...</div>
+      <div className="app-container" style={{ justifyContent: 'center', alignItems: 'center' }}>
+        <div className="loading">
+          <span className="spinner" style={{ width: '24px', height: '24px', marginBottom: '16px' }} />
+          <div>Loading...</div>
+        </div>
       </div>
     );
   }
+
+  // Render based on active view
+  const renderMainContent = () => {
+    switch (activeView) {
+      case 'chat':
+        return (
+          <ChatView
+            conversation={selectedConversation}
+            token={config.token}
+            onConversationUpdate={handleConversationUpdate}
+          />
+        );
+      case 'runs':
+        return (
+          <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
+            <RunsView runs={runs} socket={socket} />
+          </div>
+        );
+      case 'mcp':
+        return (
+          <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
+            <MCPServerView
+              packs={packs}
+              token={config.token}
+              conversations={conversations.filter(c => c.status === 'ready')}
+            />
+          </div>
+        );
+      case 'packs':
+        return (
+          <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
+            <PacksView
+              packs={packs}
+              socket={socket}
+              token={config.token}
+              onRun={() => setActiveView('runs')}
+            />
+          </div>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
-    <div className="container">
-      <div className="header">
-        <h1>MCPify Dashboard</h1>
-        <p>Run and observe Task Packs in real time</p>
-      </div>
-
-      <div className="tabs">
-        <button
-          className={`tab ${activeTab === 'packs' ? 'active' : ''}`}
-          onClick={() => setActiveTab('packs')}
-        >
-          Task Packs ({packs.length})
-        </button>
-        <button
-          className={`tab ${activeTab === 'runs' ? 'active' : ''}`}
-          onClick={() => setActiveTab('runs')}
-        >
-          Runs ({runs.length})
-        </button>
-        <button
-          className={`tab ${activeTab === 'mcp' ? 'active' : ''}`}
-          onClick={() => setActiveTab('mcp')}
-        >
-          MCP Server
-        </button>
-      </div>
-
-      {activeTab === 'packs' && (
-        <PacksView
-          packs={packs}
-          socket={socket}
-          token={config.token}
-          onRun={(packId) => {
-            setActiveTab('runs');
-            // The run will appear in the runs list automatically
-          }}
+    <div className="app-container">
+      {/* Sidebar - only show in chat view */}
+      {activeView === 'chat' && (
+        <Sidebar
+          conversations={conversations}
+          selectedId={selectedConversationId}
+          onSelect={(id) => setSelectedConversationId(id)}
+          onNewChat={handleNewChat}
+          onEditTitle={handleEditTitle}
         />
       )}
-      {activeTab === 'runs' && <RunsView runs={runs} socket={socket} />}
-      {activeTab === 'mcp' && <MCPServerView packs={packs} token={config.token} />}
+
+      {/* Main content area */}
+      <div className="main-content">
+        {/* Header */}
+        <div className="header">
+          {activeView !== 'chat' && (
+            <button
+              className="header-back"
+              onClick={() => setActiveView('chat')}
+              title="Back to Chat"
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <polyline points="15 18 9 12 15 6" />
+              </svg>
+            </button>
+          )}
+          <div className="header-logo">FlowForge</div>
+        </div>
+
+        {/* Main content */}
+        {renderMainContent()}
+
+        {/* Bottom navigation */}
+        <BottomNav
+          activeView={activeView}
+          onViewChange={setActiveView}
+          runsCount={runs.filter((r) => r.status === 'running').length}
+        />
+      </div>
     </div>
   );
 }

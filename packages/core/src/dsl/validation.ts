@@ -1,4 +1,4 @@
-import type { DslStep, Target, TargetOrAnyOf } from './types.js';
+import type { DslStep, Target, TargetOrAnyOf, SkipCondition } from './types.js';
 
 /**
  * Validation errors
@@ -121,6 +121,100 @@ function validateTargetOrAnyOf(targetOrAnyOf: unknown): void {
 }
 
 /**
+ * Validates a SkipCondition
+ */
+function validateSkipCondition(condition: unknown): void {
+  if (!condition || typeof condition !== 'object') {
+    throw new ValidationError('skip_if condition must be an object');
+  }
+
+  const c = condition as Record<string, unknown>;
+  const keys = Object.keys(c);
+
+  if (keys.length !== 1) {
+    throw new ValidationError('skip_if condition must have exactly one key');
+  }
+
+  const key = keys[0];
+
+  switch (key) {
+    case 'url_includes':
+      if (typeof c.url_includes !== 'string' || !c.url_includes) {
+        throw new ValidationError('skip_if "url_includes" must be a non-empty string');
+      }
+      break;
+
+    case 'url_matches':
+      if (typeof c.url_matches !== 'string' || !c.url_matches) {
+        throw new ValidationError('skip_if "url_matches" must be a non-empty string');
+      }
+      // Validate it's a valid regex
+      try {
+        new RegExp(c.url_matches);
+      } catch {
+        throw new ValidationError('skip_if "url_matches" must be a valid regex');
+      }
+      break;
+
+    case 'element_visible':
+      validateTargetOrAnyOf(c.element_visible);
+      break;
+
+    case 'element_exists':
+      validateTargetOrAnyOf(c.element_exists);
+      break;
+
+    case 'var_equals':
+      if (!c.var_equals || typeof c.var_equals !== 'object') {
+        throw new ValidationError('skip_if "var_equals" must be an object');
+      }
+      const varEquals = c.var_equals as Record<string, unknown>;
+      if (typeof varEquals.name !== 'string' || !varEquals.name) {
+        throw new ValidationError('skip_if "var_equals.name" must be a non-empty string');
+      }
+      if (varEquals.value === undefined) {
+        throw new ValidationError('skip_if "var_equals.value" is required');
+      }
+      break;
+
+    case 'var_truthy':
+      if (typeof c.var_truthy !== 'string' || !c.var_truthy) {
+        throw new ValidationError('skip_if "var_truthy" must be a non-empty string');
+      }
+      break;
+
+    case 'var_falsy':
+      if (typeof c.var_falsy !== 'string' || !c.var_falsy) {
+        throw new ValidationError('skip_if "var_falsy" must be a non-empty string');
+      }
+      break;
+
+    case 'all':
+      if (!Array.isArray(c.all) || c.all.length === 0) {
+        throw new ValidationError('skip_if "all" must be a non-empty array');
+      }
+      for (const subCondition of c.all) {
+        validateSkipCondition(subCondition);
+      }
+      break;
+
+    case 'any':
+      if (!Array.isArray(c.any) || c.any.length === 0) {
+        throw new ValidationError('skip_if "any" must be a non-empty array');
+      }
+      for (const subCondition of c.any) {
+        validateSkipCondition(subCondition);
+      }
+      break;
+
+    default:
+      throw new ValidationError(
+        `Unknown skip_if condition type: ${key}. Valid types: url_includes, url_matches, element_visible, element_exists, var_equals, var_truthy, var_falsy, all, any`
+      );
+  }
+}
+
+/**
  * Validates a single step
  */
 function validateStep(step: unknown): step is DslStep {
@@ -153,6 +247,14 @@ function validateStep(step: unknown): step is DslStep {
     if (s.onError !== 'stop' && s.onError !== 'continue') {
       throw new ValidationError('Step "onError" must be "stop" or "continue"');
     }
+  }
+  if (s.once !== undefined) {
+    if (s.once !== 'session' && s.once !== 'profile') {
+      throw new ValidationError('Step "once" must be "session" or "profile"');
+    }
+  }
+  if (s.skip_if !== undefined) {
+    validateSkipCondition(s.skip_if);
   }
 
   if (!s.params || typeof s.params !== 'object') {
@@ -619,9 +721,150 @@ function validateStep(step: unknown): step is DslStep {
       }
       break;
 
+    case 'select_option':
+      // Must have either selector (legacy) or target (new)
+      if (!params.selector && !params.target) {
+        throw new ValidationError('SelectOption step must have either "selector" or "target" in params');
+      }
+      if (params.selector !== undefined && typeof params.selector !== 'string') {
+        throw new ValidationError('SelectOption step "selector" must be a string');
+      }
+      if (params.target !== undefined) {
+        validateTargetOrAnyOf(params.target);
+      }
+      if (params.value === undefined || params.value === null) {
+        throw new ValidationError('SelectOption step must have a "value" in params');
+      }
+      // Validate value format
+      const validateSelectValue = (v: unknown): void => {
+        if (typeof v === 'string') return;
+        if (typeof v === 'object' && v !== null) {
+          if ('label' in v && typeof (v as { label: unknown }).label === 'string') return;
+          if ('index' in v && typeof (v as { index: unknown }).index === 'number') return;
+        }
+        throw new ValidationError('SelectOption step "value" must be string, { label: string }, or { index: number }');
+      };
+      if (Array.isArray(params.value)) {
+        for (const v of params.value) {
+          validateSelectValue(v);
+        }
+      } else {
+        validateSelectValue(params.value);
+      }
+      if (params.first !== undefined && typeof params.first !== 'boolean') {
+        throw new ValidationError('SelectOption step "first" must be a boolean');
+      }
+      if (params.hint !== undefined && typeof params.hint !== 'string') {
+        throw new ValidationError('SelectOption step "hint" must be a string');
+      }
+      if (params.scope !== undefined) {
+        validateTarget(params.scope);
+      }
+      break;
+
+    case 'press_key':
+      if (typeof params.key !== 'string' || !params.key) {
+        throw new ValidationError('PressKey step must have a non-empty string "key" in params');
+      }
+      if (params.selector !== undefined && typeof params.selector !== 'string') {
+        throw new ValidationError('PressKey step "selector" must be a string');
+      }
+      if (params.target !== undefined) {
+        validateTargetOrAnyOf(params.target);
+      }
+      if (params.times !== undefined && (typeof params.times !== 'number' || params.times < 1)) {
+        throw new ValidationError('PressKey step "times" must be a positive number');
+      }
+      if (params.delayMs !== undefined && (typeof params.delayMs !== 'number' || params.delayMs < 0)) {
+        throw new ValidationError('PressKey step "delayMs" must be a non-negative number');
+      }
+      if (params.hint !== undefined && typeof params.hint !== 'string') {
+        throw new ValidationError('PressKey step "hint" must be a string');
+      }
+      if (params.scope !== undefined) {
+        validateTarget(params.scope);
+      }
+      break;
+
+    case 'upload_file':
+      // Must have either selector (legacy) or target (new)
+      if (!params.selector && !params.target) {
+        throw new ValidationError('UploadFile step must have either "selector" or "target" in params');
+      }
+      if (params.selector !== undefined && typeof params.selector !== 'string') {
+        throw new ValidationError('UploadFile step "selector" must be a string');
+      }
+      if (params.target !== undefined) {
+        validateTargetOrAnyOf(params.target);
+      }
+      if (params.files === undefined || params.files === null) {
+        throw new ValidationError('UploadFile step must have "files" in params');
+      }
+      if (typeof params.files !== 'string' && !Array.isArray(params.files)) {
+        throw new ValidationError('UploadFile step "files" must be a string or array of strings');
+      }
+      if (Array.isArray(params.files)) {
+        for (const f of params.files) {
+          if (typeof f !== 'string') {
+            throw new ValidationError('UploadFile step "files" array must contain only strings');
+          }
+        }
+      }
+      if (params.first !== undefined && typeof params.first !== 'boolean') {
+        throw new ValidationError('UploadFile step "first" must be a boolean');
+      }
+      if (params.hint !== undefined && typeof params.hint !== 'string') {
+        throw new ValidationError('UploadFile step "hint" must be a string');
+      }
+      if (params.scope !== undefined) {
+        validateTarget(params.scope);
+      }
+      break;
+
+    case 'frame':
+      if (params.frame === undefined || params.frame === null) {
+        throw new ValidationError('Frame step must have "frame" in params');
+      }
+      if (typeof params.frame !== 'string' && typeof params.frame !== 'object') {
+        throw new ValidationError('Frame step "frame" must be a string, { name: string }, or { url: string }');
+      }
+      if (typeof params.frame === 'object') {
+        if (!('name' in params.frame) && !('url' in params.frame)) {
+          throw new ValidationError('Frame step "frame" object must have "name" or "url"');
+        }
+      }
+      if (params.action !== 'enter' && params.action !== 'exit') {
+        throw new ValidationError('Frame step "action" must be "enter" or "exit"');
+      }
+      break;
+
+    case 'new_tab':
+      if (params.url !== undefined && typeof params.url !== 'string') {
+        throw new ValidationError('NewTab step "url" must be a string');
+      }
+      if (params.saveTabIndexAs !== undefined && typeof params.saveTabIndexAs !== 'string') {
+        throw new ValidationError('NewTab step "saveTabIndexAs" must be a string');
+      }
+      break;
+
+    case 'switch_tab':
+      if (params.tab === undefined || params.tab === null) {
+        throw new ValidationError('SwitchTab step must have "tab" in params');
+      }
+      if (typeof params.tab !== 'number' && params.tab !== 'last' && params.tab !== 'previous') {
+        throw new ValidationError('SwitchTab step "tab" must be a number, "last", or "previous"');
+      }
+      if (typeof params.tab === 'number' && params.tab < 0) {
+        throw new ValidationError('SwitchTab step "tab" index must be non-negative');
+      }
+      if (params.closeCurrentTab !== undefined && typeof params.closeCurrentTab !== 'boolean') {
+        throw new ValidationError('SwitchTab step "closeCurrentTab" must be a boolean');
+      }
+      break;
+
     default:
       throw new ValidationError(
-        `Unknown step type: ${s.type}. Supported types: navigate, extract_title, extract_text, extract_attribute, sleep, wait_for, click, fill, assert, set_var, network_find, network_replay, network_extract`
+        `Unknown step type: ${s.type}. Supported types: navigate, extract_title, extract_text, extract_attribute, sleep, wait_for, click, fill, assert, set_var, network_find, network_replay, network_extract, select_option, press_key, upload_file, frame, new_tab, switch_tab`
       );
   }
 

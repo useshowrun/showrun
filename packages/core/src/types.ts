@@ -8,12 +8,53 @@ import type { NetworkCaptureApi } from './networkCapture.js';
 export type PrimitiveType = 'string' | 'number' | 'boolean';
 
 /**
+ * Secret definition for task pack secrets
+ */
+export interface SecretDefinition {
+  name: string;
+  description?: string;
+  required?: boolean;
+}
+
+/**
+ * Browser engine options
+ */
+export type BrowserEngine = 'chromium' | 'camoufox';
+
+/**
+ * Browser persistence mode
+ * - 'none': Ephemeral, no data persisted (default)
+ * - 'session': Data persisted in temp directory, cleared after 30min inactivity
+ * - 'profile': Data persisted in pack directory, permanent
+ */
+export type BrowserPersistence = 'none' | 'session' | 'profile';
+
+/**
+ * Browser configuration for task packs
+ */
+export interface BrowserSettings {
+  /**
+   * Browser engine to use (default: 'chromium')
+   */
+  engine?: BrowserEngine;
+  /**
+   * Persistence mode for browser data (cookies, localStorage, etc.)
+   * - 'none': Fresh browser each run (default)
+   * - 'session': Persist in temp dir, cleared after inactivity
+   * - 'profile': Persist in pack's .browser-profile/ directory
+   */
+  persistence?: BrowserPersistence;
+}
+
+/**
  * Field definition in a schema
  */
 export interface FieldDefinition {
   type: PrimitiveType;
   required?: boolean;
   description?: string;
+  /** Default value for this field when not provided */
+  default?: unknown;
 }
 
 /**
@@ -73,6 +114,14 @@ export interface TaskPackManifest extends TaskPackMetadata {
    * Auth configuration for resilience and recovery
    */
   auth?: AuthConfig;
+  /**
+   * Secret definitions (names and descriptions for secrets stored in .secrets.json)
+   */
+  secrets?: SecretDefinition[];
+  /**
+   * Browser configuration
+   */
+  browser?: BrowserSettings;
 }
 
 /**
@@ -190,7 +239,7 @@ export type LogEvent =
   | { type: 'run_started'; data: { packId: string; packVersion: string; inputs: unknown } }
   | { type: 'step_started'; data: { stepId: string; type: string; label?: string; params?: unknown } }
   | { type: 'step_finished'; data: { stepId: string; type: string; label?: string; durationMs: number } }
-  | { type: 'step_skipped'; data: { stepId: string; type: string; reason: 'once_already_executed'; restoredVars?: string[]; restoredCollectibles?: string[] } }
+  | { type: 'step_skipped'; data: { stepId: string; type: string; reason: 'once_already_executed' | 'condition_met'; restoredVars?: string[]; restoredCollectibles?: string[]; condition?: string } }
   | { type: 'auth_failure_detected'; data: { url: string; status: number; stepId?: string } }
   | { type: 'auth_recovery_started'; data: { recoveryAttempt: number; maxRecoveries: number } }
   | { type: 'auth_recovery_finished'; data: { recoveryAttempt: number; success: boolean } }
@@ -231,4 +280,8 @@ export interface TaskPack {
    * Auth configuration for resilience and recovery
    */
   auth?: AuthConfig;
+  /**
+   * Browser configuration
+   */
+  browser?: BrowserSettings;
 }
