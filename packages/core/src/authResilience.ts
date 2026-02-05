@@ -10,10 +10,10 @@ import type { DslStep } from './dsl/types.js';
 import type { AuthPolicy, AuthGuard, Logger } from './types.js';
 import type { NetworkCaptureApi } from './networkCapture.js';
 
-const ONCE_CACHE_DIR_ENV = 'MCPIFY_ONCE_CACHE_DIR';
+const ONCE_CACHE_DIR_ENV = 'SHOWRUN_ONCE_CACHE_DIR';
 
 function getOnceCacheDir(): string {
-  const dir = process.env[ONCE_CACHE_DIR_ENV] ?? join(tmpdir(), 'mcpify-once-cache');
+  const dir = process.env[ONCE_CACHE_DIR_ENV] ?? join(tmpdir(), 'showrun-once-cache');
   return dir;
 }
 

@@ -8,6 +8,7 @@ export * from './jsonPackValidator.js';
 export * from './authResilience.js';
 export * from './browserLauncher.js';
 export * from './browserPersistence.js';
+export * from './packUtils.js';
 
 // DSL exports
 export * from './dsl/types.js';

@@ -1,11 +1,11 @@
-#!/usr/bin/env node
+/**
+ * showrun serve - Start MCP server for AI agents
+ */
 
 import { resolve } from 'path';
-import { discoverPacks } from './packDiscovery.js';
-import { createMCPServer } from './server.js';
-import { createMCPServerOverHTTP } from './httpServer.js';
+import { discoverPacks, createMCPServer, createMCPServerOverHTTP } from '@showrun/mcp-server';
 
-interface CliOptions {
+export interface ServeCommandOptions {
   packs: string[];
   headful: boolean;
   concurrency: number;
@@ -15,8 +15,7 @@ interface CliOptions {
   host: string;
 }
 
-function parseArgs(): CliOptions {
-  const args = process.argv.slice(2);
+export function parseServeArgs(args: string[]): ServeCommandOptions {
   let packsStr: string | null = null;
   // Default to headful if DISPLAY is available, otherwise headless
   let headful = !!process.env.DISPLAY;
@@ -27,51 +26,44 @@ function parseArgs(): CliOptions {
   let host = '127.0.0.1';
 
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--packs' && i + 1 < args.length) {
-      packsStr = args[i + 1];
+    const arg = args[i];
+    const next = args[i + 1];
+
+    if (arg === '--packs' && next) {
+      packsStr = next;
       i++;
-    } else if (args[i] === '--headful') {
+    } else if (arg === '--headful') {
       headful = true;
-    } else if (args[i] === '--headless') {
+    } else if (arg === '--headless') {
       headful = false;
-    } else if (args[i] === '--concurrency' && i + 1 < args.length) {
-      concurrency = parseInt(args[i + 1], 10);
+    } else if (arg === '--concurrency' && next) {
+      concurrency = parseInt(next, 10);
       if (isNaN(concurrency) || concurrency < 1) {
         console.error('Error: --concurrency must be a positive integer');
         process.exit(1);
       }
       i++;
-    } else if (args[i] === '--baseRunDir' && i + 1 < args.length) {
-      baseRunDir = args[i + 1];
+    } else if (arg === '--baseRunDir' && next) {
+      baseRunDir = next;
       i++;
-    } else if (args[i] === '--http') {
+    } else if (arg === '--http') {
       http = true;
-    } else if (args[i] === '--port' && i + 1 < args.length) {
-      port = parseInt(args[i + 1], 10);
+    } else if (arg === '--port' && next) {
+      port = parseInt(next, 10);
       if (isNaN(port) || port < 1 || port > 65535) {
         console.error('Error: --port must be a valid port number (1-65535)');
         process.exit(1);
       }
       i++;
-    } else if (args[i] === '--host' && i + 1 < args.length) {
-      host = args[i + 1];
+    } else if (arg === '--host' && next) {
+      host = next;
       i++;
     }
   }
 
   if (!packsStr) {
     console.error('Error: --packs <dir1,dir2,...> is required');
-    console.error('Example: tp mcp --packs ./taskpacks,./other-packs');
-    console.error('');
-    console.error('Options:');
-    console.error('  --packs <dirs>      Comma-separated list of pack directories (required)');
-    console.error('  --headful           Run browser in headful mode');
-    console.error('  --headless          Run browser in headless mode');
-    console.error('  --concurrency <n>   Max concurrent executions (default: 1)');
-    console.error('  --baseRunDir <dir>  Directory for run outputs (default: ./runs)');
-    console.error('  --http              Use HTTP transport instead of stdio');
-    console.error('  --port <port>       HTTP server port (default: 3000, requires --http)');
-    console.error('  --host <host>       HTTP server host (default: 127.0.0.1, requires --http)');
+    console.error('Example: showrun serve --packs ./taskpacks');
     process.exit(1);
   }
 
@@ -93,9 +85,9 @@ function parseArgs(): CliOptions {
   };
 }
 
-async function main() {
+export async function cmdServe(args: string[]): Promise<void> {
   try {
-    const options = parseArgs();
+    const options = parseServeArgs(args);
 
     console.error(`[MCP Server] Discovering task packs from: ${options.packs.join(', ')}`);
 
@@ -166,4 +158,25 @@ async function main() {
   }
 }
 
-main();
+export function printServeHelp(): void {
+  console.log(`
+Usage: showrun serve [options]
+
+Start MCP server for AI agents
+
+Options:
+  --packs <dirs>         Comma-separated list of pack directories (required)
+  --headful              Run browser in headful mode
+  --headless             Run browser in headless mode
+  --concurrency <n>      Max concurrent executions (default: 1)
+  --baseRunDir <dir>     Directory for run outputs (default: ./runs)
+  --http                 Use HTTP transport instead of stdio
+  --port <port>          HTTP server port (default: 3000, requires --http)
+  --host <host>          HTTP server host (default: 127.0.0.1, requires --http)
+
+Examples:
+  showrun serve --packs ./taskpacks
+  showrun serve --packs ./taskpacks --http --port 3001
+  showrun serve --packs ./taskpacks,./other-packs --concurrency 2
+`);
+}

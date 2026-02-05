@@ -1,4 +1,4 @@
-# MCPify Dashboard
+# ShowRun Dashboard
 
 A real-time dashboard for running and observing Task Packs. This dashboard provides a web UI to discover task packs, trigger runs, and stream live run events.
 
@@ -7,7 +7,7 @@ A real-time dashboard for running and observing Task Packs. This dashboard provi
 ### Via npx (when published)
 
 ```bash
-npx mcpify-dashboard
+npx showrun-dashboard
 ```
 
 ### Local Development
@@ -18,7 +18,7 @@ pnpm build
 
 # Run it (choose one method):
 # Method 1: Using pnpm filter (recommended)
-pnpm --filter @mcpify/dashboard start
+pnpm --filter @showrun/dashboard start
 
 # Method 2: Direct node execution
 node packages/dashboard/dist/cli.js
@@ -27,12 +27,12 @@ node packages/dashboard/dist/cli.js
 cd packages/dashboard && pnpm start
 ```
 
-**Note**: `pnpm exec mcpify-dashboard` won't work for workspace packages. Use `pnpm --filter @mcpify/dashboard start` instead.
+**Note**: `pnpm exec showrun-dashboard` won't work for workspace packages. Use `pnpm --filter @showrun/dashboard start` instead.
 
 ## Usage
 
 ```bash
-mcpify-dashboard [options]
+showrun-dashboard [options]
 
 Options:
   --packs <dir1,dir2>    Comma-separated list of directories to search for task packs
@@ -49,19 +49,19 @@ Options:
 
 ```bash
 # Basic usage (discovers packs from ./taskpacks)
-mcpify-dashboard
+showrun-dashboard
 
 # Custom packs directory
-mcpify-dashboard --packs ./taskpacks,./custom-packs
+showrun-dashboard --packs ./taskpacks,./custom-packs
 
 # Custom port
-mcpify-dashboard --port 4000
+showrun-dashboard --port 4000
 
 # Headful mode (show browser)
-mcpify-dashboard --headful
+showrun-dashboard --headful
 
 # Custom run directory
-mcpify-dashboard --baseRunDir ./my-runs
+showrun-dashboard --baseRunDir ./my-runs
 ```
 
 ## Features
@@ -104,7 +104,7 @@ The dashboard implements several security measures:
 
 - **Backend**: Express.js server with Socket.IO for real-time updates
 - **Frontend**: React + Vite SPA
-- **Runner**: Reuses `runTaskPack` from `@mcpify/core`
+- **Runner**: Reuses `runTaskPack` from `@showrun/core`
 - **Logger**: Custom `SocketLogger` that writes JSONL and emits socket events
 - **Queue**: Concurrency-limited run queue (default: 1 concurrent run)
 
@@ -158,7 +158,7 @@ The agent behavior is controlled by system prompts. Priority order:
 
 Set custom prompt via environment variable:
 ```bash
-AUTONOMOUS_EXPLORATION_PROMPT_PATH=/path/to/custom-prompt.md mcpify-dashboard
+AUTONOMOUS_EXPLORATION_PROMPT_PATH=/path/to/custom-prompt.md showrun-dashboard
 ```
 
 ## Development

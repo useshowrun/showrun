@@ -1,10 +1,15 @@
 {
-  "name": "@mcpify/mcp-server",
+  "name": "@showrun/mcp-server",
   "version": "0.1.0",
   "description": "MCP server for Task Pack framework",
   "type": "module",
-  "bin": {
-    "tp-mcp": "./dist/cli.js"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc",
@@ -13,8 +18,8 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.3",
-    "@mcpify/core": "workspace:*",
-    "@mcpify/harness": "workspace:*",
+    "@showrun/core": "workspace:*",
+    "@showrun/harness": "workspace:*",
     "playwright": "^1.58.0",
     "zod": "^3.25.0"
   },

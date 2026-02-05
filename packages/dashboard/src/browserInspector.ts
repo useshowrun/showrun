@@ -4,7 +4,7 @@
  */
 
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
-import type { Target } from '@mcpify/core';
+import type { Target } from '@showrun/core';
 
 export type BrowserEngine = 'chromium' | 'camoufox';
 
@@ -138,11 +138,25 @@ interface BrowserSession {
   context: BrowserContext;
   page: Page;
   engine: BrowserEngine;
+  /** Directory for persistent browser data (cookies, localStorage, etc.) */
+  persistentContextDir?: string;
+  /** Pack ID this session is linked to */
+  packId?: string;
   actions: Array<{ timestamp: number; action: string; details?: any }>;
   networkBuffer: NetworkEntry[];
   networkMap: Map<string, NetworkEntry>;
   /** Full headers + postData for replay only; keyed by request id */
   replayDataMap: Map<string, ReplayData>;
+}
+
+/**
+ * Options for starting a browser session
+ */
+export interface StartSessionOptions {
+  /** Directory to persist browser data (cookies, localStorage, etc.) */
+  persistentContextDir?: string;
+  /** Pack ID this session is linked to */
+  packId?: string;
 }
 
 const POST_DATA_REPLAY_CAP = 64 * 1024; // 64KB for replay
@@ -219,14 +233,20 @@ function attachNetworkCapture(
   });
 }
 
-export async function startBrowserSession(headful = true, engine: BrowserEngine = 'chromium'): Promise<string> {
+export async function startBrowserSession(
+  headful = true,
+  engine: BrowserEngine = 'camoufox',
+  options?: StartSessionOptions
+): Promise<string> {
+  const { persistentContextDir, packId } = options ?? {};
+
   let browser: Browser | null = null;
   let context: BrowserContext;
   let page: Page;
 
   if (engine === 'camoufox') {
     // Dynamic import to avoid loading Camoufox when not needed
-    let Camoufox: (options: { headless?: boolean; humanize?: number | boolean }) => Promise<Browser>;
+    let Camoufox: (options: { headless?: boolean; user_data_dir?: string; humanize?: number | boolean }) => Promise<Browser | BrowserContext>;
     try {
       const camoufoxModule = await import('camoufox-js');
       Camoufox = camoufoxModule.Camoufox;
@@ -237,19 +257,51 @@ export async function startBrowserSession(headful = true, engine: BrowserEngine 
       );
     }
 
-    // Camoufox returns a Browser instance
-    // humanize: adds human-like cursor movement delays (up to 2 seconds)
-    browser = await Camoufox({ headless: !headful, humanize: 2.0 });
-    context = await browser.newContext();
-    page = await context.newPage();
+    if (persistentContextDir) {
+      // Ensure directory exists
+      const { mkdirSync } = await import('fs');
+      mkdirSync(persistentContextDir, { recursive: true });
+
+      // With user_data_dir, Camoufox returns BrowserContext directly (persistent context)
+      // humanize: adds human-like cursor movement delays (up to 2 seconds)
+      context = await Camoufox({
+        headless: !headful,
+        humanize: 2.0,
+        user_data_dir: persistentContextDir,
+      }) as unknown as BrowserContext;
+      page = context.pages()[0] || await context.newPage();
+      browser = null;
+      console.log(`[BrowserInspector] Started camoufox with persistent context: ${persistentContextDir}`);
+    } else {
+      // Ephemeral session - Camoufox returns Browser
+      // humanize: adds human-like cursor movement delays (up to 2 seconds)
+      browser = await Camoufox({ headless: !headful, humanize: 2.0 }) as Browser;
+      context = await browser.newContext();
+      page = await context.newPage();
+    }
   } else {
     // Default: Chromium
-    browser = await chromium.launch({
-      headless: !headful,
-      channel: 'chromium',
-    });
-    context = await browser.newContext();
-    page = await context.newPage();
+    if (persistentContextDir) {
+      // Ensure directory exists
+      const { mkdirSync } = await import('fs');
+      mkdirSync(persistentContextDir, { recursive: true });
+
+      // Use persistent context for Chromium
+      context = await chromium.launchPersistentContext(persistentContextDir, {
+        headless: !headful,
+      });
+      page = context.pages()[0] || await context.newPage();
+      browser = null;
+      console.log(`[BrowserInspector] Started chromium with persistent context: ${persistentContextDir}`);
+    } else {
+      // Ephemeral session
+      browser = await chromium.launch({
+        headless: !headful,
+        channel: 'chromium',
+      });
+      context = await browser.newContext();
+      page = await context.newPage();
+    }
   }
 
   const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(7)}`;
@@ -262,6 +314,8 @@ export async function startBrowserSession(headful = true, engine: BrowserEngine 
     context,
     page,
     engine,
+    persistentContextDir,
+    packId,
     actions: [],
     networkBuffer,
     networkMap,
@@ -273,7 +327,7 @@ export async function startBrowserSession(headful = true, engine: BrowserEngine 
   sessions.get(sessionId)!.actions.push({
     timestamp: Date.now(),
     action: 'start_session',
-    details: { headful, engine },
+    details: { headful, engine, persistentContextDir, packId },
   });
 
   return sessionId;
@@ -502,11 +556,11 @@ export async function pickElement(sessionId: string): Promise<ElementFingerprint
 
   // Inject overlay script (same as browser inspector MCP)
   await session.page.evaluate(() => {
-    const existing = document.getElementById('mcpify-pick-overlay');
+    const existing = document.getElementById('showrun-pick-overlay');
     if (existing) existing.remove();
 
     const overlay = document.createElement('div');
-    overlay.id = 'mcpify-pick-overlay';
+    overlay.id = 'showrun-pick-overlay';
     overlay.style.cssText = `
       position: fixed;
       top: 0;
@@ -535,7 +589,7 @@ export async function pickElement(sessionId: string): Promise<ElementFingerprint
       e.stopPropagation();
       if (e.target === overlay) return;
       const target = e.target as Element;
-      (window as any).__mcpify_picked_element = target;
+      (window as any).__showrun_picked_element = target;
       overlay.remove();
     });
 
@@ -549,7 +603,7 @@ export async function pickElement(sessionId: string): Promise<ElementFingerprint
 
   while (!pickedElement && Date.now() - startTime < maxWait) {
     pickedElement = await session.page.evaluate(() => {
-      return (window as any).__mcpify_picked_element || null;
+      return (window as any).__showrun_picked_element || null;
     });
 
     if (!pickedElement) {
@@ -559,14 +613,14 @@ export async function pickElement(sessionId: string): Promise<ElementFingerprint
 
   if (!pickedElement) {
     await session.page.evaluate(() => {
-      const overlay = document.getElementById('mcpify-pick-overlay');
+      const overlay = document.getElementById('showrun-pick-overlay');
       if (overlay) overlay.remove();
     });
     throw new Error('Element pick timeout');
   }
 
   const elementHandle = await session.page.evaluateHandle(() => {
-    return (window as any).__mcpify_picked_element;
+    return (window as any).__showrun_picked_element;
   });
 
   const fingerprint = await getElementFingerprint(session.page, elementHandle);
@@ -1010,7 +1064,7 @@ export function getSession(sessionId: string): { engine: BrowserEngine; url: str
 // DOM Snapshot for Autonomous Exploration
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Target hint for step proposals - matches the Target type from @mcpify/core */
+/** Target hint for step proposals - matches the Target type from @showrun/core */
 export interface TargetHint {
   kind: 'css' | 'text' | 'role' | 'label' | 'placeholder' | 'testId' | 'altText';
   selector?: string;

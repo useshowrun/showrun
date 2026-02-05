@@ -64,7 +64,7 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-MCPIFY-TOKEN': token,
+        'X-SHOWRUN-TOKEN': token,
       },
       body: JSON.stringify(packData),
     });
@@ -98,7 +98,7 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-MCPIFY-TOKEN': token,
+          'X-SHOWRUN-TOKEN': token,
         },
         body: JSON.stringify({
           packId: packId || selectedPack.id,
@@ -130,7 +130,7 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
       const res = await fetch(`/api/packs/${packId}`, {
         method: 'DELETE',
         headers: {
-          'X-MCPIFY-TOKEN': token,
+          'X-SHOWRUN-TOKEN': token,
         },
       });
 

@@ -28,7 +28,7 @@ export default function SecretsPanel({ packId, token, onSecretsUpdated }: Secret
     try {
       const response = await fetch(`/api/packs/${encodeURIComponent(packId)}/secrets`, {
         headers: {
-          'x-mcpify-token': token,
+          'x-showrun-token': token,
         },
       });
       if (!response.ok) {
@@ -56,7 +56,7 @@ export default function SecretsPanel({ packId, token, onSecretsUpdated }: Secret
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'x-mcpify-token': token,
+          'x-showrun-token': token,
         },
         body: JSON.stringify({ value: secretValue }),
       });

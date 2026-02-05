@@ -203,7 +203,7 @@ function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-mcpify-token': config.token,
+          'x-showrun-token': config.token,
         },
         body: JSON.stringify({
           title: 'New Conversation',
@@ -235,7 +235,7 @@ function App() {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'x-mcpify-token': config.token,
+          'x-showrun-token': config.token,
         },
         body: JSON.stringify({ title }),
       });
@@ -261,7 +261,7 @@ function App() {
       const res = await fetch(`/api/conversations/${id}`, {
         method: 'DELETE',
         headers: {
-          'x-mcpify-token': config.token,
+          'x-showrun-token': config.token,
         },
       });
 
@@ -388,7 +388,7 @@ function App() {
               </svg>
             </button>
           )}
-          <div className="header-logo">FlowForge</div>
+          <div className="header-logo">ShowRun</div>
         </div>
 
         {/* Main content */}

@@ -77,7 +77,7 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
       ...options,
       headers: {
         'Content-Type': 'application/json',
-        'x-mcpify-token': token,
+        'x-showrun-token': token,
         ...options.headers,
       },
     });
@@ -197,7 +197,7 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'x-mcpify-token': token,
+            'x-showrun-token': token,
           },
           body: JSON.stringify({
             messages: messagesForApi,

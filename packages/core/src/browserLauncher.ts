@@ -79,7 +79,7 @@ export async function launchBrowser(config: LaunchBrowserConfig): Promise<Browse
     packPath,
   } = config;
 
-  const engine = browserSettings.engine ?? 'chromium';
+  const engine = browserSettings.engine ?? 'camoufox';
   const persistence = browserSettings.persistence ?? 'none';
 
   // Resolve user data directory based on persistence mode
@@ -152,6 +152,9 @@ async function launchChromium(config: {
 
 /**
  * Launches Camoufox browser (Firefox-based anti-detection)
+ *
+ * Note: When user_data_dir is provided, Camoufox returns a BrowserContext directly
+ * (not a Browser). This is different from the ephemeral case where it returns Browser.
  */
 async function launchCamoufox(config: {
   headless: boolean;
@@ -161,7 +164,7 @@ async function launchCamoufox(config: {
   const { headless, userDataDir, persistence } = config;
 
   // Dynamic import to avoid loading Camoufox when not needed
-  let Camoufox: (options: { headless?: boolean; persistentContextDir?: string; humanize?: number | boolean }) => Promise<Browser>;
+  let Camoufox: (options: { headless?: boolean; user_data_dir?: string; humanize?: number | boolean }) => Promise<Browser | BrowserContext>;
   try {
     const camoufoxModule = await import('camoufox-js');
     Camoufox = camoufoxModule.Camoufox;
@@ -172,13 +175,36 @@ async function launchCamoufox(config: {
     );
   }
 
-  // Camoufox returns a Browser instance
+  if (userDataDir) {
+    // With user_data_dir, Camoufox returns BrowserContext directly (persistent context)
+    // humanize: adds human-like cursor movement delays (up to 2 seconds)
+    const context = await Camoufox({
+      headless,
+      humanize: 2.0,
+      user_data_dir: userDataDir,
+    }) as unknown as BrowserContext;
+
+    const page = context.pages()[0] || await context.newPage();
+
+    return {
+      context,
+      page,
+      browser: null,  // No browser instance with persistent context
+      engine: 'camoufox',
+      persistence,
+      userDataDir,
+      async close() {
+        await context.close().catch(() => {});
+      },
+    };
+  }
+
+  // Without user_data_dir, Camoufox returns Browser (ephemeral)
   // humanize: adds human-like cursor movement delays (up to 2 seconds)
   const browser = await Camoufox({
     headless,
     humanize: 2.0,
-    ...(userDataDir ? { persistentContextDir: userDataDir } : {}),
-  });
+  }) as Browser;
 
   const context = await browser.newContext();
   const page = await context.newPage();

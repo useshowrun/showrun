@@ -1,7 +1,7 @@
 import { readdirSync, statSync, existsSync } from 'fs';
 import { join, resolve } from 'path';
-import { TaskPackLoader } from '@mcpify/core';
-import type { TaskPack } from '@mcpify/core';
+import { TaskPackLoader } from '@showrun/core';
+import type { TaskPack } from '@showrun/core';
 
 /**
  * Options for pack discovery

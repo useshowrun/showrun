@@ -4,12 +4,20 @@
  * These can be called directly without MCP protocol overhead
  */
 
-import type { DslStep, CollectibleDefinition, TaskPackManifest } from '@mcpify/core';
-import { TaskPackLoader, validateJsonTaskPack } from '@mcpify/core';
-import { discoverPacks } from '@mcpify/mcp-server/dist/packDiscovery.js';
-import { readJsonFile, writeFlowJson, validatePathInAllowedDir, ensureDir, writeTaskPackManifest, sanitizePackId } from './packUtils.js';
-import { runTaskPack } from '@mcpify/core';
-import { JSONLLogger } from '@mcpify/harness/dist/index.js';
+import type { DslStep, CollectibleDefinition, TaskPackManifest } from '@showrun/core';
+import {
+  TaskPackLoader,
+  validateJsonTaskPack,
+  runTaskPack,
+  readJsonFile,
+  writeFlowJson,
+  validatePathInAllowedDir,
+  ensureDir,
+  writeTaskPackManifest,
+  sanitizePackId,
+} from '@showrun/core';
+import { discoverPacks } from '@showrun/mcp-server';
+import { JSONLLogger } from '@showrun/harness';
 import { randomBytes } from 'crypto';
 import { resolve } from 'path';
 import { existsSync } from 'fs';

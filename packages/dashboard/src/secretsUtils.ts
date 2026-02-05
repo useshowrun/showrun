@@ -4,8 +4,8 @@
 
 import { readFileSync, writeFileSync, existsSync, renameSync } from 'fs';
 import { join } from 'path';
-import type { SecretDefinition, TaskPackManifest } from '@mcpify/core';
-import { TaskPackLoader, type SecretsFile } from '@mcpify/core';
+import type { SecretDefinition, TaskPackManifest } from '@showrun/core';
+import { TaskPackLoader, type SecretsFile } from '@showrun/core';
 
 /**
  * Information about a secret (no actual value exposed)

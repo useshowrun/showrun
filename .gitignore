@@ -32,7 +32,7 @@ Thumbs.db
 .playwright-mcp/
 
 # Persisted once-cache (optional; usually under system tmp)
-mcpify-once-cache/
+showrun-once-cache/
 
 # Task pack once-cache (stored in pack directories)
 .once-cache/
@@ -45,3 +45,5 @@ mcpify-once-cache/
 
 # Coverage
 coverage/
+
+*.db*

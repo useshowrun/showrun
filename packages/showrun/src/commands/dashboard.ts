@@ -1,24 +1,11 @@
-#!/usr/bin/env node
+/**
+ * showrun dashboard - Start web dashboard with Teach Mode
+ */
 
-import { config } from 'dotenv';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
 import { existsSync } from 'fs';
 import { cwd } from 'process';
-import { startDashboard } from './server.js';
-
-// Load .env from cwd or nearest ancestor (so OPENAI_API_KEY, TEACH_CHAT_SYSTEM_PROMPT, etc. are available)
-(function loadEnv() {
-  let dir = resolve(cwd());
-  const root = resolve('/');
-  while (dir !== root) {
-    const envPath = resolve(dir, '.env');
-    if (existsSync(envPath)) {
-      config({ path: envPath });
-      break;
-    }
-    dir = resolve(dir, '..');
-  }
-})();
+import { startDashboard } from '@showrun/dashboard';
 
 /**
  * Find the project root by walking up from current directory
@@ -43,7 +30,7 @@ function findProjectRoot(startDir: string): string {
   return cwd();
 }
 
-interface CliArgs {
+export interface DashboardCommandOptions {
   packs: string[];
   port: number;
   host?: string;
@@ -52,14 +39,12 @@ interface CliArgs {
   workspaceDir?: string;
 }
 
-function parseArgs(): CliArgs {
-  const args = process.argv.slice(2);
-  
+export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
   // Find project root (where pnpm-workspace.yaml or packages/ exists)
   // This handles the case where pnpm --filter changes the working directory
   const projectRoot = findProjectRoot(cwd());
-  
-  const result: Partial<CliArgs> = {
+
+  const result: Partial<DashboardCommandOptions> = {
     packs: [],
     port: 3333,
     headful: false,
@@ -83,7 +68,6 @@ function parseArgs(): CliArgs {
           if (trimmed.startsWith('/')) {
             return trimmed;
           }
-          const projectRoot = findProjectRoot(cwd());
           return resolve(projectRoot, trimmed);
         }).filter(Boolean);
         i++;
@@ -120,7 +104,6 @@ function parseArgs(): CliArgs {
         if (next.startsWith('/')) {
           result.baseRunDir = next;
         } else {
-          const projectRoot = findProjectRoot(cwd());
           result.baseRunDir = resolve(projectRoot, next);
         }
         i++;
@@ -134,44 +117,15 @@ function parseArgs(): CliArgs {
         if (next.startsWith('/')) {
           result.workspaceDir = next;
         } else {
-          const projectRoot = findProjectRoot(cwd());
           result.workspaceDir = resolve(projectRoot, next);
         }
         i++;
         break;
-      case '--help':
-      case '-h':
-        console.log(`
-Usage: mcpify-dashboard [options]
-
-Options:
-  --packs <dir1,dir2>    Comma-separated list of directories to search for task packs
-                         (default: ./taskpacks if exists)
-  --port <n>             Port to bind the server to (default: 3333)
-  --host <hostname>      Hostname or IP to bind to (default: 127.0.0.1)
-                         WARNING: Only use this if you understand the security implications
-  --headful              Run browser in headful mode (default: false)
-  --baseRunDir <path>    Base directory for run outputs (default: ./runs-dashboard)
-  --workspace <path>     Writable directory for JSON pack creation/editing (default: first --packs dir)
-  --help, -h             Show this help message
-
-Examples:
-  mcpify-dashboard
-  mcpify-dashboard --packs ./taskpacks,./custom-packs --port 4000
-  mcpify-dashboard --headful --baseRunDir ./my-runs
-        `);
-        process.exit(0);
-        break;
-      default:
-        console.error(`Error: Unknown argument: ${arg}`);
-        console.error('Run with --help for usage information');
-        process.exit(1);
     }
   }
 
   // Default packs directory if not specified
   if (!result.packs || result.packs.length === 0) {
-    const projectRoot = findProjectRoot(cwd());
     const defaultPacksDir = resolve(projectRoot, './taskpacks');
     if (existsSync(defaultPacksDir)) {
       result.packs = [defaultPacksDir];
@@ -183,15 +137,15 @@ Examples:
     }
   }
 
-  return result as CliArgs;
+  return result as DashboardCommandOptions;
 }
 
-async function main() {
+export async function cmdDashboard(args: string[]): Promise<void> {
   try {
-    const args = parseArgs();
+    const options = parseDashboardArgs(args);
     await startDashboard({
-      ...args,
-      workspaceDir: args.workspaceDir,
+      ...options,
+      workspaceDir: options.workspaceDir,
     });
   } catch (error) {
     console.error('Fatal error:', error instanceof Error ? error.message : String(error));
@@ -199,4 +153,25 @@ async function main() {
   }
 }
 
-main();
+export function printDashboardHelp(): void {
+  console.log(`
+Usage: showrun dashboard [options]
+
+Start web dashboard with Teach Mode
+
+Options:
+  --packs <dir1,dir2>    Comma-separated list of directories to search for task packs
+                         (default: ./taskpacks if exists)
+  --port <n>             Port to bind the server to (default: 3333)
+  --host <hostname>      Hostname or IP to bind to (default: 127.0.0.1)
+                         WARNING: Only use this if you understand the security implications
+  --headful              Run browser in headful mode (default: false)
+  --baseRunDir <path>    Base directory for run outputs (default: ./runs-dashboard)
+  --workspace <path>     Writable directory for JSON pack creation/editing (default: first --packs dir)
+
+Examples:
+  showrun dashboard
+  showrun dashboard --packs ./taskpacks,./custom-packs --port 4000
+  showrun dashboard --headful --baseRunDir ./my-runs
+`);
+}

@@ -1,4 +1,4 @@
-# mcpify-anything
+# ShowRun
 
 A TypeScript + Playwright framework for deterministic, versioned browser automation **Task Packs**: define flows in JSON or code, run them via CLI or MCP, and edit them with an AI-assisted dashboard (Teach Mode).
 
@@ -21,7 +21,7 @@ Task Packs are designed to be:
 ## Project Structure
 
 ```
-/mcpify-anything
+/showrun
   /packages
     /core               # Types, loader, validator, runner, DSL interpreter, auth resilience
     /harness            # CLI to load + execute a task pack
@@ -29,7 +29,7 @@ Task Packs are designed to be:
     /dashboard         # Web UI: run packs, view runs, Teach Mode (AI-assisted flow editing)
     /browser-inspector-mcp  # MCP for browser inspection (screenshots, DOM, network)
     /taskpack-editor-mcp   # MCP for editing task pack flows (apply patches, run pack)
-    /mcpify             # Unified CLI (dashboard, MCP, etc.)
+    /showrun            # Unified CLI (dashboard, MCP, etc.)
   /taskpacks
     /example            # TypeScript task pack
     /example-json       # JSON-only task pack (no build step)
@@ -38,19 +38,28 @@ Task Packs are designed to be:
 
 ## Quick Start
 
-### Installation
+### Using npx (Simplest)
+
+```bash
+# Start dashboard instantly (no installation needed)
+npx showrun dashboard --packs ./my-taskpacks
+
+# Run a task pack directly
+npx showrun run ./my-pack --inputs '{}'
+
+# Install camoufox browser (required on first run)
+npx camoufox-js fetch
+```
+
+### Development Setup
 
 ```bash
 # Install dependencies (using pnpm)
 pnpm install
 
-# Install Playwright browsers
-pnpm exec playwright install chromium
-```
+# Install camoufox browser
+npx camoufox-js fetch
 
-### Build
-
-```bash
 # Build all packages and task packs
 pnpm build
 ```
@@ -156,14 +165,14 @@ mkdir -p taskpacks/my-pack/src
 
 ```json
 {
-  "name": "@mcpify/my-pack",
+  "name": "@showrun/my-pack",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
     "build": "tsc"
   },
   "devDependencies": {
-    "@mcpify/core": "workspace:*",
+    "@showrun/core": "workspace:*",
     "@types/node": "^20.11.0",
     "typescript": "^5.3.3"
   }
@@ -186,8 +195,8 @@ mkdir -p taskpacks/my-pack/src
 ### 5. Implement `src/index.ts` (DSL Flow)
 
 ```typescript
-import type { TaskPack } from '@mcpify/core';
-import { navigate, extractTitle } from '@mcpify/core';
+import type { TaskPack } from '@showrun/core';
+import { navigate, extractTitle } from '@showrun/core';
 
 const taskPack: TaskPack = {
   metadata: {
@@ -227,7 +236,7 @@ export default taskPack;
 **Alternative: Imperative style** (legacy, still supported):
 
 ```typescript
-import type { TaskPack, RunContext, RunResult } from '@mcpify/core';
+import type { TaskPack, RunContext, RunResult } from '@showrun/core';
 
 const taskPack: TaskPack = {
   // ... metadata, inputs, collectibles ...
@@ -380,10 +389,10 @@ The dashboard is a web UI to run Task Packs, view runs and events, and edit flow
 pnpm build
 
 # Start the dashboard (serves UI + API; MCP servers are started on demand)
-pnpm --filter @mcpify/dashboard start --packs ./taskpacks
+pnpm --filter @showrun/dashboard start --packs ./taskpacks
 
 # With headful browser for runs (optional)
-pnpm --filter @mcpify/dashboard start --packs ./taskpacks --headful
+pnpm --filter @showrun/dashboard start --packs ./taskpacks --headful
 ```
 
 Then open the URL shown in the terminal (e.g. `http://localhost:5173`). You can run packs, inspect run events, and use Teach Mode to add steps to a flow by describing actions in the browser (the AI proposes DSL steps and applies patches via the editor MCP).
@@ -396,7 +405,7 @@ The framework includes an MCP (Model Context Protocol) server that exposes Task 
 
 ```bash
 pnpm build
-pnpm --filter @mcpify/mcp-server run tp-mcp --packs ./taskpacks
+pnpm --filter @showrun/mcp-server run tp-mcp --packs ./taskpacks
 ```
 
 - **Automatic discovery**: Finds Task Packs from specified directories

@@ -34,7 +34,7 @@ export type BrowserPersistence = 'none' | 'session' | 'profile';
  */
 export interface BrowserSettings {
   /**
-   * Browser engine to use (default: 'chromium')
+   * Browser engine to use (default: 'camoufox')
    */
   engine?: BrowserEngine;
   /**

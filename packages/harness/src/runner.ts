@@ -1,6 +1,6 @@
 import { join } from 'path';
-import type { TaskPack, RunResult } from '@mcpify/core';
-import { runTaskPack } from '@mcpify/core';
+import type { TaskPack, RunResult } from '@showrun/core';
+import { runTaskPack } from '@showrun/core';
 import { JSONLLogger } from './logger.js';
 
 /**

@@ -1,5 +1,5 @@
-import type { TaskPack } from '@mcpify/core';
-import { navigate, waitFor, extractTitle, extractText, assert } from '@mcpify/core';
+import type { TaskPack } from '@showrun/core';
+import { navigate, waitFor, extractTitle, extractText, assert } from '@showrun/core';
 
 const taskPack: TaskPack = {
   metadata: {

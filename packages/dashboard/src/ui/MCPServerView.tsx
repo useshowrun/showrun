@@ -66,7 +66,7 @@ function MCPServerView({ packs, token, conversations = [] }: MCPServerViewProps)
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-MCPIFY-TOKEN': token,
+          'X-SHOWRUN-TOKEN': token,
         },
         body: JSON.stringify({
           packIds: Array.from(selectedIds),
@@ -93,7 +93,7 @@ function MCPServerView({ packs, token, conversations = [] }: MCPServerViewProps)
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-MCPIFY-TOKEN': token,
+          'X-SHOWRUN-TOKEN': token,
         },
       });
       if (!res.ok) {

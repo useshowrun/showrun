@@ -8,11 +8,11 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { resolve, join } from 'path';
 import * as z from 'zod';
 import { readFileSync, existsSync, writeFileSync, renameSync } from 'fs';
-import type { TaskPackManifest, DslStep, CollectibleDefinition, InputSchema, SecretDefinition } from '@mcpify/core';
-import { TaskPackLoader, validateJsonTaskPack } from '@mcpify/core';
-import { discoverPacks } from '@mcpify/mcp-server/dist/packDiscovery.js';
-import { runTaskPack } from '@mcpify/core';
-import { JSONLLogger } from '@mcpify/harness/dist/index.js';
+import type { TaskPackManifest, DslStep, CollectibleDefinition, InputSchema, SecretDefinition } from '@showrun/core';
+import { TaskPackLoader, validateJsonTaskPack } from '@showrun/core';
+import { discoverPacks } from '@showrun/mcp-server';
+import { runTaskPack } from '@showrun/core';
+import { JSONLLogger } from '@showrun/harness';
 import { randomBytes } from 'crypto';
 
 // Helper functions (copied from dashboard packUtils)

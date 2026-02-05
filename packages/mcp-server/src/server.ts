@@ -4,9 +4,9 @@ import { mkdirSync } from 'fs';
 import { join } from 'path';
 import { randomUUID } from 'crypto';
 import * as z from 'zod';
-import type { TaskPack, InputSchema, PrimitiveType } from '@mcpify/core';
-import { runTaskPack } from '@mcpify/core';
-import { JSONLLogger } from '@mcpify/harness/dist/index.js';
+import type { TaskPack, InputSchema, PrimitiveType } from '@showrun/core';
+import { runTaskPack } from '@showrun/core';
+import { JSONLLogger } from '@showrun/harness';
 import type { DiscoveredPack } from './packDiscovery.js';
 import { ConcurrencyLimiter } from './concurrency.js';
 

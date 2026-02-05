@@ -10,7 +10,7 @@ import { mkdirSync, rmSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { randomBytes } from 'crypto';
 
-import { TaskPackLoader, resolveTemplates } from '@mcpify/core';
+import { TaskPackLoader, resolveTemplates } from '@showrun/core';
 import { executeAgentTool, type AgentToolContext } from '../agentTools.js';
 import { TaskPackEditorWrapper } from '../mcpWrappers.js';
 import { setSecretValue, getSecretNamesWithValues } from '../secretsUtils.js';
@@ -49,7 +49,7 @@ describe('Secrets Resolution Integration', () => {
 
   beforeEach(async () => {
     // Create unique test directory
-    testDir = join(tmpdir(), `mcpify-test-${randomBytes(8).toString('hex')}`);
+    testDir = join(tmpdir(), `showrun-test-${randomBytes(8).toString('hex')}`);
     packDir = join(testDir, 'taskpacks');
     runsDir = join(testDir, 'runs');
 

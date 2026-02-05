@@ -63,7 +63,7 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'X-MCPIFY-TOKEN': token,
+          'X-SHOWRUN-TOKEN': token,
         },
         body: JSON.stringify({ value: secretValue }),
       });
@@ -94,7 +94,7 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
       const res = await fetch(`/api/packs/${packId}/secrets/${encodeURIComponent(name)}`, {
         method: 'DELETE',
         headers: {
-          'X-MCPIFY-TOKEN': token,
+          'X-SHOWRUN-TOKEN': token,
         },
       });
 
@@ -135,7 +135,7 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'X-MCPIFY-TOKEN': token,
+          'X-SHOWRUN-TOKEN': token,
         },
         body: JSON.stringify({ secrets: newDefinitions }),
       });
@@ -151,7 +151,7 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
-            'X-MCPIFY-TOKEN': token,
+            'X-SHOWRUN-TOKEN': token,
           },
           body: JSON.stringify({ value: newSecretValue }),
         });
@@ -192,7 +192,7 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'X-MCPIFY-TOKEN': token,
+          'X-SHOWRUN-TOKEN': token,
         },
         body: JSON.stringify({ secrets: newDefinitions }),
       });
@@ -207,7 +207,7 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
       if (secret?.hasValue) {
         await fetch(`/api/packs/${packId}/secrets/${encodeURIComponent(name)}`, {
           method: 'DELETE',
-          headers: { 'X-MCPIFY-TOKEN': token },
+          headers: { 'X-SHOWRUN-TOKEN': token },
         });
       }
 

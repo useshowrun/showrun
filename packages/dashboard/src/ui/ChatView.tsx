@@ -135,7 +135,7 @@ export default function ChatView({
       ...options,
       headers: {
         'Content-Type': 'application/json',
-        'x-mcpify-token': token,
+        'x-showrun-token': token,
         ...options.headers,
       },
     });
@@ -247,7 +247,7 @@ export default function ChatView({
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'x-mcpify-token': token,
+          'x-showrun-token': token,
         },
         body: JSON.stringify({
           messages: messagesForApi,
@@ -485,7 +485,7 @@ export default function ChatView({
     try {
       const response = await fetch(`/api/conversations/${conversation.id}/export?format=download`, {
         headers: {
-          'x-mcpify-token': token,
+          'x-showrun-token': token,
         },
       });
       if (!response.ok) {
@@ -517,7 +517,7 @@ export default function ChatView({
   if (!conversation) {
     return (
       <div className="welcome-screen">
-        <div className="welcome-logo">FlowForge</div>
+        <div className="welcome-logo">ShowRun</div>
         <div className="welcome-subtitle">
           Create browser automation flows through conversation. Select a conversation or start a new chat.
         </div>

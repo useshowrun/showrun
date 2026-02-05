@@ -1,5 +1,5 @@
 {
-  "name": "@mcpify/example",
+  "name": "@showrun/example",
   "version": "0.1.0",
   "description": "Example task pack demonstrating navigation and extraction",
   "type": "module",
@@ -7,7 +7,7 @@
     "build": "tsc"
   },
   "devDependencies": {
-    "@mcpify/core": "workspace:*",
+    "@showrun/core": "workspace:*",
     "@types/node": "^20.11.0",
     "typescript": "^5.3.3"
   }

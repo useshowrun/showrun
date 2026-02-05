@@ -1,41 +1,20 @@
-#!/usr/bin/env node
+/**
+ * showrun pack <subcommand> - Pack management commands
+ */
 
-import { resolve, dirname } from 'path';
+import { resolve } from 'path';
 import { existsSync } from 'fs';
 import { cwd } from 'process';
-import { TaskPackLoader } from '@mcpify/core';
-import { validateJsonTaskPack } from '@mcpify/core';
 import {
+  TaskPackLoader,
+  validateJsonTaskPack,
   sanitizePackId,
   ensureDir,
   writeTaskPackManifest,
   writeFlowJson,
-  validatePathInAllowedDir,
   readJsonFile,
-} from './packUtils.js';
-import type { TaskPackManifest, InputSchema, CollectibleDefinition } from '@mcpify/core';
-import type { DslStep } from '@mcpify/core';
-
-/**
- * Find the project root by walking up from current directory
- */
-function findProjectRoot(startDir: string): string {
-  let current = resolve(startDir);
-  const root = resolve('/');
-
-  while (current !== root) {
-    if (
-      existsSync(resolve(current, 'pnpm-workspace.yaml')) ||
-      (existsSync(resolve(current, 'package.json')) &&
-        existsSync(resolve(current, 'packages')))
-    ) {
-      return current;
-    }
-    current = resolve(current, '..');
-  }
-
-  return cwd();
-}
+} from '@showrun/core';
+import type { TaskPackManifest, InputSchema, CollectibleDefinition, DslStep } from '@showrun/core';
 
 /**
  * Parse JSON from string or file path
@@ -61,7 +40,7 @@ function parseJsonInput(input: string): unknown {
 /**
  * Create a new JSON Task Pack
  */
-async function cmdCreate(args: string[]): Promise<void> {
+export async function cmdPackCreate(args: string[]): Promise<void> {
   let packsDir: string | undefined;
   let packId: string | undefined;
   let packName: string | undefined;
@@ -171,7 +150,7 @@ async function cmdCreate(args: string[]): Promise<void> {
 /**
  * Validate a Task Pack
  */
-async function cmdValidate(args: string[]): Promise<void> {
+export async function cmdPackValidate(args: string[]): Promise<void> {
   let packPath: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
@@ -208,7 +187,7 @@ async function cmdValidate(args: string[]): Promise<void> {
 /**
  * Set flow.json for a pack
  */
-async function cmdSetFlow(args: string[]): Promise<void> {
+export async function cmdPackSetFlow(args: string[]): Promise<void> {
   let packPath: string | undefined;
   let flowInput: string | undefined;
 
@@ -267,7 +246,7 @@ async function cmdSetFlow(args: string[]): Promise<void> {
 /**
  * Set taskpack.json metadata for a pack
  */
-async function cmdSetMeta(args: string[]): Promise<void> {
+export async function cmdPackSetMeta(args: string[]): Promise<void> {
   let packPath: string | undefined;
   let metaInput: string | undefined;
 
@@ -324,61 +303,33 @@ async function cmdSetMeta(args: string[]): Promise<void> {
 }
 
 /**
- * Main CLI entry point
+ * Handle pack subcommand
  */
-async function main() {
-  const args = process.argv.slice(2);
-
-  if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
-    console.log(`
-Usage: mcpify <command> [options]
-
-Commands:
-  pack create    Create a new JSON Task Pack
-    --dir <path>       Packs directory (required)
-    --id <id>          Pack ID (required)
-    --name <name>      Pack name (required)
-    --template <name>  Template: basic (default)
-
-  pack validate  Validate a Task Pack
-    --path <path>      Pack directory (required)
-
-  pack set-flow  Update flow.json for a JSON pack
-    --path <path>      Pack directory (required)
-    --flow <json|file> Flow JSON string or file path (required)
-
-  pack set-meta  Update taskpack.json metadata
-    --path <path>      Pack directory (required)
-    --meta <json|file> Metadata JSON string or file path (required)
-
-Examples:
-  mcpify pack create --dir ./taskpacks --id my.pack --name "My Pack"
-  mcpify pack validate --path ./taskpacks/my_pack
-  mcpify pack set-flow --path ./taskpacks/my_pack --flow '{"flow":[...]}'
-  mcpify pack set-meta --path ./taskpacks/my_pack --meta '{"description":"..."}'
-    `);
-    process.exit(0);
-  }
-
-  const command = args[0];
-  const subcommand = args[1];
-  const commandArgs = args.slice(2);
+export async function cmdPack(args: string[]): Promise<void> {
+  const subcommand = args[0];
+  const subcommandArgs = args.slice(1);
 
   try {
-    if (command === 'pack') {
-      if (subcommand === 'create') {
-        await cmdCreate(commandArgs);
-      } else if (subcommand === 'validate') {
-        await cmdValidate(commandArgs);
-      } else if (subcommand === 'set-flow') {
-        await cmdSetFlow(commandArgs);
-      } else if (subcommand === 'set-meta') {
-        await cmdSetMeta(commandArgs);
-      } else {
+    switch (subcommand) {
+      case 'create':
+        await cmdPackCreate(subcommandArgs);
+        break;
+      case 'validate':
+        await cmdPackValidate(subcommandArgs);
+        break;
+      case 'set-flow':
+        await cmdPackSetFlow(subcommandArgs);
+        break;
+      case 'set-meta':
+        await cmdPackSetMeta(subcommandArgs);
+        break;
+      case undefined:
+      case '--help':
+      case '-h':
+        printPackHelp();
+        break;
+      default:
         throw new Error(`Unknown pack command: ${subcommand}. Use --help for usage.`);
-      }
-    } else {
-      throw new Error(`Unknown command: ${command}. Use --help for usage.`);
     }
   } catch (error) {
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
@@ -386,4 +337,34 @@ Examples:
   }
 }
 
-main();
+export function printPackHelp(): void {
+  console.log(`
+Usage: showrun pack <command> [options]
+
+Pack management commands
+
+Commands:
+  create        Create a new JSON Task Pack
+    --dir <path>       Packs directory (required)
+    --id <id>          Pack ID (required)
+    --name <name>      Pack name (required)
+    --template <name>  Template: basic (default)
+
+  validate      Validate a Task Pack
+    --path <path>      Pack directory (required)
+
+  set-flow      Update flow.json for a JSON pack
+    --path <path>      Pack directory (required)
+    --flow <json|file> Flow JSON string or file path (required)
+
+  set-meta      Update taskpack.json metadata
+    --path <path>      Pack directory (required)
+    --meta <json|file> Metadata JSON string or file path (required)
+
+Examples:
+  showrun pack create --dir ./taskpacks --id my.pack --name "My Pack"
+  showrun pack validate --path ./taskpacks/my_pack
+  showrun pack set-flow --path ./taskpacks/my_pack --flow '{"flow":[...]}'
+  showrun pack set-meta --path ./taskpacks/my_pack --meta '{"description":"..."}'
+`);
+}

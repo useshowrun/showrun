@@ -7,7 +7,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { chromium, type Browser, type Page } from 'playwright';
 import * as z from 'zod';
-import type { Target } from '@mcpify/core';
+import type { Target } from '@showrun/core';
 import type { ElementFingerprint, ActionLog, NetworkEntry } from './types.js';
 
 const SENSITIVE_HEADER_NAMES = new Set([

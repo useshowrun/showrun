@@ -99,7 +99,7 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'X-MCPIFY-TOKEN': token,
+          'X-SHOWRUN-TOKEN': token,
         },
         body: JSON.stringify({ flowJsonText }),
       });
@@ -124,7 +124,7 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
-          'X-MCPIFY-TOKEN': token,
+          'X-SHOWRUN-TOKEN': token,
         },
         body: JSON.stringify(metaForm),
       });
@@ -161,7 +161,7 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-MCPIFY-TOKEN': token,
+          'X-SHOWRUN-TOKEN': token,
         },
         body: JSON.stringify({
           packId,

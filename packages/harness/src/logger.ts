@@ -1,7 +1,7 @@
 import { mkdirSync } from 'fs';
 import { join } from 'path';
 import winston from 'winston';
-import type { Logger, LogEvent } from '@mcpify/core';
+import type { Logger, LogEvent } from '@showrun/core';
 
 /**
  * Custom Winston format that transforms log info to match our LogEvent structure

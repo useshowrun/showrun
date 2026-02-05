@@ -1,8 +1,11 @@
+/**
+ * Pack utilities for task pack file operations
+ */
 import { mkdirSync, writeFileSync, readFileSync, existsSync, renameSync } from 'fs';
 import { resolve, join } from 'path';
-import type { TaskPackManifest, InputSchema, CollectibleDefinition } from '@mcpify/core';
-import type { DslStep } from '@mcpify/core';
-import { validateJsonTaskPack } from '@mcpify/core';
+import type { TaskPackManifest, InputSchema, CollectibleDefinition } from './types.js';
+import type { DslStep } from './dsl/types.js';
+import { validateJsonTaskPack } from './jsonPackValidator.js';
 
 /**
  * Sanitize a pack ID to be safe for use as a directory name
@@ -46,7 +49,7 @@ export function atomicWrite(filePath: string, content: string): void {
 export function validatePathInAllowedDir(path: string, allowedDir: string): void {
   const resolvedPath = resolve(path);
   const resolvedAllowed = resolve(allowedDir);
-  
+
   if (!resolvedPath.startsWith(resolvedAllowed + '/') && resolvedPath !== resolvedAllowed) {
     throw new Error(`Path ${resolvedPath} is outside allowed directory ${resolvedAllowed}`);
   }
@@ -104,7 +107,7 @@ export function writeFlowJson(
       collectibles: flowData.collectibles || [],
       flow: flowData.flow,
     };
-    
+
     validateJsonTaskPack(taskPack);
   }
 

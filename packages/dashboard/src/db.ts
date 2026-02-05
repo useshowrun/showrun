@@ -60,7 +60,7 @@ export function initDatabase(dataDir: string = './data'): Database.Database {
     mkdirSync(resolvedDataDir, { recursive: true });
   }
 
-  const dbPath = resolve(resolvedDataDir, 'mcpify.db');
+  const dbPath = resolve(resolvedDataDir, 'showrun.db');
   console.log(`[Database] Initializing SQLite database at ${dbPath}`);
 
   db = new Database(dbPath);

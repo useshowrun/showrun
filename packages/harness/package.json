@@ -1,16 +1,21 @@
 {
-  "name": "@mcpify/harness",
+  "name": "@showrun/harness",
   "version": "0.1.0",
-  "description": "CLI harness for executing Task Packs",
+  "description": "Task Pack execution library",
   "type": "module",
-  "bin": {
-    "tp": "./dist/cli.js"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc"
   },
   "dependencies": {
-    "@mcpify/core": "workspace:*",
+    "@showrun/core": "workspace:*",
     "playwright": "^1.58.0",
     "winston": "^3.19.0"
   },

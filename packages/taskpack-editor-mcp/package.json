@@ -1,19 +1,24 @@
 {
-  "name": "@mcpify/taskpack-editor-mcp",
+  "name": "@showrun/taskpack-editor-mcp",
   "version": "0.1.0",
   "description": "MCP server for editing JSON Task Packs",
   "type": "module",
-  "bin": {
-    "taskpack-editor-mcp": "./dist/cli.js"
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
   },
   "scripts": {
     "build": "tsc"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.25.3",
-    "@mcpify/core": "workspace:*",
-    "@mcpify/mcp-server": "workspace:*",
-    "@mcpify/harness": "workspace:*",
+    "@showrun/core": "workspace:*",
+    "@showrun/mcp-server": "workspace:*",
+    "@showrun/harness": "workspace:*",
     "zod": "^3.25.0"
   },
   "devDependencies": {

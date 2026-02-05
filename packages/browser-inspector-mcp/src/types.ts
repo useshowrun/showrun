@@ -2,7 +2,7 @@
  * Types for Browser Inspector MCP
  */
 
-import type { Target } from '@mcpify/core';
+import type { Target } from '@showrun/core';
 
 /**
  * Element fingerprint returned by pick_element

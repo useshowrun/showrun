@@ -1,15 +1,16 @@
 {
-  "name": "mcpify-anything",
+  "name": "showrun",
   "version": "0.1.0",
   "description": "Task Pack framework for deterministic browser automations",
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "pnpm -r build",
+    "build": "pnpm -r --filter=!showrun build && pnpm --filter=showrun build",
     "dev": "pnpm build && pnpm test:example",
     "test:example": "node packages/harness/dist/cli.js run --pack ./taskpacks/example --inputs '{}'",
     "test:example-json": "node packages/harness/dist/cli.js run --pack ./taskpacks/example-json --inputs '{}'",
-    "test:unit": "pnpm -r test"
+    "test:unit": "pnpm -r test",
+    "dashboard": "node packages/showrun/dist/cli.js dashboard"
   },
   "workspaces": [
     "packages/*",

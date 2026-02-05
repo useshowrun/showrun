@@ -5,9 +5,9 @@ import { randomUUID } from 'crypto';
 import * as z from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import type { TaskPack, InputSchema } from '@mcpify/core';
-import { runTaskPack } from '@mcpify/core';
-import { JSONLLogger } from '@mcpify/harness/dist/index.js';
+import type { TaskPack, InputSchema } from '@showrun/core';
+import { runTaskPack } from '@showrun/core';
+import { JSONLLogger } from '@showrun/harness';
 import type { DiscoveredPack } from './packDiscovery.js';
 import { ConcurrencyLimiter } from './concurrency.js';
 

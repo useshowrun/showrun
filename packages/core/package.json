@@ -1,5 +1,5 @@
 {
-  "name": "@mcpify/core",
+  "name": "@showrun/core",
   "version": "0.1.0",
   "description": "Core types and utilities for Task Pack framework",
   "type": "module",

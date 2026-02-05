@@ -4,7 +4,7 @@
  */
 
 import type { LlmProvider } from './llm/index.js';
-import type { DslStep, Target } from '@mcpify/core';
+import type { DslStep, Target } from '@showrun/core';
 
 // ElementFingerprint type (matches browser-inspector-mcp)
 export interface ElementFingerprint {

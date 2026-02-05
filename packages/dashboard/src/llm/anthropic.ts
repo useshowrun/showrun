@@ -183,6 +183,7 @@ export class AnthropicProvider implements LlmProvider {
     }
     this.apiKey = apiKey;
     this.baseUrl = process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com';
+    console.log("Anthropic base url: " + process.env.ANTHROPIC_BASE_URL);
     this.model = process.env.ANTHROPIC_MODEL || DEFAULT_MODEL;
   }
 

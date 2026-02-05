@@ -20,7 +20,7 @@ const SESSION_INACTIVITY_MS = 30 * 60 * 1000;
 /**
  * Base directory name for session storage in temp
  */
-const SESSION_BASE_DIR = 'mcpify-browser-sessions';
+const SESSION_BASE_DIR = 'showrun-browser-sessions';
 
 /**
  * Profile directory name within pack directory

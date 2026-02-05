@@ -1,0 +1,56 @@
+{
+  "name": "showrun",
+  "version": "0.1.0",
+  "description": "Task Pack framework for deterministic browser automations - single command dashboard",
+  "type": "module",
+  "main": "./dist/cli.js",
+  "bin": {
+    "showrun": "./dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && node scripts/copy-assets.js",
+    "build:tsc": "tsc",
+    "prepublishOnly": "pnpm build"
+  },
+  "dependencies": {
+    "playwright": "^1.58.0",
+    "camoufox-js": "^0.8.5",
+    "better-sqlite3": "^11.7.0",
+    "express": "^4.21.2",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
+    "cors": "^2.8.5",
+    "uuid": "^11.0.0",
+    "winston": "^3.19.0",
+    "dotenv": "^16.4.5",
+    "nunjucks": "^3.2.4",
+    "jmespath": "^0.16.0",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "@modelcontextprotocol/sdk": "^1.12.0"
+  },
+  "devDependencies": {
+    "@showrun/core": "workspace:*",
+    "@showrun/harness": "workspace:*",
+    "@showrun/mcp-server": "workspace:*",
+    "@showrun/dashboard": "workspace:*",
+    "@showrun/browser-inspector-mcp": "workspace:*",
+    "@showrun/taskpack-editor-mcp": "workspace:*",
+    "@types/node": "^20.11.0",
+    "tsup": "^8.5.1",
+    "typescript": "^5.3.3"
+  },
+  "keywords": [
+    "browser-automation",
+    "playwright",
+    "mcp",
+    "task-pack",
+    "ai-agents"
+  ],
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

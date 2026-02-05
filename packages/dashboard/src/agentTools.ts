@@ -7,12 +7,14 @@ import type { TaskPackEditorWrapper } from './mcpWrappers.js';
 import * as browserInspector from './browserInspector.js';
 import { isSessionAlive, startBrowserSession, closeSession } from './browserInspector.js';
 import { getSecretNamesWithValues } from './secretsUtils.js';
-import { resolveTemplates, TaskPackLoader } from '@mcpify/core';
+import { resolveTemplates, TaskPackLoader } from '@showrun/core';
 import { executePlanTool } from './contextManager.js';
 import {
   updateConversation,
   type Conversation,
 } from './db.js';
+import { join } from 'path';
+import { mkdirSync } from 'fs';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Browser Session Management (per-conversation, in-memory)
@@ -701,6 +703,10 @@ const BROWSER_TOOLS = new Set([
 /**
  * Get or create a browser session for the conversation.
  * Auto-starts camoufox if no session exists or session is dead.
+ *
+ * When packId is set in context, uses the pack's .browser-profile/ directory
+ * for persistent browser state (cookies, localStorage, etc.). This enables
+ * AI exploration sessions to persist auth state to the pack's profile.
  */
 async function ensureBrowserSession(ctx: AgentToolContext): Promise<string> {
   if (!ctx.conversationId) {
@@ -719,8 +725,25 @@ async function ensureBrowserSession(ctx: AgentToolContext): Promise<string> {
   const headful = ctx.headful !== false; // Default true for dashboard
   const engine = 'camoufox' as const;
 
-  console.log(`[BrowserAuto] Starting camoufox session for conversation ${ctx.conversationId}`);
-  const sessionId = await startBrowserSession(headful, engine);
+  // Determine persistent context directory based on linked pack
+  let persistentContextDir: string | undefined;
+
+  if (ctx.packId) {
+    // Get pack path from editor
+    const packs = await ctx.taskPackEditor.listPacks();
+    const pack = packs.find((p: { id: string; path?: string }) => p.id === ctx.packId);
+    if (pack?.path) {
+      persistentContextDir = join(pack.path, '.browser-profile');
+      mkdirSync(persistentContextDir, { recursive: true });
+      console.log(`[BrowserAuto] Using persistent profile for pack ${ctx.packId}: ${persistentContextDir}`);
+    }
+  }
+
+  console.log(`[BrowserAuto] Starting camoufox session for conversation ${ctx.conversationId}${persistentContextDir ? ' (persistent)' : ''}`);
+  const sessionId = await startBrowserSession(headful, engine, {
+    persistentContextDir,
+    packId: ctx.packId ?? undefined,
+  });
 
   // Store session in memory map
   setConversationBrowserSession(ctx.conversationId, sessionId);

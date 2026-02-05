@@ -4,14 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-mcpify-anything is a TypeScript + Playwright framework for deterministic, versioned browser automation. It implements a **Task Pack** system - self-contained automation modules that define flows in JSON or TypeScript and run via CLI, MCP server, or web dashboard.
+ShowRun is a TypeScript + Playwright framework for deterministic, versioned browser automation. It implements a **Task Pack** system - self-contained automation modules that define flows in JSON or TypeScript and run via CLI, MCP server, or web dashboard.
 
-## Build & Run Commands
+## Quick Start (npx)
+
+```bash
+# Start dashboard instantly (after publishing to npm)
+npx showrun dashboard --packs ./my-taskpacks
+
+# Or run a task pack directly
+npx showrun run ./my-pack --inputs '{}'
+```
+
+## Build & Run Commands (Development)
 
 ```bash
 # Install dependencies
 pnpm install
-pnpm exec playwright install chromium
+npx camoufox-js fetch  # Download camoufox browser
 
 # Build all packages and task packs
 pnpm build
@@ -19,29 +29,49 @@ pnpm build
 # Run example task packs
 pnpm test:example           # TypeScript example
 pnpm test:example-json      # JSON-only example
+```
 
-# Manual CLI execution
-node packages/harness/dist/cli.js run --pack ./taskpacks/example --inputs '{}'
+### Unified CLI
+
+All commands are accessible through the unified `showrun` CLI:
+
+```bash
+# Run a task pack
+showrun run ./taskpacks/example --inputs '{}'
+showrun run ./taskpacks/example --headful
 
 # Start dashboard (web UI with Teach Mode)
-pnpm --filter @mcpify/dashboard start --packs ./taskpacks
-pnpm --filter @mcpify/dashboard start --packs ./taskpacks --headful  # show browser
+showrun dashboard --packs ./taskpacks
+showrun dashboard --packs ./taskpacks --headful --port 3333
 
-# Start MCP server
-pnpm --filter @mcpify/mcp-server run tp-mcp --packs ./taskpacks
+# Start MCP server for AI agents
+showrun serve --packs ./taskpacks
+showrun serve --packs ./taskpacks --http --port 3001
+
+# Pack management
+showrun pack create --dir ./taskpacks --id my.pack --name "My Pack"
+showrun pack validate --path ./taskpacks/my_pack
+showrun pack set-flow --path ./taskpacks/my_pack --flow '{"flow":[...]}'
+showrun pack set-meta --path ./taskpacks/my_pack --meta '{"description":"..."}'
+
+# MCP server utilities
+showrun mcp browser-inspector
+showrun mcp taskpack-editor --packs ./taskpacks
 ```
+
+Run `showrun --help` or `showrun <command> --help` for detailed usage.
 
 ## Architecture
 
 ```
 packages/
 ├── core/           # Types, DSL, loader, runner, validator
-├── harness/        # CLI (`tp run --pack <path> --inputs <json>`)
+├── harness/        # Task pack execution library
 ├── mcp-server/     # MCP server exposing packs as tools
 ├── dashboard/      # Web UI + Express + Socket.IO (React frontend)
 ├── browser-inspector-mcp/   # MCP for browser inspection
 ├── taskpack-editor-mcp/     # MCP for editing flows
-└── mcpify/         # Unified CLI
+└── showrun/        # Unified CLI (showrun command)
 
 taskpacks/          # Task pack definitions
 ```
@@ -216,8 +246,8 @@ Task packs can configure browser engine and persistence in `taskpack.json`:
 ```
 
 **Engine options:**
-- `chromium` (default) - Standard Playwright Chromium
-- `camoufox` - Firefox-based anti-detection browser (run `npx camoufox-js fetch` to install)
+- `camoufox` (default) - Firefox-based anti-detection browser (run `npx camoufox-js fetch` to install)
+- `chromium` - Standard Playwright Chromium
 
 **Persistence modes:**
 - `none` (default) - Fresh browser each run, no data persisted
@@ -267,10 +297,10 @@ The dashboard includes an AI agent (Teach Mode) with browser and editor tools. K
 
 **Browser Engine Selection:**
 The AI can start browser sessions with either engine:
-- `browser_start_session` with `engine: "chromium"` (default)
-- `browser_start_session` with `engine: "camoufox"` (anti-detection Firefox)
+- `browser_start_session` with `engine: "camoufox"` (default) - Anti-detection Firefox
+- `browser_start_session` with `engine: "chromium"` - Standard Playwright Chromium
 
-Use camoufox when scraping sites that block bots or detect automation.
+Use chromium only when camoufox causes compatibility issues.
 
 **Context Management:**
 - Automatic summarization when context exceeds ~100k tokens
