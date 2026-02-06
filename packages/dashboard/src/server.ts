@@ -139,8 +139,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   console.log(`[Dashboard] Found ${discoveredPacks.length} task pack(s)`);
 
   if (discoveredPacks.length === 0) {
-    console.error('[Dashboard] No task packs found. Exiting.');
-    process.exit(1);
+    console.warn('[Dashboard] No task packs found.');
   }
 
   // Create pack map for quick lookup
