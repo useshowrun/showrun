@@ -31,7 +31,7 @@ pnpm test:example           # TypeScript example
 pnpm test:example-json      # JSON-only example
 ```
 
-### Unified CLI
+### CLI
 
 All commands are accessible through the unified `showrun` CLI:
 
@@ -83,7 +83,7 @@ taskpacks/          # Task pack definitions
 3. **Runner** (`packages/core/src/runner.ts`) executes the pack with Playwright
 4. **DSL Interpreter** (`packages/core/src/dsl/interpreter.ts`) executes declarative steps
 
-### Task Pack Format (json-dsl)
+### Task Pack Format
 
 Task packs use the json-dsl format with two files:
 ```
@@ -95,197 +95,14 @@ taskpacks/my-pack/
 ### DSL Step Types
 
 All steps defined in `packages/core/src/dsl/types.ts`:
-- `navigate` - Go to URL
-- `click`, `fill` - Interact with elements
-- `wait_for` - Wait for element/URL/load state
-- `extract_title`, `extract_text`, `extract_attribute` - Extract data
-- `assert` - Validate conditions
-- `set_var` - Set template variable
-- `network_find`, `network_replay`, `network_extract` - Network capture/replay
-- `select_option` - Select dropdown options (by value, label, or index)
-- `press_key` - Press keyboard keys (Enter, Tab, Escape, shortcuts)
-- `upload_file` - Upload files to file input elements
-- `frame` - Switch into/out of iframes
-- `new_tab`, `switch_tab` - Multi-tab browser workflows
-
-### Extraction Steps: Single vs Multiple Elements
-
-`extract_text` and `extract_attribute` extract from **all matching elements by default** (returns array):
-
-```json
-{ "type": "extract_text", "params": { "target": { "kind": "css", "selector": ".item" }, "out": "items" } }
-// Returns: ["Item 1", "Item 2", "Item 3"]
-```
-
-To extract only the first element, set `first: true`:
-
-```json
-{ "type": "extract_text", "params": { "target": { "kind": "css", "selector": ".item" }, "out": "firstItem", "first": true } }
-// Returns: "Item 1"
-```
-
-### Target Selection
-
-Steps use `target` for element selection (prefer over deprecated `selector`):
-```typescript
-{ kind: 'css', selector: '...' }
-{ kind: 'text', text: '...' }
-{ kind: 'role', role: 'button', name: '...' }
-{ kind: 'label', text: '...' }
-{ kind: 'placeholder', text: '...' }
-{ kind: 'testId', id: '...' }
-{ anyOf: [...] }  // fallback chain
-```
-
-### Template Variables
-
-Steps support `{{inputs.xxx}}`, `{{vars.xxx}}`, and `{{secret.xxx}}` substitution (Nunjucks).
-
-**Available filters:**
-- Built-in Nunjucks filters: `urlencode`, `upper`, `lower`, `trim`, etc.
-- `totp` - Generate TOTP code from base32 secret: `{{secret.TOTP_KEY | totp}}`
-
-### JMESPath for Data Extraction
-
-The `network_extract` and `network_replay` steps use **JMESPath** for extracting data from JSON responses.
-
-**Common patterns:**
-```json
-{
-  "type": "network_extract",
-  "params": {
-    "fromVar": "apiResponse",
-    "as": "json",
-    "path": "results[*].{id: id, name: name, url: website}",
-    "out": "companies"
-  }
-}
-```
-
-**JMESPath examples:**
-- `results[0].name` - First item's name
-- `results[*].name` - All names as array
-- `results[*].{id: id, name: name}` - Project to new objects
-- `results[?status == 'active']` - Filter by condition
-- `results | [0]` - Pipe to get first
-- `length(results)` - Get count
-
-**Backward compatibility:** Paths starting with `$.` (JSONPath-style) are automatically converted by stripping the prefix. E.g., `$.results[0]` becomes `results[0]`.
-
-See https://jmespath.org for full syntax reference.
-
-### Secrets Management
-
-Task packs can define secrets (credentials, API keys) in `taskpack.json`:
-```json
-{
-  "secrets": [
-    { "name": "API_KEY", "description": "External API key", "required": true },
-    { "name": "PASSWORD", "description": "Login password" }
-  ]
-}
-```
-
-Secret values are stored in `.secrets.json` (gitignored) and referenced via `{{secret.NAME}}`:
-```json
-{
-  "type": "fill",
-  "params": {
-    "target": { "kind": "label", "text": "Password" },
-    "value": "{{secret.PASSWORD}}"
-  }
-}
-```
-
-**TOTP/2FA support:** Store base32 TOTP key as a secret and use the `totp` filter:
-```json
-{
-  "type": "fill",
-  "params": {
-    "target": { "kind": "label", "text": "2FA Code" },
-    "value": "{{secret.TOTP_KEY | totp}}"
-  }
-}
-```
-
-**Security features:**
-- Values stored per-pack in `.secrets.json` (never committed)
-- AI agents only see secret names, never values
-- Values are write-only via API (cannot retrieve after setting)
-- Secret values are redacted in logs
-
-### Run-Once & Auth Resilience
-
-Steps can have `"once": "session"` or `"once": "profile"` to run only once. On 401/403, runner can clear once-cache, re-run setup steps, and retry.
-
-### Browser Settings
-
-Task packs can configure browser engine and persistence in `taskpack.json`:
-```json
-{
-  "browser": {
-    "engine": "chromium",
-    "persistence": "profile"
-  }
-}
-```
-
-**Engine options:**
-- `camoufox` (default) - Firefox-based anti-detection browser (run `npx camoufox-js fetch` to install)
-- `chromium` - Standard Playwright Chromium
-
-**Persistence modes:**
-- `none` (default) - Fresh browser each run, no data persisted
-- `session` - Data persisted in temp directory, cleared after 30min inactivity
-- `profile` - Data persisted in pack's `.browser-profile/` directory (gitignored)
-
-### Conditional Step Execution (skip_if)
-
-Steps can be conditionally skipped using `skip_if`:
-```json
-{
-  "id": "login_email",
-  "type": "fill",
-  "skip_if": { "url_includes": "/dashboard" },
-  "params": { "target": { "kind": "label", "text": "Email" }, "value": "..." }
-}
-```
-
-**Supported conditions:**
-- `url_includes` - URL contains string: `{ "url_includes": "/dashboard" }`
-- `url_matches` - URL matches regex: `{ "url_matches": "^https://.*\\.example\\.com" }`
-- `element_visible` - Element is visible: `{ "element_visible": { "kind": "text", "text": "Logout" } }`
-- `element_exists` - Element exists in DOM: `{ "element_exists": { "kind": "css", "selector": ".user-menu" } }`
-- `var_equals` - Variable equals value: `{ "var_equals": { "name": "loggedIn", "value": true } }`
-- `var_truthy` - Variable is truthy: `{ "var_truthy": "authToken" }`
-- `var_falsy` - Variable is falsy: `{ "var_falsy": "needsLogin" }`
-- `all` - All conditions true (AND): `{ "all": [...conditions] }`
-- `any` - Any condition true (OR): `{ "any": [...conditions] }`
-
-**Common pattern - skip login if already authenticated:**
-```json
-{
-  "flow": [
-    { "id": "nav", "type": "navigate", "params": { "url": "https://example.com" } },
-    { "id": "fill_email", "type": "fill", "skip_if": { "url_includes": "/dashboard" }, "params": { ... } },
-    { "id": "fill_pass", "type": "fill", "skip_if": { "url_includes": "/dashboard" }, "params": { ... } },
-    { "id": "submit", "type": "click", "skip_if": { "url_includes": "/dashboard" }, "params": { ... } }
-  ]
-}
-```
-
-Combined with `"persistence": "profile"`, this enables packs to skip login on subsequent runs when cookies persist.
 
 ### Dashboard AI Agent
 
-The dashboard includes an AI agent (Teach Mode) with browser and editor tools. Key features:
+The dashboard includes an AI agent with browser and editor tools. Key features:
 
-**Browser Engine Selection:**
-The AI can start browser sessions with either engine:
-- `browser_start_session` with `engine: "camoufox"` (default) - Anti-detection Firefox
-- `browser_start_session` with `engine: "chromium"` - Standard Playwright Chromium
-
-Use chromium only when camoufox causes compatibility issues.
+**Browser Usage / Exploration:**
+- Automatically explore a given or inferred web page to check for API calls and DOM
+structure.
 
 **Context Management:**
 - Automatic summarization when context exceeds ~100k tokens
@@ -313,11 +130,17 @@ Large tool outputs are automatically truncated with metadata:
 - Socket.IO for real-time UI updates in dashboard
 - Artifacts on error: `error.png`, `error.html`
 
-## Exit Codes
+## Development Considerations
 
-- `0` - Success
-- `1` - Execution failure
-- `2` - Validation error
+### VERY IMPORTANT
+**Always** use these rules in development:
+- Whenever a new library is to be added to the project, always look up the latest version of the library.
+- Always use context7 for up-to date documentations. Do not go by inferred rules. Always double check if your library usage is correct via context7.
+- Consider new features as modules that can be plugged in and removed. Use structures that allow us to swap out different implementations.
+
+### SOMEWHAT IMPORTANT
+- This repository is not thoroughly tested, but that's not an excuse to not write any tests. For any significant feature, write at least a few tests so that we are sure we did not break core functionality.
+- This repository is very young in development. Breaking changes are not that important for now. For now, it needs to work. Do not offer chances for backwards compatibility. No one else is using this right now.
 
 ## Product Roadmap
 
