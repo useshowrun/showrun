@@ -52,7 +52,7 @@ pnpm install
 pnpm approve-builds
 
 # Install camoufox browser (anti-detection Firefox)
-npx camoufox-js fetch
+cd packages/dashboard && npx camoufox-js fetch && cd ../..
 
 # Build all packages
 pnpm build
