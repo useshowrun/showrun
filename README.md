@@ -88,38 +88,31 @@ npx camoufox-js fetch
 pnpm build
 ```
 
-### Run Example Task Packs
+### Run Example Task Pack
 
 ```bash
-# Run TypeScript example
+# Run example
 pnpm test:example
 
-# Run JSON-only example
-pnpm test:example-json
-
 # Or use the unified CLI directly:
-node packages/showrun/dist/cli.js run ./taskpacks/example --inputs '{}'
 node packages/showrun/dist/cli.js run ./taskpacks/example-json --inputs '{}'
 ```
 
 ## Creating a New Task Pack
 
-Task Packs support **two styles**:
+Task Packs use the **json-dsl** format with two files:
+- `taskpack.json` - metadata (id, name, version, description)
+- `flow.json` - inputs, collectibles, and flow steps
 
-1. **JSON-only** - Single `taskpack.json` file, no build step (simple flows)
-2. **TypeScript** - `taskpack.json` + TypeScript module with builders (complex flows)
+No build step required!
 
-### Style 1: JSON-Only Task Pack (Simple)
-
-Perfect for simple automation flows - no build step required!
-
-#### 1. Create Task Pack Directory
+### 1. Create Task Pack Directory
 
 ```bash
 mkdir -p taskpacks/my-pack
 ```
 
-#### 2. Create `taskpack.json` with flow
+### 2. Create `taskpack.json`
 
 ```json
 {
@@ -127,6 +120,14 @@ mkdir -p taskpacks/my-pack
   "name": "My Task Pack",
   "version": "0.1.0",
   "description": "What this pack does",
+  "kind": "json-dsl"
+}
+```
+
+### 3. Create `flow.json`
+
+```json
+{
   "inputs": {
     "url": {
       "type": "string",
@@ -146,7 +147,7 @@ mkdir -p taskpacks/my-pack
       "id": "navigate",
       "type": "navigate",
       "params": {
-        "url": "https://example.com",
+        "url": "{{inputs.url}}",
         "waitUntil": "networkidle"
       }
     },
@@ -161,142 +162,25 @@ mkdir -p taskpacks/my-pack
 }
 ```
 
-That's it! No build step needed. See `taskpacks/example-json/` for a complete example.
+That's it! See `taskpacks/example-json/` for a complete example.
 
-### Style 2: TypeScript Task Pack (Complex)
-
-Better for complex flows with full IDE support and type checking.
-
-#### 1. Create Task Pack Directory
+### 4. Run Your Pack
 
 ```bash
-mkdir -p taskpacks/my-pack/src
-```
-
-#### 2. Create `taskpack.json`
-
-```json
-{
-  "id": "my.pack.id",
-  "name": "My Task Pack",
-  "version": "0.1.0",
-  "description": "What this pack does",
-  "main": "dist/index.js"
-}
-```
-
-### 3. Create `package.json`
-
-```json
-{
-  "name": "@showrun/my-pack",
-  "version": "0.1.0",
-  "type": "module",
-  "scripts": {
-    "build": "tsc"
-  },
-  "devDependencies": {
-    "@showrun/core": "workspace:*",
-    "@types/node": "^20.11.0",
-    "typescript": "^5.3.3"
-  }
-}
-```
-
-### 4. Create `tsconfig.json`
-
-```json
-{
-  "extends": "../../tsconfig.json",
-  "compilerOptions": {
-    "outDir": "./dist",
-    "rootDir": "./src"
-  },
-  "include": ["src/**/*"]
-}
-```
-
-### 5. Implement `src/index.ts` (DSL Flow)
-
-```typescript
-import type { TaskPack } from '@showrun/core';
-import { navigate, extractTitle } from '@showrun/core';
-
-const taskPack: TaskPack = {
-  metadata: {
-    id: 'my.pack.id',
-    name: 'My Task Pack',
-    version: '0.1.0',
-  },
-  inputs: {
-    url: {
-      type: 'string',
-      required: true,
-      description: 'URL to navigate to',
-    },
-  },
-  collectibles: [
-    {
-      name: 'title',
-      type: 'string',
-      description: 'Page title',
-    },
-  ],
-  // Declarative DSL flow - deterministic, AI-free at runtime
-  flow: [
-    navigate('navigate', {
-      url: 'https://example.com',
-      waitUntil: 'networkidle',
-    }),
-    extractTitle('extract_title', {
-      out: 'title',
-    }),
-  ],
-};
-
-export default taskPack;
-```
-
-**Alternative: Imperative style** (legacy, still supported):
-
-```typescript
-import type { TaskPack, RunContext, RunResult } from '@showrun/core';
-
-const taskPack: TaskPack = {
-  // ... metadata, inputs, collectibles ...
-  async run(ctx: RunContext, inputs: Record<string, unknown>): Promise<RunResult> {
-    // Imperative code here
-  },
-};
-```
-
-**Network steps (API-first):** Flows can use `network_find`, `network_replay`, and `network_extract` to search captured traffic and replay requests using the browser context (cookies apply). Capture is enabled automatically when a flow runs. Steps: `network_find` (where: urlIncludes/urlRegex/method/status/contentTypeIncludes/responseContains, pick: first|last, saveAs) → `network_replay` (requestId from vars, overrides: url/setQuery/setHeaders/body support `{{vars.xxx}}`/`{{inputs.xxx}}`; optional urlReplace/bodyReplace regex find/replace, replace can use $1,$2 and templates; auth: browser_context, out, response.as + optional jsonPath) → optional `network_extract` (fromVar, as, jsonPath, out). Sensitive headers are never logged or returned.
-
-**Run-once steps & auth resilience:** Steps can include `"once": "session"` or `"once": "profile"` so they run only once per session or per pack (e.g. login/setup). The runner persists this state on disk when `profileId`/`sessionId` are passed. On 401/403 (configurable), the runner can clear the once-cache, re-run once steps, and retry the failed step.
-
-### 6. Build and Run
-
-```bash
-# Build the pack
-cd taskpacks/my-pack
-pnpm build
-
-# Run it
-cd ../..
-pnpm --filter harness run tp run --pack ./taskpacks/my-pack --inputs '{"url":"https://example.com"}'
+node packages/showrun/dist/cli.js run ./taskpacks/my-pack --inputs '{"url":"https://example.com"}'
 ```
 
 ## Running Task Packs
 
-The harness CLI (`tp`) loads and executes task packs:
+Use the unified `showrun` CLI to run task packs:
 
 ```bash
-tp run --pack <path> --inputs <json>
+showrun run <pack-path> --inputs <json>
 ```
 
 ### Arguments
 
-- `--pack <path>`: Path to task pack directory (required)
+- `<pack-path>`: Path to task pack directory (required)
 - `--inputs <json>`: JSON object with input values (defaults to `{}`)
 
 ### Exit Codes

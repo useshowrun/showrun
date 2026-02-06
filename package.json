@@ -11,8 +11,7 @@
     "build": "pnpm -r --filter=!showrun build && pnpm --filter=showrun build",
     "prepare": "pnpm build",
     "dev": "pnpm build && pnpm test:example",
-    "test:example": "node packages/harness/dist/cli.js run --pack ./taskpacks/example --inputs '{}'",
-    "test:example-json": "node packages/harness/dist/cli.js run --pack ./taskpacks/example-json --inputs '{}'",
+    "test:example": "node packages/showrun/dist/cli.js run ./taskpacks/example-json --inputs '{}'",
     "test:unit": "pnpm -r test",
     "dashboard": "node packages/showrun/dist/cli.js dashboard"
   },

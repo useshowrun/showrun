@@ -146,52 +146,41 @@ export async function runTaskPack(
       networkCapture
     );
 
-    // Execute task pack - prefer declarative flow if present
-    let result: RunResult;
-    if (taskPack.flow) {
-      // Use declarative DSL flow
-      const flowResult = await runFlow(runContext, taskPack.flow, {
-        inputs: inputsWithDefaults,
-        auth: taskPack.auth,
-        sessionId: options.sessionId,
-        profileId: options.profileId,
-        cacheDir: options.cacheDir,
-        secrets,
-      });
+    // Execute declarative DSL flow
+    const flowResult = await runFlow(runContext, taskPack.flow, {
+      inputs: inputsWithDefaults,
+      auth: taskPack.auth,
+      sessionId: options.sessionId,
+      profileId: options.profileId,
+      cacheDir: options.cacheDir,
+      secrets,
+    });
 
-      // Filter collectibles to only include those defined in the pack
-      // This prevents intermediate variables from polluting the output
-      const definedCollectibleNames = new Set(
-        (taskPack.collectibles || []).map(c => c.name)
-      );
-      const filteredCollectibles: Record<string, unknown> = {};
-      for (const [key, value] of Object.entries(flowResult.collectibles)) {
-        if (definedCollectibleNames.has(key)) {
-          filteredCollectibles[key] = value;
-        }
+    // Filter collectibles to only include those defined in the pack
+    // This prevents intermediate variables from polluting the output
+    const definedCollectibleNames = new Set(
+      (taskPack.collectibles || []).map(c => c.name)
+    );
+    const filteredCollectibles: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(flowResult.collectibles)) {
+      if (definedCollectibleNames.has(key)) {
+        filteredCollectibles[key] = value;
       }
+    }
 
-      // Convert RunFlowResult to RunResult format
-      result = {
-        collectibles: filteredCollectibles,
-        meta: {
-          url: flowResult.meta.url,
-          durationMs: flowResult.meta.durationMs,
-          notes: `Executed ${flowResult.meta.stepsExecuted}/${flowResult.meta.stepsTotal} steps`,
-        },
-      };
+    // Convert RunFlowResult to RunResult format
+    const result: RunResult = {
+      collectibles: filteredCollectibles,
+      meta: {
+        url: flowResult.meta.url,
+        durationMs: flowResult.meta.durationMs,
+        notes: `Executed ${flowResult.meta.stepsExecuted}/${flowResult.meta.stepsTotal} steps`,
+      },
+    };
 
-      // Propagate diagnostic hints if present
-      if (flowResult._hints && flowResult._hints.length > 0) {
-        result._hints = flowResult._hints;
-      }
-    } else if (taskPack.run) {
-      // Use imperative run function
-      result = await taskPack.run(runContext, inputsWithDefaults);
-    } else {
-      throw new Error(
-        'Task pack must have either a "flow" array or a "run" function'
-      );
+    // Propagate diagnostic hints if present
+    if (flowResult._hints && flowResult._hints.length > 0) {
+      result._hints = flowResult._hints;
     }
 
     const durationMs = Date.now() - startTime;

@@ -83,28 +83,13 @@ taskpacks/          # Task pack definitions
 3. **Runner** (`packages/core/src/runner.ts`) executes the pack with Playwright
 4. **DSL Interpreter** (`packages/core/src/dsl/interpreter.ts`) executes declarative steps
 
-### Task Pack Types
+### Task Pack Format (json-dsl)
 
-**1. JSON inline** (no build): Single file with embedded flow
-```
-taskpacks/my-pack/
-└── taskpack.json   # metadata + inputs + collectibles + flow array
-```
-
-**2. JSON separate** (no build): Metadata and flow in separate files
+Task packs use the json-dsl format with two files:
 ```
 taskpacks/my-pack/
 ├── taskpack.json   # metadata with "kind": "json-dsl"
 └── flow.json       # inputs + collectibles + flow array
-```
-
-**3. TypeScript** (requires build): Full module with DSL builders
-```
-taskpacks/my-pack/
-├── taskpack.json   # metadata with "main": "dist/index.js"
-├── package.json
-├── tsconfig.json
-└── src/index.ts    # exports TaskPack with flow using builders
 ```
 
 ### DSL Step Types

@@ -1,7 +1,0 @@
-{
-  "id": "example.site.collector",
-  "name": "Example Collector",
-  "version": "0.1.0",
-  "description": "Demo task pack that navigates to example.com and extracts page title and h1 text",
-  "main": "dist/index.js"
-}

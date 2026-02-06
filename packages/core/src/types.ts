@@ -83,33 +83,16 @@ export interface TaskPackMetadata {
 
 /**
  * Task Pack manifest (taskpack.json)
- * 
- * Supports three styles:
- * 1. JSON-only (inline): flow, inputs, collectibles defined directly in manifest
- * 2. JSON-DSL: kind="json-dsl", flow.json file contains flow + schemas
- * 3. Module-based: main points to module file
+ *
+ * Only json-dsl format is supported:
+ * - taskpack.json: metadata with kind: "json-dsl"
+ * - flow.json: inputs, collectibles, and flow steps
  */
 export interface TaskPackManifest extends TaskPackMetadata {
   /**
-   * Pack kind: "json-dsl" for JSON packs with flow.json, undefined for other types
+   * Pack kind: must be "json-dsl"
    */
-  kind?: 'json-dsl';
-  /**
-   * Path to main module file (required for module-based packs, must be absent for json-dsl)
-   */
-  main?: string;
-  /**
-   * Input schema (optional, can be in manifest for JSON-only packs, or in flow.json for json-dsl)
-   */
-  inputs?: InputSchema;
-  /**
-   * Collectibles schema (optional, can be in manifest for JSON-only packs, or in flow.json for json-dsl)
-   */
-  collectibles?: CollectibleDefinition[];
-  /**
-   * DSL flow steps (optional, can be in manifest for JSON-only packs, or in flow.json for json-dsl)
-   */
-  flow?: DslStep[];
+  kind: 'json-dsl';
   /**
    * Auth configuration for resilience and recovery
    */
@@ -274,13 +257,9 @@ export interface TaskPack {
   inputs: InputSchema;
   collectibles: CollectibleDefinition[];
   /**
-   * Declarative flow of DSL steps (takes precedence over `run` if present)
+   * Declarative flow of DSL steps
    */
-  flow?: DslStep[];
-  /**
-   * Imperative run function (legacy style, used if `flow` is not present)
-   */
-  run?(ctx: RunContext, inputs: Record<string, unknown>): Promise<RunResult>;
+  flow: DslStep[];
   /**
    * Auth configuration for resilience and recovery
    */

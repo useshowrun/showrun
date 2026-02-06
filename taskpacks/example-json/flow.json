@@ -1,0 +1,55 @@
+{
+  "inputs": {},
+  "collectibles": [
+    {
+      "name": "page_title",
+      "type": "string",
+      "description": "The page title from the <title> tag"
+    },
+    {
+      "name": "h1_text",
+      "type": "string",
+      "description": "The text content of the first <h1> element"
+    }
+  ],
+  "flow": [
+    {
+      "id": "navigate",
+      "type": "navigate",
+      "label": "Navigate to example.com",
+      "params": {
+        "url": "https://example.com",
+        "waitUntil": "networkidle"
+      }
+    },
+    {
+      "id": "wait_for_h1",
+      "type": "wait_for",
+      "label": "Wait for h1 element to be visible",
+      "params": {
+        "target": { "kind": "css", "selector": "h1" },
+        "visible": true,
+        "timeoutMs": 5000
+      }
+    },
+    {
+      "id": "extract_title",
+      "type": "extract_title",
+      "label": "Extract page title",
+      "params": {
+        "out": "page_title"
+      }
+    },
+    {
+      "id": "extract_h1",
+      "type": "extract_text",
+      "label": "Extract h1 text",
+      "params": {
+        "target": { "kind": "css", "selector": "h1" },
+        "out": "h1_text",
+        "first": true,
+        "trim": true
+      }
+    }
+  ]
+}
