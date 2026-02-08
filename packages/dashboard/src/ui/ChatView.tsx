@@ -4,6 +4,7 @@ import ChatInput from './ChatInput.js';
 import SecretsPanel from './SecretsPanel.js';
 import SecretsRequestModal from './SecretsRequestModal.js';
 import VersionPanel from './VersionPanel.js';
+import McpUsageModal from './McpUsageModal.js';
 
 export interface Message {
   id: string;
@@ -44,6 +45,7 @@ interface NetworkEntry {
 interface ChatViewProps {
   conversation: Conversation | null;
   token: string;
+  packs?: Array<{ id: string; path: string; name: string }>;
   onConversationUpdate?: (updates: Partial<Conversation>) => void;
   onNewMessage?: (message: Message) => void;
 }
@@ -51,6 +53,7 @@ interface ChatViewProps {
 export default function ChatView({
   conversation,
   token,
+  packs,
   onConversationUpdate,
   onNewMessage,
 }: ChatViewProps) {
@@ -87,6 +90,9 @@ export default function ChatView({
     message: string;
     packId?: string; // packId from streaming event, in case conversation.packId hasn't synced yet
   } | null>(null);
+
+  // MCP Usage modal
+  const [showMcpUsage, setShowMcpUsage] = useState(false);
 
   // Network requests
   const [networkRequests, setNetworkRequests] = useState<NetworkEntry[]>([]);
@@ -610,6 +616,16 @@ export default function ChatView({
           >
             Export
           </button>
+          {conversation.packId && (
+            <button
+              className="btn-secondary"
+              onClick={() => setShowMcpUsage(true)}
+              title="Show MCP configuration for external tools"
+              style={{ padding: '4px 10px', fontSize: '12px' }}
+            >
+              MCP Usage
+            </button>
+          )}
         </div>
       </div>
 
@@ -881,6 +897,16 @@ export default function ChatView({
           token={token}
           onComplete={() => setSecretsRequest(null)}
           onCancel={() => setSecretsRequest(null)}
+        />
+      )}
+
+      {/* MCP Usage Modal */}
+      {showMcpUsage && conversation?.packId && (
+        <McpUsageModal
+          packId={conversation.packId}
+          packPath={packs?.find(p => p.id === conversation.packId)?.path ?? ''}
+          onClose={() => setShowMcpUsage(false)}
+          token={token}
         />
       )}
     </div>

@@ -315,6 +315,7 @@ function App() {
           <ChatView
             conversation={selectedConversation}
             token={config.token}
+            packs={packs}
             onConversationUpdate={handleConversationUpdate}
           />
         );

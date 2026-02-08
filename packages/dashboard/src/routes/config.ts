@@ -1,4 +1,6 @@
 import { Router, type Request, type Response } from 'express';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
 import type { DashboardContext } from '../types/context.js';
 import { discoverPacks } from '@showrun/mcp-server';
 import { TaskPackLoader } from '@showrun/core';
@@ -47,6 +49,18 @@ export function createConfigRouter(ctx: DashboardContext): Router {
       };
     });
     res.json(packsList);
+  });
+
+  // REST API: Get system info for MCP config generation
+  router.get('/api/system-info', (_req: Request, res: Response) => {
+    // Resolve the showrun CLI path relative to this package
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const cliPath = resolve(__dirname, '../../../showrun/dist/cli.js');
+
+    res.json({
+      nodePath: process.execPath,
+      cliPath,
+    });
   });
 
   return router;
