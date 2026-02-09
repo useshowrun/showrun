@@ -40,23 +40,24 @@ Task Packs are designed to be:
 
 ## Quick Start
 
-### Environment Setup
-
-Before running, create a `.env` file in the project root with your API keys:
+### Using npx
 
 ```bash
-cp .env.example .env  # if an example file exists, or create .env manually
-```
+# 1. Create a directory for your project
+mkdir my-showrun-project && cd my-showrun-project
 
-At minimum, you need an LLM API key for Teach Mode (AI-assisted flow editing):
+# 2. Create a .env file with your LLM API key (needed for Teach Mode)
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
 
-```
-ANTHROPIC_API_KEY=sk-ant-...
-# or
-OPENAI_API_KEY=sk-...
-```
+# 3. Download the Camoufox browser (anti-detection Firefox)
+npx camoufox-js fetch
 
-See `packages/dashboard/README.md` for the full list of supported environment variables.
+# 4. Launch the dashboard
+npx showrun dashboard --packs ./taskpacks_local
+
+# Add --headful to see the browser window during automation
+npx showrun dashboard --packs ./taskpacks_local --headful
+```
 
 ### From Git Clone
 
@@ -81,16 +82,23 @@ pnpm build
 pnpm dashboard --packs ./taskpacks_local --headful
 ```
 
-### Using npx (Coming Soon)
+### Environment Setup
 
-> **Note:** `npx showrun` from npm is not yet available. The package will be published soon.
-> For now, use the git clone method above.
+Before running, create a `.env` file in the project root with your API keys:
 
 ```bash
-# Once published to npm:
-npx showrun dashboard --packs ./my-taskpacks
-npx showrun run ./my-pack --inputs '{}'
+cp .env.example .env  # if an example file exists, or create .env manually
 ```
+
+At minimum, you need an LLM API key for Teach Mode (AI-assisted flow editing):
+
+```
+ANTHROPIC_API_KEY=sk-ant-...
+# or
+OPENAI_API_KEY=sk-...
+```
+
+See `packages/dashboard/README.md` for the full list of supported environment variables.
 
 ### Development Setup
 
