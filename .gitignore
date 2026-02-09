@@ -18,6 +18,7 @@ runs-dashboard/
 .env.local
 .env.*.local
 .secrets.json
+.showrun/
 
 # Logs and debug
 *.log

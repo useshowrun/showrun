@@ -10,6 +10,7 @@ export * from './browserLauncher.js';
 export * from './browserPersistence.js';
 export * from './packUtils.js';
 export * from './packVersioning.js';
+export * from './config.js';
 
 // DSL exports
 export * from './dsl/types.js';

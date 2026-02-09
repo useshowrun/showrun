@@ -10,6 +10,7 @@
 - **Auth Resilience**: Run-once caching, 401/403 recovery, session persistence
 - **MCP Servers**: Browser Inspector (20+ tools), TaskPack Editor (5 tools), TaskPack Runner
 - **Flow Versioning**: Auto-snapshot on ready, manual snapshots, restore with auto-backup, CLI + dashboard UI
+- **System-Wide Config**: Layered `config.json` with platform-aware directory discovery (`showrun config init/show/path`)
 
 ### Unified CLI Structure
 The `showrun` CLI consolidates all functionality:
@@ -46,6 +47,7 @@ The `showrun` CLI consolidates all functionality:
 | HTTPS/TLS | Security baseline | Small | Pending |
 | Rate limiting | DoS protection | Small | Pending |
 | Secrets management | Secure credential handling | Medium | **Implemented** |
+| System-wide config | Layered config.json with platform-aware discovery | Medium | **Implemented** |
 | Monitoring/metrics | Operational visibility | Medium | Pending |
 
 ### Developer Experience Gaps
@@ -164,6 +166,7 @@ The CLI is now fully consolidated:
 - `showrun pack create/validate/set-flow/set-meta` - Pack management
 - `showrun pack snapshot/history/restore` - Version management
 - `showrun mcp browser-inspector/taskpack-editor` - MCP utilities
+- `showrun config init/show/path` - Configuration management
 
 **Potential Future Additions:**
 - `showrun pack export` - Export as zip

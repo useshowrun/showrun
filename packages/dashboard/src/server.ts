@@ -28,7 +28,7 @@ function findUiPath(): string {
 }
 
 import { discoverPacks, ConcurrencyLimiter } from '@showrun/mcp-server';
-import { ensureDir } from '@showrun/core';
+import { ensureDir, resolveFilePath, ensureSystemPromptInConfigDir } from '@showrun/core';
 import { RunManager } from './runManager.js';
 import { initDatabase } from './db.js';
 import { createLlmProvider } from './llm/index.js';
@@ -56,51 +56,50 @@ export interface DashboardOptions {
 }
 
 /**
- * Load system prompt from file or environment
+ * Load system prompt from file or environment.
+ *
+ * Priority:
+ *   1. TEACH_CHAT_SYSTEM_PROMPT env var (inline text)
+ *   2. resolveFilePath('AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md') — config dirs, cwd, ancestors
+ *   3. resolveFilePath('TEACH_MODE_SYSTEM_PROMPT.md') — fallback prompt
+ *   4. Error message suggesting `showrun config init`
  */
 function loadSystemPrompt(): string {
-  // System prompt for Teach Mode flow-writing chat: env > AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md file > inline default
-  let systemPrompt = process.env.TEACH_CHAT_SYSTEM_PROMPT;
-  if (!systemPrompt) {
-    // Try autonomous exploration prompt first (preferred for agent mode)
-    // __dirname is packages/dashboard/dist, so ../../../ goes to repo root
-    const explorationPromptPath =
-      process.env.AUTONOMOUS_EXPLORATION_PROMPT_PATH ||
-      resolve(process.cwd(), 'AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md');
-    const explorationAltPath = resolve(__dirname, '../../../AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md');
+  // 1. Env var takes top priority
+  const envPrompt = process.env.TEACH_CHAT_SYSTEM_PROMPT;
+  if (envPrompt) return envPrompt;
 
-    // Fall back to teach mode prompt
-    const teachPromptPath =
-      process.env.TEACH_MODE_SYSTEM_PROMPT_PATH ||
-      resolve(process.cwd(), 'TEACH_MODE_SYSTEM_PROMPT.md');
-    const teachAltPath = resolve(__dirname, '../../../TEACH_MODE_SYSTEM_PROMPT.md');
+  // 2. Search for autonomous exploration prompt via config system
+  const explorationFilename = 'AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md';
+  const teachFilename = 'TEACH_MODE_SYSTEM_PROMPT.md';
 
-    // Priority: exploration prompt > teach mode prompt > inline default
-    const explorationPath = existsSync(explorationPromptPath) ? explorationPromptPath
-      : existsSync(explorationAltPath) ? explorationAltPath
-      : null;
-    const teachPath = existsSync(teachPromptPath) ? teachPromptPath
-      : existsSync(teachAltPath) ? teachAltPath
-      : null;
+  const pathToLoad = resolveFilePath(explorationFilename) ?? resolveFilePath(teachFilename);
 
-    // Use exploration prompt if available, otherwise fall back to teach mode prompt
-    const pathToLoad = explorationPath ?? teachPath;
+  if (pathToLoad) {
+    try {
+      const content = readFileSync(pathToLoad, 'utf-8').trim();
+      console.log(`[Dashboard] System prompt loaded from ${pathToLoad}`);
 
-    if (pathToLoad) {
+      // Auto-copy to config dir for future use from other directories
+      const loadedFilename = pathToLoad.endsWith(explorationFilename)
+        ? explorationFilename
+        : teachFilename;
       try {
-        systemPrompt = readFileSync(pathToLoad, 'utf-8').trim();
-        console.log(`[Dashboard] System prompt loaded from ${pathToLoad}`);
-      } catch (e) {
-        console.warn('[Dashboard] Failed to load system prompt:', e);
+        ensureSystemPromptInConfigDir(loadedFilename, pathToLoad);
+      } catch {
+        // Non-fatal — prompt is already loaded, copy is just a convenience
       }
-    }
-    if (!systemPrompt) {
-      console.error('[Dashboard] ERROR: No system prompt found. Create AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md in the project root.');
-      console.error('[Dashboard] The agent will not work correctly without a system prompt.');
-      systemPrompt = 'System prompt not configured. Please create AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md in the project root.';
+
+      return content;
+    } catch (e) {
+      console.warn('[Dashboard] Failed to load system prompt:', e);
     }
   }
-  return systemPrompt;
+
+  // 4. Nothing found
+  console.error('[Dashboard] ERROR: No system prompt found.');
+  console.error('[Dashboard] Run `showrun config init` to set up configuration, or create AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md in the project root.');
+  return 'System prompt not configured. Run `showrun config init` or create AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md in the project root.';
 }
 
 /**

@@ -84,21 +84,18 @@ pnpm dashboard --packs ./taskpacks_local --headful
 
 ### Environment Setup
 
-Before running, create a `.env` file in the project root with your API keys:
+At minimum, you need an LLM API key for Teach Mode (AI-assisted flow editing). You can configure this via a `.env` file or the config system (see [Configuration](#configuration) below):
 
 ```bash
-cp .env.example .env  # if an example file exists, or create .env manually
+# Option A: .env file in project root
+echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
+
+# Option B: config.json (persists across projects)
+showrun config init --global
+# Then edit ~/.config/showrun/config.json (Linux/macOS) or %APPDATA%\showrun\config.json (Windows)
 ```
 
-At minimum, you need an LLM API key for Teach Mode (AI-assisted flow editing):
-
-```
-ANTHROPIC_API_KEY=sk-ant-...
-# or
-OPENAI_API_KEY=sk-...
-```
-
-See `packages/dashboard/README.md` for the full list of supported environment variables.
+See `packages/dashboard/README.md` for the full list of supported environment variables and their config.json equivalents.
 
 ### Development Setup
 
@@ -335,6 +332,89 @@ Then open the URL shown in the terminal (e.g. `http://localhost:5173`). You can 
 
 See `packages/dashboard/README.md` for environment variables (e.g. LLM API key for Teach Mode).
 
+## Configuration
+
+ShowRun uses a layered configuration system. Values are resolved in this order (highest priority wins):
+
+```
+Real env vars > .env file > project config.json > global config.json > built-in defaults
+```
+
+### Quick Setup
+
+```bash
+# Create a project-local config
+showrun config init
+
+# Or create a global config (shared across all projects)
+showrun config init --global
+
+# See what ShowRun resolved
+showrun config show
+
+# See which directories are searched
+showrun config path
+```
+
+### Config File Format
+
+Config files are stored as `.showrun/config.json` (project-local) or in a platform-specific global directory:
+
+| Platform | Global config directory |
+|----------|----------------------|
+| Linux | `$XDG_CONFIG_HOME/showrun/` (default: `~/.config/showrun/`) |
+| macOS | `$XDG_CONFIG_HOME/showrun/` (default: `~/.config/showrun/`) |
+| Windows | `%APPDATA%\showrun\` |
+
+```json
+{
+  "llm": {
+    "provider": "anthropic",
+    "anthropic": { "apiKey": "sk-ant-...", "model": "", "baseUrl": "" },
+    "openai": { "apiKey": "", "model": "", "baseUrl": "" }
+  },
+  "agent": {
+    "maxBrowserRounds": 0
+  },
+  "prompts": {
+    "teachChatSystemPrompt": "",
+    "autonomousExplorationPromptPath": "",
+    "teachModeSystemPromptPath": ""
+  }
+}
+```
+
+Each key maps to an environment variable. Values from `config.json` are only applied when the corresponding env var is **not already set**, so `.env` and real env vars always win.
+
+| config.json path | Environment variable |
+|------------------|---------------------|
+| `llm.provider` | `LLM_PROVIDER` |
+| `llm.anthropic.apiKey` | `ANTHROPIC_API_KEY` |
+| `llm.anthropic.model` | `ANTHROPIC_MODEL` |
+| `llm.anthropic.baseUrl` | `ANTHROPIC_BASE_URL` |
+| `llm.openai.apiKey` | `OPENAI_API_KEY` |
+| `llm.openai.model` | `OPENAI_MODEL` |
+| `llm.openai.baseUrl` | `OPENAI_BASE_URL` |
+| `agent.maxBrowserRounds` | `MAX_BROWSER_ROUNDS` |
+| `prompts.teachChatSystemPrompt` | `TEACH_CHAT_SYSTEM_PROMPT` |
+| `prompts.autonomousExplorationPromptPath` | `AUTONOMOUS_EXPLORATION_PROMPT_PATH` |
+| `prompts.teachModeSystemPromptPath` | `TEACH_MODE_SYSTEM_PROMPT_PATH` |
+
+### Directory Search Order
+
+ShowRun searches for `.showrun/config.json` in multiple locations (lowest to highest priority):
+
+1. Global config directory (platform-specific, see table above)
+2. `$HOME/.showrun/` (Linux/macOS only)
+3. Ancestor directories walking up from cwd (e.g. `../../.showrun/`)
+4. `<cwd>/.showrun/`
+
+When multiple config files are found, they are deep-merged with higher-priority values winning.
+
+### System Prompts
+
+The `showrun config init` command also copies `AUTONOMOUS_EXPLORATION_SYSTEM_PROMPT.md` into the config directory. This means the Teach Mode agent prompt is available even when running ShowRun from outside the repo directory.
+
 ## MCP Server
 
 The framework includes an MCP (Model Context Protocol) server that exposes Task Packs as MCP tools over HTTP/SSE.
@@ -355,7 +435,7 @@ See `packages/mcp-server/README.md` for details.
 
 - Node.js 20+
 - pnpm (or npm with workspaces)
-- Playwright Chromium browser (`pnpm exec playwright install chromium`)
+- Camoufox browser — anti-detection Firefox (`npx camoufox-js fetch`)
 
 ## Contributing
 

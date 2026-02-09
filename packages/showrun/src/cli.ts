@@ -19,6 +19,11 @@ import { cwd } from 'process';
   }
 })();
 
+import { initConfig } from '@showrun/core';
+
+// Apply config.json values to process.env (only sets vars not already present)
+initConfig();
+
 import {
   cmdRun,
   printRunHelp,
@@ -30,6 +35,8 @@ import {
   printPackHelp,
   cmdMcp,
   printMcpHelp,
+  cmdConfig,
+  printConfigHelp,
 } from './commands/index.js';
 
 function printHelp(): void {
@@ -47,6 +54,10 @@ Commands:
     validate              Validate pack
     set-flow              Update flow.json
     set-meta              Update taskpack.json
+  config <subcommand>     Configuration management
+    init                  Create config directory and default config.json
+    show                  Show fully resolved configuration
+    path                  List config directories searched
   mcp <subcommand>        MCP server utilities
     browser-inspector     Browser inspection MCP server
     taskpack-editor       Pack editor MCP server
@@ -93,6 +104,9 @@ async function main(): Promise<void> {
       case 'pack':
         printPackHelp();
         break;
+      case 'config':
+        printConfigHelp();
+        break;
       case 'mcp':
         printMcpHelp();
         break;
@@ -115,6 +129,9 @@ async function main(): Promise<void> {
         break;
       case 'pack':
         await cmdPack(commandArgs);
+        break;
+      case 'config':
+        await cmdConfig(commandArgs);
         break;
       case 'mcp':
         await cmdMcp(commandArgs);
