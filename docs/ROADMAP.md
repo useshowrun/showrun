@@ -5,7 +5,7 @@
 ### What's Working Well
 - **Core DSL**: 19 fully implemented step types (navigate, click, fill, extract_*, wait_for, assert, set_var, network_*, select_option, press_key, upload_file, frame, new_tab, switch_tab)
 - **Unified CLI**: Single `showrun` command for all operations (run, serve, dashboard, pack, mcp)
-- **Teach Mode**: AI-assisted flow creation with Anthropic/OpenAI streaming
+- **Teach Mode**: AI-assisted flow creation with Anthropic/OpenAI streaming, two-agent architecture (Exploration Agent + Editor Agent)
 - **Network Capture**: Advanced request replay with JSONPath extraction and transforms
 - **Auth Resilience**: Run-once caching, 401/403 recovery, session persistence
 - **MCP Servers**: Browser Inspector (20+ tools), TaskPack Editor (5 tools), TaskPack Runner
@@ -105,6 +105,7 @@ The `showrun` CLI consolidates all functionality:
    - API documentation (OpenAPI)
 
 3. **Teach Mode Enhancements**
+   - Two-agent architecture (Exploration + Editor) — **Implemented**
    - Network request → step suggestions
    - Better error messages for new users
 

@@ -8,15 +8,50 @@ import { updateConversation, getConversation, getAllConversations, getMessagesFo
 import type { ChatMessage, ToolCall, StreamEvent, ChatWithToolsResult, ToolDef } from '../llm/provider.js';
 import {
   MAIN_AGENT_TOOL_DEFINITIONS,
+  EXPLORATION_AGENT_TOOLS,
   executeAgentTool,
   type AgentToolContext,
 } from '../agentTools.js';
 import { TaskPackEditorWrapper } from '../mcpWrappers.js';
 import { summarizeIfNeeded, estimateTotalTokens, forceSummarize, type AgentMessage } from '../contextManager.js';
 import { createLlmProvider } from '../llm/index.js';
+import { runEditorAgent } from '../agents/editorAgent.js';
+import type { EditorAgentResult } from '../agents/types.js';
+import { appendFileSync, mkdirSync } from 'fs';
+import { join } from 'path';
+
+/**
+ * Log failed tool calls to JSONL for analysis.
+ * Covers: disallowed tools, execution errors, and any tool returning an error result.
+ */
+function logFailedToolCall(entry: {
+  tool: string;
+  args: Record<string, unknown>;
+  reason: 'disallowed' | 'execution_error' | 'error_result';
+  error: string;
+  assistantContent: string | null;
+  conversationId: string | null;
+  packId: string | null;
+  iteration: number;
+  recentUserMessage: string | null;
+}) {
+  try {
+    const logDir = join(process.cwd(), 'data');
+    mkdirSync(logDir, { recursive: true });
+    const logPath = join(logDir, 'failed-tool-calls.jsonl');
+    const line = JSON.stringify({ ...entry, timestamp: new Date().toISOString() }) + '\n';
+    appendFileSync(logPath, line, 'utf-8');
+    console.warn(`[Agent] Failed tool call logged: ${entry.tool} [${entry.reason}] (conversation: ${entry.conversationId})`);
+  } catch (err) {
+    console.error('[Agent] Failed to log tool call:', err);
+  }
+}
 
 // MAX_NON_EDITOR_ITERATIONS: limits consecutive browser-only rounds (set to 0 to disable)
 const MAX_NON_EDITOR_ITERATIONS = parseInt(process.env.AGENT_MAX_BROWSER_ROUNDS || '0', 10);
+
+/** Allowed tool names for the Exploration Agent — anything else is rejected at execution time */
+const EXPLORATION_TOOL_NAMES = new Set(EXPLORATION_AGENT_TOOLS.map(t => t.function.name));
 const MAX_TOTAL_ITERATIONS = 100; // Absolute safety cap
 
 /** Tool definition for initializer agent - only pack creation */
@@ -369,14 +404,14 @@ export function createTeachRouter(ctx: DashboardContext): Router {
     const sessionKey = conversationId || effectivePackId || `session_${Date.now()}`;
 
     // Helper to call LLM with or without streaming (uses agentMessages which may be modified by summarization)
-    // Note: Uses MAIN_AGENT_TOOL_DEFINITIONS which excludes editor_create_pack and conversation_link_pack
-    // since pack creation is now automatic via runPackInitializer
+    // Uses EXPLORATION_AGENT_TOOLS: browser + network + context + conversation + read_pack + agent_build_flow
+    // The Exploration Agent cannot directly edit flows — it delegates via agent_build_flow
     async function callLlm(currentMessages: AgentMsg[]): Promise<ChatWithToolsResult> {
       if (supportsStreaming && streamFlow) {
         const generator = (ctx.llmProvider as any).chatWithToolsStream({
           systemPrompt,
           messages: currentMessages,
-          tools: MAIN_AGENT_TOOL_DEFINITIONS,
+          tools: EXPLORATION_AGENT_TOOLS,
           enableThinking: true,
         }) as AsyncGenerator<StreamEvent, ChatWithToolsResult, unknown>;
 
@@ -392,7 +427,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
         return await (ctx.llmProvider as any).chatWithTools({
           systemPrompt,
           messages: currentMessages,
-          tools: MAIN_AGENT_TOOL_DEFINITIONS,
+          tools: EXPLORATION_AGENT_TOOLS,
         });
       }
     }
@@ -475,8 +510,135 @@ export function createTeachRouter(ctx: DashboardContext): Router {
               // ignore
             }
 
+            // Guard: reject tools not in the Exploration Agent's allowed set
+            if (!EXPLORATION_TOOL_NAMES.has(tc.name)) {
+              // Find the most recent user message for context
+              const lastUserMsg = [...agentMessages].reverse().find(m => m.role === 'user');
+              const recentUserContent = lastUserMsg
+                ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '(multipart)').slice(0, 500)
+                : null;
+
+              logFailedToolCall({
+                tool: tc.name,
+                args: toolArgs,
+                reason: 'disallowed',
+                error: `Tool "${tc.name}" is not in the Exploration Agent's allowed set`,
+                assistantContent: (result.content ?? '').slice(0, 1000),
+                conversationId: conversationId ?? null,
+                packId: effectivePackId ?? null,
+                iteration: iter,
+                recentUserMessage: recentUserContent,
+              });
+
+              const resultStr = JSON.stringify({
+                error: `Tool "${tc.name}" is not available. You are the Exploration Agent — you have browser, network, context, and conversation tools, plus agent_build_flow to delegate flow building. Use agent_build_flow to delegate DSL implementation to the Editor Agent.`,
+              });
+              writeStreamLine({ type: 'tool_start', tool: tc.name, args: toolArgs });
+              writeStreamLine({ type: 'tool_result', tool: tc.name, args: toolArgs, result: JSON.parse(resultStr), success: false });
+              toolTrace.push({ tool: tc.name, args: toolArgs, result: JSON.parse(resultStr), success: false });
+              agentMessages.push({ role: 'tool', content: resultStr, tool_call_id: tc.id });
+              continue;
+            }
+
             // Emit tool_start event before executing the tool
             writeStreamLine({ type: 'tool_start', tool: tc.name, args: toolArgs });
+
+            // Special handling: agent_build_flow invokes the Editor Agent
+            if (tc.name === 'agent_build_flow') {
+              let editorResult: EditorAgentResult;
+              try {
+                editorResult = await runEditorAgent({
+                  instruction: (toolArgs.instruction as string) || '',
+                  explorationContext: (toolArgs.explorationContext as string) || '',
+                  testInputs: (toolArgs.testInputs as Record<string, unknown>) || undefined,
+                  llmProvider: ctx.llmProvider!,
+                  toolExecutor: (name, args) => executeAgentTool(name, args, toolCtx),
+                  onStreamEvent: (event) => writeStreamLine(event),
+                  onFlowUpdated: async () => {
+                    // Read pack and emit flow_updated when editor patches the flow
+                    if (effectivePackId) {
+                      try {
+                        const { flowJson } = await ctx.taskPackEditor.readPack(effectivePackId);
+                        updatedFlow = flowJson;
+                        const val = await ctx.taskPackEditor.validateFlow(JSON.stringify(flowJson));
+                        validation = { ok: val.ok, errors: val.errors, warnings: val.warnings };
+                        writeStreamLine({ type: 'flow_updated', flow: flowJson, validation: val });
+                      } catch {
+                        // ignore
+                      }
+                    }
+                  },
+                  onToolError: (toolName, toolErrorArgs, errorMsg, editorIter) => {
+                    const lastUserMsg = [...agentMessages].reverse().find(m => m.role === 'user');
+                    const recentUserContent = lastUserMsg
+                      ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '(multipart)').slice(0, 500)
+                      : null;
+                    logFailedToolCall({
+                      tool: `editor:${toolName}`,
+                      args: toolErrorArgs,
+                      reason: 'execution_error',
+                      error: errorMsg,
+                      assistantContent: null,
+                      conversationId: conversationId ?? null,
+                      packId: effectivePackId ?? null,
+                      iteration: editorIter,
+                      recentUserMessage: recentUserContent,
+                    });
+                  },
+                  abortSignal: { get aborted() { return aborted; } },
+                  sessionKey,
+                });
+              } catch (err) {
+                editorResult = {
+                  success: false,
+                  summary: '',
+                  stepsCreated: 0,
+                  collectiblesCount: 0,
+                  error: err instanceof Error ? err.message : String(err),
+                  iterationsUsed: 0,
+                };
+              }
+
+              const resultStr = JSON.stringify(editorResult, null, 2);
+              const resultParsed = editorResult;
+              const success = editorResult.success;
+              toolTrace.push({ tool: tc.name, args: toolArgs, result: resultParsed, success });
+              writeStreamLine({ type: 'tool_result', tool: tc.name, args: toolArgs, result: resultParsed, success });
+
+              if (!success) {
+                const lastUserMsg = [...agentMessages].reverse().find(m => m.role === 'user');
+                const recentUserContent = lastUserMsg
+                  ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '(multipart)').slice(0, 500)
+                  : null;
+                logFailedToolCall({
+                  tool: tc.name,
+                  args: toolArgs,
+                  reason: 'error_result',
+                  error: editorResult.error || editorResult.summary || 'Editor agent failed',
+                  assistantContent: (result.content ?? '').slice(0, 1000),
+                  conversationId: conversationId ?? null,
+                  packId: effectivePackId ?? null,
+                  iteration: iter,
+                  recentUserMessage: recentUserContent,
+                });
+              }
+
+              // Read final flow state after editor agent completes
+              if (effectivePackId) {
+                try {
+                  const { flowJson } = await ctx.taskPackEditor.readPack(effectivePackId);
+                  updatedFlow = flowJson;
+                  const val = await ctx.taskPackEditor.validateFlow(JSON.stringify(flowJson));
+                  validation = { ok: val.ok, errors: val.errors, warnings: val.warnings };
+                  writeStreamLine({ type: 'flow_updated', flow: flowJson, validation: val });
+                } catch {
+                  // ignore
+                }
+              }
+
+              agentMessages.push({ role: 'tool', content: resultStr, tool_call_id: tc.id });
+              continue; // Skip the normal tool execution path below
+            }
 
             const execResult = await executeAgentTool(tc.name, toolArgs, toolCtx);
             let resultStr = execResult.stringForLlm;
@@ -488,6 +650,27 @@ export function createTeachRouter(ctx: DashboardContext): Router {
             }
             const success = !(resultParsed && typeof resultParsed === 'object' && 'error' in resultParsed);
             toolTrace.push({ tool: tc.name, args: toolArgs, result: resultParsed, success });
+
+            if (!success) {
+              const lastUserMsg = [...agentMessages].reverse().find(m => m.role === 'user');
+              const recentUserContent = lastUserMsg
+                ? (typeof lastUserMsg.content === 'string' ? lastUserMsg.content : '(multipart)').slice(0, 500)
+                : null;
+              const errorStr = resultParsed && typeof resultParsed === 'object' && 'error' in resultParsed
+                ? String((resultParsed as any).error).slice(0, 2000)
+                : resultStr.slice(0, 2000);
+              logFailedToolCall({
+                tool: tc.name,
+                args: toolArgs,
+                reason: 'execution_error',
+                error: errorStr,
+                assistantContent: (result.content ?? '').slice(0, 1000),
+                conversationId: conversationId ?? null,
+                packId: effectivePackId ?? null,
+                iteration: iter,
+                recentUserMessage: recentUserContent,
+              });
+            }
 
             // Emit conversation updates when conversation_* tools are called
             if (tc.name.startsWith('conversation_') && success && conversationId) {

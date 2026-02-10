@@ -211,30 +211,30 @@ export function applyConfigToEnv(config: ShowRunConfig): void {
 // ── File resolution ────────────────────────────────────────────────────────
 
 /**
- * Resolve a filename by searching config directories (highest priority first),
- * then cwd, then walking up ancestors.
+ * Resolve a filename by searching local paths first (cwd, then ancestors),
+ * then config directories (highest priority first).
+ * Local files always win over config dir copies.
  * Returns the first existing path, or null.
  */
 export function resolveFilePath(filename: string): string | null {
-  const configDirs = discoverConfigDirs();
-
-  // Search config dirs from highest priority (last) to lowest (first)
-  for (let i = configDirs.length - 1; i >= 0; i--) {
-    const candidate = join(configDirs[i], filename);
-    if (existsSync(candidate)) return candidate;
-  }
-
-  // Search cwd
+  // 1. Search cwd first — local files take priority
   const cwdPath = resolve(cwd(), filename);
   if (existsSync(cwdPath)) return cwdPath;
 
-  // Walk up from cwd looking for the file directly (not inside .showrun)
+  // 2. Walk up from cwd looking for the file directly (not inside .showrun)
   let dir = resolve(cwd(), '..');
   const root = parsePath(dir).root;
   while (dir !== root && dir.length > root.length) {
     const candidate = resolve(dir, filename);
     if (existsSync(candidate)) return candidate;
     dir = resolve(dir, '..');
+  }
+
+  // 3. Fall back to config dirs from highest priority (last) to lowest (first)
+  const configDirs = discoverConfigDirs();
+  for (let i = configDirs.length - 1; i >= 0; i--) {
+    const candidate = join(configDirs[i], filename);
+    if (existsSync(candidate)) return candidate;
   }
 
   return null;

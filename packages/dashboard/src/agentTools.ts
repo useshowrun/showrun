@@ -163,7 +163,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     type: 'function',
     function: {
       name: 'browser_goto',
-      description: 'Navigate browser to URL. Browser session is managed automatically.',
+      description: 'Navigate browser to URL. Browser session is managed automatically. IMPORTANT: After navigating, always call browser_network_list to check for API endpoints before using DOM tools.',
       parameters: {
         type: 'object',
         properties: {
@@ -226,12 +226,112 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
       },
     },
   },
+  // ── Network / API tools (call these BEFORE DOM tools after every navigation) ──
+  {
+    type: 'function',
+    function: {
+      name: 'browser_network_list',
+      description: 'IMPORTANT: Call this after EVERY browser_goto or page navigation to check for API endpoints. List recent network requests. Returns compact format (id, method, url, status, responsePreview) by default. responsePreview shows first ~100 chars of response body. If APIs exist that return the data you need, ALWAYS prefer using them via browser_network_replay instead of extracting from DOM. Use filter "all" to include static resources. Use browser_network_get for full headers or browser_network_get_response for full body.',
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: { type: 'number', description: 'Max requests to return (default 50)' },
+          filter: { type: 'string', enum: ['all', 'api', 'xhr'], description: 'Filter type (default "api" - likely API calls only)' },
+          compact: { type: 'boolean', description: 'If true (default), return minimal fields. Set false to include request/response headers.' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_network_search',
+      description: 'Search network requests by query (case-insensitive). Matches URL, method, resourceType, status, request/response headers, postData, and response body. Use this to find requests by company name, text in the response, or URL. Returns matching entries (capped at 20). Prefer over network_list when the user asks for a specific request or content (e.g. "request that contains Martini").',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Substring to match in URL, headers, postData, or response body (case-insensitive)' },
+          limit: { type: 'number', description: 'Max results to return (default 20)' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_network_get',
+      description: 'Get one network request by id (metadata only; no response body). Use when the user provides a request ID (e.g. from the Network list). Call browser_network_get_response when you need the response body. replayPossible indicates replay with browser context is possible.',
+      parameters: {
+        type: 'object',
+        properties: {
+          requestId: { type: 'string', description: 'Request ID the user selected (e.g. req-1-123)' },
+        },
+        required: ['requestId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_network_get_response',
+      description: 'Get the response body for a request. Returns first 200 characters by default; set full=true to return the full captured snippet (up to 2000 chars). Use this to inspect API responses before deciding whether to extract data via API replay or DOM.',
+      parameters: {
+        type: 'object',
+        properties: {
+          requestId: { type: 'string', description: 'Request ID from network list or network_get' },
+          full: { type: 'boolean', description: 'If true, return full captured snippet (up to 2000 chars); default false returns first 200 chars' },
+        },
+        required: ['requestId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_network_replay',
+      description: 'Replay a captured request using the browser context (cookies apply). This is the PREFERRED way to extract data when an API endpoint exists — replay the API call and use the structured response instead of parsing DOM. Overrides: url, setQuery, setHeaders, body (Nunjucks: {{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Optional urlReplace/bodyReplace: { find, replace }; replace can use $1, $2 and Nunjucks (e.g. {{inputs.page | urlencode }}). Returns status, contentType, and bounded response body.',
+      parameters: {
+        type: 'object',
+        properties: {
+          requestId: { type: 'string', description: 'Request ID from network list or network_get' },
+          overrides: {
+            type: 'object',
+            description: 'Optional overrides (url, setQuery, setHeaders, body; or urlReplace/bodyReplace { find, replace })',
+            properties: {
+              url: { type: 'string' },
+              setQuery: { type: 'object', description: 'Query params to set (merge/replace)' },
+              setHeaders: { type: 'object', description: 'Non-sensitive headers only' },
+              body: { type: 'string' },
+              urlReplace: { type: 'object', properties: { find: { type: 'string' }, replace: { type: 'string' } }, description: 'Regex find/replace on captured URL' },
+              bodyReplace: { type: 'object', properties: { find: { type: 'string' }, replace: { type: 'string' } }, description: 'Regex find/replace on captured body' },
+            },
+          },
+        },
+        required: ['requestId'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_network_clear',
+      description: 'Clear the session network buffer.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  },
+  // ── DOM / Page structure tools (check network traffic FIRST before using these) ──
   {
     type: 'function',
     function: {
       name: 'browser_get_dom_snapshot',
       description:
-        'Get page accessibility snapshot in compact YAML format (default) or verbose JSON. YAML format shows hierarchical DOM structure with element refs [ref=eN] for targeting. Use maxDepth to limit tree depth for very large pages. ~70-80% smaller than JSON format. Prefer this over screenshot for understanding page structure.',
+        'Get page accessibility snapshot in compact YAML format (default) or verbose JSON. IMPORTANT: Before using this tool, ALWAYS call browser_network_list first to check if the data you need is available via an API endpoint. Only use DOM extraction when no suitable API exists. YAML format shows hierarchical DOM structure with element refs [ref=eN] for targeting. Use maxDepth to limit tree depth for very large pages. ~70-80% smaller than JSON format.',
       parameters: {
         type: 'object',
         properties: {
@@ -293,104 +393,6 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
           selector: { type: 'string', description: 'CSS selector for the element (e.g., "iframe[title*=\'reCAPTCHA\']", "#my-element")' },
         },
         required: ['selector'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_network_list',
-      description: 'List recent network requests. Returns compact format (id, method, url, status, responsePreview) by default. responsePreview shows first ~100 chars of response body. Use filter "all" to include static resources. Use browser_network_get for full headers or browser_network_get_response for full body.',
-      parameters: {
-        type: 'object',
-        properties: {
-          limit: { type: 'number', description: 'Max requests to return (default 50)' },
-          filter: { type: 'string', enum: ['all', 'api', 'xhr'], description: 'Filter type (default "api" - likely API calls only)' },
-          compact: { type: 'boolean', description: 'If true (default), return minimal fields. Set false to include request/response headers.' },
-        },
-        required: [],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_network_search',
-      description: 'Search network requests by query (case-insensitive). Matches URL, method, resourceType, status, request/response headers, postData, and response body. Use this to find requests by company name, text in the response, or URL. Returns matching entries (capped at 20). Prefer over network_list when the user asks for a specific request or content (e.g. "request that contains Martini").',
-      parameters: {
-        type: 'object',
-        properties: {
-          query: { type: 'string', description: 'Substring to match in URL, headers, postData, or response body (case-insensitive)' },
-          limit: { type: 'number', description: 'Max results to return (default 20)' },
-        },
-        required: ['query'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_network_get',
-      description: 'Get one network request by id (metadata only; no response body). Use when the user provides a request ID (e.g. from the Network list). Call browser_network_get_response when you need the response body. replayPossible indicates replay with browser context is possible.',
-      parameters: {
-        type: 'object',
-        properties: {
-          requestId: { type: 'string', description: 'Request ID the user selected (e.g. req-1-123)' },
-        },
-        required: ['requestId'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_network_get_response',
-      description: 'Get the response body for a request. Returns first 200 characters by default; set full=true to return the full captured snippet (up to 2000 chars).',
-      parameters: {
-        type: 'object',
-        properties: {
-          requestId: { type: 'string', description: 'Request ID from network list or network_get' },
-          full: { type: 'boolean', description: 'If true, return full captured snippet (up to 2000 chars); default false returns first 200 chars' },
-        },
-        required: ['requestId'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_network_replay',
-      description: 'Replay a captured request using the browser context (cookies apply). Overrides: url, setQuery, setHeaders, body (Nunjucks: {{inputs.x}}, {{vars.x}}; use {{ inputs.x | urlencode }} for URL/query values). Optional urlReplace/bodyReplace: { find, replace }; replace can use $1, $2 and Nunjucks (e.g. {{inputs.page | urlencode }}). Returns status, contentType, and bounded response body.',
-      parameters: {
-        type: 'object',
-        properties: {
-          requestId: { type: 'string', description: 'Request ID from network list or network_get' },
-          overrides: {
-            type: 'object',
-            description: 'Optional overrides (url, setQuery, setHeaders, body; or urlReplace/bodyReplace { find, replace })',
-            properties: {
-              url: { type: 'string' },
-              setQuery: { type: 'object', description: 'Query params to set (merge/replace)' },
-              setHeaders: { type: 'object', description: 'Non-sensitive headers only' },
-              body: { type: 'string' },
-              urlReplace: { type: 'object', properties: { find: { type: 'string' }, replace: { type: 'string' } }, description: 'Regex find/replace on captured URL' },
-              bodyReplace: { type: 'object', properties: { find: { type: 'string' }, replace: { type: 'string' } }, description: 'Regex find/replace on captured body' },
-            },
-          },
-        },
-        required: ['requestId'],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
-      name: 'browser_network_clear',
-      description: 'Clear the session network buffer.',
-      parameters: {
-        type: 'object',
-        properties: {},
-        required: [],
       },
     },
   },
@@ -666,6 +668,83 @@ const INITIALIZER_ONLY_TOOLS = new Set([
 export const MAIN_AGENT_TOOL_DEFINITIONS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
   t => !INITIALIZER_ONLY_TOOLS.has(t.function.name)
 );
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Two-Agent Architecture: Exploration + Editor tool splits
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/** The agent_build_flow tool — invokes the Editor Agent from the Exploration Agent */
+const AGENT_BUILD_FLOW_TOOL: ToolDef = {
+  type: 'function',
+  function: {
+    name: 'agent_build_flow',
+    description:
+      'Delegate flow building to the Editor Agent. Call this after exploration is complete and roadmap is approved. ' +
+      'The Editor Agent will build the DSL flow, test it with editor_run_pack, and return results. ' +
+      'You MUST provide comprehensive exploration context (all API endpoints, DOM structure, auth info, pagination). ' +
+      'Do not call this more than 3 times per conversation.',
+    parameters: {
+      type: 'object',
+      properties: {
+        instruction: {
+          type: 'string',
+          description:
+            'The approved roadmap + implementation instructions. Include: what steps to build, approach (API vs DOM), data to extract, inputs/collectibles to define.',
+        },
+        explorationContext: {
+          type: 'string',
+          description:
+            'All exploration findings. Include: API endpoints discovered (URL, method, response structure), ' +
+            'DOM structure notes, auth requirements, pagination info, any relevant network request IDs or patterns.',
+        },
+        testInputs: {
+          type: 'object',
+          description: 'Input values for testing the flow with editor_run_pack (e.g., {"batch": "W24"}).',
+        },
+      },
+      required: ['instruction', 'explorationContext'],
+    },
+  },
+};
+
+/** Editor-only tools (for the Editor Agent) */
+const EDITOR_TOOL_NAMES = new Set([
+  'editor_read_pack',
+  'editor_list_secrets',
+  'editor_apply_flow_patch',
+  'editor_run_pack',
+]);
+
+/** Editor Agent tools: editor tools only (no browser, no conversation) */
+export const EDITOR_AGENT_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
+  t => EDITOR_TOOL_NAMES.has(t.function.name)
+);
+
+/** Exploration Agent tool names — browser + network + context + conversation + read_pack + agent_build_flow */
+const EXPLORATION_ONLY_TOOL_NAMES = new Set([
+  // Browser tools
+  'browser_goto', 'browser_go_back', 'browser_type', 'browser_screenshot',
+  'browser_get_links', 'browser_get_dom_snapshot', 'browser_click',
+  'browser_click_coordinates', 'browser_get_element_bounds',
+  'browser_last_actions', 'browser_close_session',
+  // Network tools
+  'browser_network_list', 'browser_network_search', 'browser_network_get',
+  'browser_network_get_response', 'browser_network_replay', 'browser_network_clear',
+  // Context management
+  'agent_save_plan', 'agent_get_plan',
+  // Conversation management
+  'conversation_update_title', 'conversation_update_description', 'conversation_set_status',
+  // Secrets
+  'request_secrets',
+  // Read-only pack inspection
+  'editor_read_pack',
+]);
+
+/** Exploration Agent tools: browser + context + conversation + read_pack + agent_build_flow */
+export const EXPLORATION_AGENT_TOOLS: ToolDef[] = [
+  ...MCP_AGENT_TOOL_DEFINITIONS.filter(t => EXPLORATION_ONLY_TOOL_NAMES.has(t.function.name)),
+  AGENT_BUILD_FLOW_TOOL,
+];
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Browser Tools that need automatic session management
@@ -1125,7 +1204,76 @@ export async function executeAgentTool(
         return wrap(JSON.stringify({ error: `Unknown tool: ${name}` }));
     }
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return wrap(JSON.stringify({ error: message }));
+    const rawMessage = err instanceof Error ? err.message : String(err);
+    const parsed = parsePlaywrightError(rawMessage);
+    return wrap(JSON.stringify(parsed));
   }
+}
+
+/**
+ * Parse Playwright error messages into structured, actionable feedback.
+ * Strips ANSI codes, extracts the call log, and adds hints for common failures.
+ */
+export function parsePlaywrightError(raw: string): { error: string; hint?: string; callLog?: string[] } {
+  // Strip ANSI escape codes
+  const clean = raw.replace(/\u001b\[\d+m/g, '');
+
+  // Extract call log lines (indented lines starting with "- ")
+  const callLogLines: string[] = [];
+  for (const line of clean.split('\n')) {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('- ')) {
+      callLogLines.push(trimmed.slice(2));
+    }
+  }
+
+  // Extract the first line as the core error
+  const firstLine = clean.split('\n')[0].trim();
+
+  // Detect specific failure patterns and provide hints
+  let hint: string | undefined;
+
+  // Pattern: element found + click attempted but timed out → intercepted click
+  if (/timeout.*exceeded/i.test(firstLine)) {
+    const resolved = callLogLines.some(l => /locator resolved to/.test(l));
+    const performingClick = callLogLines.some(l => /performing click action/.test(l));
+    const waitingVisible = callLogLines.some(l => /waiting for element to be visible/.test(l));
+    const isVisible = callLogLines.some(l => /element is visible, enabled and stable/.test(l));
+    const intercepted = callLogLines.some(l => /intercept/i.test(l));
+
+    if (resolved && performingClick) {
+      // Element was found, click was attempted, but timed out after "performing click action"
+      // This means another element intercepted the click (overlay, sticky nav, cookie banner, etc.)
+      hint = 'The element was found and visible, but the click was intercepted by another element covering it (overlay, sticky header, cookie banner, popup). Try: (1) scroll the page first, (2) close any overlays/popups, (3) use browser_click_coordinates with coordinates from browser_get_element_bounds, or (4) use a more specific CSS selector.';
+    } else if (resolved && isVisible && !performingClick) {
+      hint = 'The element was found and visible but the click could not be performed. An overlay or another element may be blocking it. Try using browser_click_coordinates or closing overlays first.';
+    } else if (resolved && waitingVisible && !isVisible) {
+      hint = 'The element was found in the DOM but is not visible (hidden, off-screen, or display:none). Try scrolling to it, waiting for it to appear, or checking if the page state is correct.';
+    } else if (!resolved) {
+      hint = 'The element was not found on the page. Check that: (1) the text/selector is correct, (2) the page has finished loading, (3) the element is not inside an iframe (use frame step first).';
+    }
+  }
+
+  // Pattern: strict mode violation (multiple elements matched)
+  if (/strict mode violation/i.test(clean)) {
+    const match = clean.match(/(\d+) elements/);
+    const count = match ? match[1] : 'multiple';
+    hint = `${count} elements matched the selector. Use a more specific selector, add "first: true" to target the first match, or use "scope"/"near" params to narrow down.`;
+  }
+
+  // Pattern: element is not attached to the DOM
+  if (/not attached/i.test(clean) || /detached/i.test(clean)) {
+    hint = 'The element was removed from the DOM before the action completed. The page may have re-rendered. Try adding a wait_for step before this action, or retry after the page stabilizes.';
+  }
+
+  // Pattern: navigation / frame detached
+  if (/frame.*detached/i.test(clean) || /navigating/i.test(clean)) {
+    hint = 'A navigation occurred during the action, causing the page context to change. Add a wait_for step (waitUntil: "networkidle" or a specific element) after navigation before interacting.';
+  }
+
+  return {
+    error: firstLine,
+    ...(hint ? { hint } : {}),
+    ...(callLogLines.length > 0 ? { callLog: callLogLines } : {}),
+  };
 }

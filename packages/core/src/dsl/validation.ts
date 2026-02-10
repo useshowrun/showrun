@@ -636,6 +636,13 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
         errors.push(`${prefix}: NetworkFind step must have a "where" object in params`);
       } else {
         const where = params.where as Record<string, unknown>;
+        // Check for unknown where fields
+        const validWhereFields = new Set(['urlIncludes', 'urlRegex', 'method', 'status', 'contentTypeIncludes', 'responseContains']);
+        for (const key of Object.keys(where)) {
+          if (!validWhereFields.has(key)) {
+            errors.push(`${prefix}: NetworkFind step "where.${key}" is not a valid field (unknown fields are silently ignored). Valid fields: ${[...validWhereFields].join(', ')}`);
+          }
+        }
         if (where.urlIncludes !== undefined && typeof where.urlIncludes !== 'string') {
           errors.push(`${prefix}: NetworkFind step "where.urlIncludes" must be a string`);
         }

@@ -2,6 +2,12 @@ import type { TaskPack, CollectibleDefinition } from './types.js';
 import type { DslStep } from './dsl/types.js';
 import { validateFlow, ValidationError } from './dsl/validation.js';
 
+/** Step types that produce collectible output via an "out" parameter */
+const STEPS_WITH_OUT = new Set([
+  'extract_title', 'extract_text', 'extract_attribute',
+  'network_replay', 'network_extract',
+]);
+
 /**
  * Validates that collectibles referenced in flow steps exist
  */
@@ -12,9 +18,9 @@ export function validateCollectiblesMatchFlow(
   const collectibleNames = new Set(collectibles.map((c) => c.name));
   const referencedOuts = new Set<string>();
 
-  // Extract all 'out' parameters from extraction steps
+  // Extract all 'out' parameters from steps that write to collectibles
   for (const step of flow) {
-    if (step.type === 'extract_title' || step.type === 'extract_text' || step.type === 'extract_attribute') {
+    if (STEPS_WITH_OUT.has(step.type)) {
       const out = (step.params as { out?: string })?.out;
       if (out && typeof out === 'string') {
         referencedOuts.add(out);
@@ -23,12 +29,16 @@ export function validateCollectiblesMatchFlow(
   }
 
   // Check that all referenced outs exist in collectibles
+  const mismatches: string[] = [];
   for (const out of referencedOuts) {
     if (!collectibleNames.has(out)) {
-      throw new ValidationError(
-        `Flow references collectible "${out}" in extraction step, but it's not defined in collectibles schema`
-      );
+      mismatches.push(out);
     }
+  }
+  if (mismatches.length > 0) {
+    throw new ValidationError(
+      `Flow step(s) write to undeclared collectible(s): [${mismatches.join(', ')}]. Only declared collectibles are returned in the output. Declared: [${[...collectibleNames].join(', ')}]`
+    );
   }
 }
 
