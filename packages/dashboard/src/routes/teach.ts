@@ -4,7 +4,7 @@ import { createTokenChecker } from '../helpers/auth.js';
 import { TaskPackLoader } from '@showrun/core';
 import { discoverPacks } from '@showrun/mcp-server';
 import { proposeStep, type ProposeStepRequest } from '../teachMode.js';
-import { updateConversation, getConversation, getAllConversations, getMessagesForConversation } from '../db.js';
+import { updateConversation, getConversation, getAllConversations, getMessagesForConversation, createConversationTranscript } from '../db.js';
 import type { ChatMessage, ToolCall, StreamEvent, ChatWithToolsResult, ToolDef } from '../llm/provider.js';
 import {
   MAIN_AGENT_TOOL_DEFINITIONS,
@@ -364,7 +364,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
       | { type: 'image_url'; image_url: { url: string } };
     type AgentMsg =
       | { role: 'user'; content: string | ContentPart[] }
-      | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[] }
+      | { role: 'assistant'; content: string | null; tool_calls?: ToolCall[]; thinking?: string }
       | { role: 'tool'; content: string; tool_call_id: string };
 
     let agentMessages: AgentMsg[] = messages
@@ -408,7 +408,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
     // Helper to call LLM with or without streaming (uses agentMessages which may be modified by summarization)
     // Uses EXPLORATION_AGENT_TOOLS: browser + network + context + conversation + read_pack + agent_build_flow
     // The Exploration Agent cannot directly edit flows — it delegates via agent_build_flow
-    async function callLlm(currentMessages: AgentMsg[]): Promise<ChatWithToolsResult> {
+    async function callLlm(currentMessages: AgentMsg[]): Promise<ChatWithToolsResult & { thinking?: string }> {
       if (supportsStreaming && streamFlow) {
         const generator = (ctx.llmProvider as any).chatWithToolsStream({
           systemPrompt,
@@ -417,14 +417,20 @@ export function createTeachRouter(ctx: DashboardContext): Router {
           enableThinking: true,
         }) as AsyncGenerator<StreamEvent, ChatWithToolsResult, unknown>;
 
+        // Accumulate thinking text from stream events for transcript logging
+        let thinkingText = '';
         let iterResult = await generator.next();
         while (!iterResult.done) {
           const event = iterResult.value as StreamEvent;
+          if ('type' in event && event.type === 'thinking_stop' && 'text' in event) {
+            thinkingText += (event as { type: 'thinking_stop'; text: string }).text;
+          }
           // Forward streaming events to client
           writeStreamLine(event);
           iterResult = await generator.next();
         }
-        return iterResult.value;
+        const result = iterResult.value;
+        return { ...result, ...(thinkingText ? { thinking: thinkingText } : {}) };
       } else {
         return await (ctx.llmProvider as any).chatWithTools({
           systemPrompt,
@@ -434,8 +440,37 @@ export function createTeachRouter(ctx: DashboardContext): Router {
       }
     }
 
+    // Transcript logging helper — saves the full conversation to DB when enabled
+    let totalIterations = 0;
+    const saveTranscript = async () => {
+      if (!ctx.transcriptLogging || !conversationId) return;
+      try {
+        const conv = getConversation(conversationId);
+        let flowData: unknown = null;
+        if (conv?.status === 'ready' && effectivePackId) {
+          try {
+            const { flowJson } = await ctx.taskPackEditor.readPack(effectivePackId);
+            flowData = flowJson;
+          } catch { /* ignore */ }
+        }
+        createConversationTranscript({
+          conversationId,
+          packId: effectivePackId ?? null,
+          conversationStatus: conv?.status ?? 'unknown',
+          transcript: agentMessages,
+          toolTrace,
+          flowJson: flowData,
+          validation: validation ?? null,
+          agentIterations: totalIterations,
+        });
+      } catch (err) {
+        console.error('[Agent] Failed to save conversation transcript:', err);
+      }
+    };
+
     try {
       for (let iter = 0; iter < MAX_TOTAL_ITERATIONS; iter++) {
+        totalIterations = iter + 1;
         // Check if client aborted (stop button pressed)
         if (aborted) {
           console.log('[Agent] Stopping agent loop - client aborted');
@@ -495,6 +530,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
             role: 'assistant',
             content: result.content ?? null,
             tool_calls: result.toolCalls,
+            ...(result.thinking ? { thinking: result.thinking } : {}),
           });
           const toolCtx: AgentToolContext = {
             taskPackEditor: ctx.taskPackEditor,
@@ -793,6 +829,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
           continue;
         }
 
+        await saveTranscript();
         if (streamFlow) {
           writeStreamLine({
             type: 'done',
@@ -815,6 +852,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
         return;
       }
 
+      await saveTranscript();
       if (streamFlow) {
         writeStreamLine({ type: 'done', error: 'Agent exceeded max iterations' });
         res.end();
@@ -822,6 +860,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
         res.status(500).json({ error: 'Agent exceeded max iterations' });
       }
     } catch (error) {
+      await saveTranscript();
       if (streamFlow) {
         writeStreamLine({ type: 'done', error: error instanceof Error ? error.message : String(error) });
         res.end();

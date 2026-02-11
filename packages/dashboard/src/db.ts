@@ -173,6 +173,26 @@ function runMigrations(database: Database.Database): void {
         ALTER TABLE conversations ADD COLUMN plan TEXT;
       `,
     },
+    {
+      name: '005_create_conversation_transcripts',
+      sql: `
+        CREATE TABLE IF NOT EXISTS conversation_transcripts (
+          id TEXT PRIMARY KEY,
+          conversationId TEXT NOT NULL,
+          packId TEXT,
+          conversationStatus TEXT,
+          transcript TEXT NOT NULL,
+          toolTrace TEXT,
+          flowJson TEXT,
+          validation TEXT,
+          agentIterations INTEGER,
+          createdAt INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_transcripts_conversationId ON conversation_transcripts(conversationId);
+        CREATE INDEX IF NOT EXISTS idx_transcripts_packId ON conversation_transcripts(packId);
+        CREATE INDEX IF NOT EXISTS idx_transcripts_createdAt ON conversation_transcripts(createdAt);
+      `,
+    },
   ];
 
   const appliedMigrations = new Set(
@@ -558,6 +578,143 @@ function mapRowToRun(row: any): DbRunInfo {
     collectiblesJson: row.collectiblesJson,
     metaJson: row.metaJson,
     errorMessage: row.errorMessage,
+  };
+}
+
+// ============================================================================
+// Conversation Transcript CRUD operations
+// ============================================================================
+
+export interface ConversationTranscript {
+  id: string;
+  conversationId: string;
+  packId: string | null;
+  conversationStatus: string | null;
+  transcript: string;    // JSON string
+  toolTrace: string | null;     // JSON string
+  flowJson: string | null;      // JSON string
+  validation: string | null;    // JSON string
+  agentIterations: number | null;
+  createdAt: number;
+}
+
+export function createConversationTranscript(data: {
+  conversationId: string;
+  packId?: string | null;
+  conversationStatus?: string | null;
+  transcript: unknown;
+  toolTrace?: unknown;
+  flowJson?: unknown;
+  validation?: unknown;
+  agentIterations?: number;
+}): ConversationTranscript {
+  const database = getDatabase();
+  const id = uuidv4();
+  const now = Date.now();
+
+  const transcriptStr = typeof data.transcript === 'string' ? data.transcript : JSON.stringify(data.transcript);
+  const toolTraceStr = data.toolTrace ? (typeof data.toolTrace === 'string' ? data.toolTrace : JSON.stringify(data.toolTrace)) : null;
+  const flowJsonStr = data.flowJson ? (typeof data.flowJson === 'string' ? data.flowJson : JSON.stringify(data.flowJson)) : null;
+  const validationStr = data.validation ? (typeof data.validation === 'string' ? data.validation : JSON.stringify(data.validation)) : null;
+
+  database
+    .prepare(
+      `INSERT INTO conversation_transcripts (id, conversationId, packId, conversationStatus, transcript, toolTrace, flowJson, validation, agentIterations, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      id,
+      data.conversationId,
+      data.packId ?? null,
+      data.conversationStatus ?? null,
+      transcriptStr,
+      toolTraceStr,
+      flowJsonStr,
+      validationStr,
+      data.agentIterations ?? null,
+      now
+    );
+
+  return {
+    id,
+    conversationId: data.conversationId,
+    packId: data.packId ?? null,
+    conversationStatus: data.conversationStatus ?? null,
+    transcript: transcriptStr,
+    toolTrace: toolTraceStr,
+    flowJson: flowJsonStr,
+    validation: validationStr,
+    agentIterations: data.agentIterations ?? null,
+    createdAt: now,
+  };
+}
+
+export function getConversationTranscript(id: string): ConversationTranscript | null {
+  const database = getDatabase();
+  const row = database.prepare('SELECT * FROM conversation_transcripts WHERE id = ?').get(id) as any;
+  return row ? mapRowToTranscript(row) : null;
+}
+
+export function getTranscriptByConversationId(conversationId: string): ConversationTranscript | null {
+  const database = getDatabase();
+  const row = database
+    .prepare('SELECT * FROM conversation_transcripts WHERE conversationId = ? ORDER BY createdAt DESC LIMIT 1')
+    .get(conversationId) as any;
+  return row ? mapRowToTranscript(row) : null;
+}
+
+export function getAllTranscripts(options?: {
+  packId?: string;
+  limit?: number;
+  offset?: number;
+}): ConversationTranscript[] {
+  const database = getDatabase();
+  let sql = 'SELECT * FROM conversation_transcripts';
+  const conditions: string[] = [];
+  const params: any[] = [];
+
+  if (options?.packId) {
+    conditions.push('packId = ?');
+    params.push(options.packId);
+  }
+
+  if (conditions.length > 0) {
+    sql += ' WHERE ' + conditions.join(' AND ');
+  }
+
+  sql += ' ORDER BY createdAt DESC';
+
+  if (options?.limit) {
+    sql += ' LIMIT ?';
+    params.push(options.limit);
+  }
+  if (options?.offset) {
+    sql += ' OFFSET ?';
+    params.push(options.offset);
+  }
+
+  const rows = database.prepare(sql).all(...params) as any[];
+  return rows.map(mapRowToTranscript);
+}
+
+export function deleteTranscript(id: string): boolean {
+  const database = getDatabase();
+  const result = database.prepare('DELETE FROM conversation_transcripts WHERE id = ?').run(id);
+  return result.changes > 0;
+}
+
+function mapRowToTranscript(row: any): ConversationTranscript {
+  return {
+    id: row.id,
+    conversationId: row.conversationId,
+    packId: row.packId,
+    conversationStatus: row.conversationStatus,
+    transcript: row.transcript,
+    toolTrace: row.toolTrace,
+    flowJson: row.flowJson,
+    validation: row.validation,
+    agentIterations: row.agentIterations,
+    createdAt: row.createdAt,
   };
 }
 

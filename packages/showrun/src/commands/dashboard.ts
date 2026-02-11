@@ -38,6 +38,7 @@ export interface DashboardCommandOptions {
   baseRunDir: string;
   workspaceDir?: string;
   debug: boolean;
+  transcriptLogging: boolean;
 }
 
 export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
@@ -50,6 +51,7 @@ export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
     port: 3333,
     headful: false,
     debug: false,
+    transcriptLogging: false,
     baseRunDir: resolve(projectRoot, './runs-dashboard'),
   };
 
@@ -99,6 +101,9 @@ export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
         break;
       case '--debug':
         result.debug = true;
+        break;
+      case '--transcript-logging':
+        result.transcriptLogging = true;
         break;
       case '--baseRunDir':
         if (!next || next.startsWith('--')) {
@@ -172,6 +177,7 @@ Options:
                          WARNING: Only use this if you understand the security implications
   --headful              Run browser in headful mode (default: false)
   --debug                Enable debug logging (failed tool calls to data/failed-tool-calls.jsonl)
+  --transcript-logging   Save full agent conversation transcripts to the database
   --baseRunDir <path>    Base directory for run outputs (default: ./runs-dashboard)
   --workspace <path>     Writable directory for JSON pack creation/editing (default: first --packs dir)
 

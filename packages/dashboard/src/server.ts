@@ -54,6 +54,7 @@ export interface DashboardOptions {
   workspaceDir?: string; // Writable directory for JSON pack creation/editing
   dataDir?: string; // Database directory (default: ./data)
   debug?: boolean; // Enable debug logging (failed tool calls, etc.)
+  transcriptLogging?: boolean; // Enable full conversation transcript logging
 }
 
 /**
@@ -112,9 +113,14 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   const { packs: packDirs, port, host = '127.0.0.1', headful, baseRunDir, workspaceDir, dataDir = './data' } = options;
   // --debug flag takes priority, then SHOWRUN_DEBUG env/config
   const debug = options.debug || process.env.SHOWRUN_DEBUG === 'true';
+  // --transcript-logging flag takes priority, then SHOWRUN_TRANSCRIPT_LOGGING env/config
+  const transcriptLogging = options.transcriptLogging || process.env.SHOWRUN_TRANSCRIPT_LOGGING === 'true';
 
   if (debug) {
     console.log('[Dashboard] Debug mode enabled — failed tool calls will be logged to data/failed-tool-calls.jsonl');
+  }
+  if (transcriptLogging) {
+    console.log('[Dashboard] Transcript logging enabled — full agent conversations will be saved to the database');
   }
 
   // Initialize database
@@ -246,6 +252,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     baseRunDir: resolvedBaseRunDir,
     headful,
     debug,
+    transcriptLogging,
     packMap,
     runManager,
     concurrencyLimiter,
