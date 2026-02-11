@@ -150,18 +150,3 @@ Large tool outputs are automatically truncated with metadata:
 - Keep entries concise — one line per change, written from a user/developer perspective.
 - Do NOT bump version numbers. When we decide to release, we will rename `Unreleased` to a version heading manually.
 
-## Product Roadmap
-
-The project roadmap is maintained in `docs/ROADMAP.md`. This document tracks:
-- Current state assessment (what's working)
-- Gap analysis (missing features, production readiness, developer experience)
-- Prioritized roadmap with P0/P1/P2/P3 phases
-- Implementation status of planned features
-
-**IMPORTANT: After implementing new features, always update the roadmap:**
-1. Mark completed items with **Implemented** status
-2. Update the "What's Working Well" section if significant features were added
-3. Update step counts or feature lists to reflect current state
-4. Move items between priority phases if scope changes
-
-This ensures the roadmap stays accurate and useful for planning future work.

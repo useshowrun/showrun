@@ -15,6 +15,7 @@ import {
 } from '../authResilience.js';
 import type { NetworkCaptureApi, NetworkEntrySerializable } from '../networkCapture.js';
 import { evaluateCondition, conditionToString } from './conditions.js';
+import type { SnapshotFile } from '../requestSnapshot.js';
 
 /**
  * Capture the delta of vars and collectibles produced by a step,
@@ -77,6 +78,14 @@ export interface RunFlowOptionsWithAuth extends RunFlowOptions {
    * Secrets for template resolution ({{secret.NAME}})
    */
   secrets?: Record<string, string>;
+  /**
+   * If true, run in HTTP-only mode (skip browser steps, replay from snapshots)
+   */
+  httpMode?: boolean;
+  /**
+   * Request snapshots for HTTP-first execution
+   */
+  snapshots?: SnapshotFile;
 }
 
 /**
@@ -118,6 +127,8 @@ export async function runFlow(
   const profileId = options?.profileId;
   const cacheDir = options?.cacheDir;
   const secrets = options?.secrets ?? {};
+  const httpMode = options?.httpMode ?? false;
+  const snapshots = options?.snapshots;
 
   // Get secret values for redaction (only values >= 3 chars)
   const secretValues = Object.values(secrets).filter((v) => v && v.length >= 3);
@@ -151,6 +162,9 @@ export async function runFlow(
     inputs,
     networkCapture: ctx.networkCapture,
     authMonitor: authMonitor ?? undefined,
+    httpMode,
+    snapshots: snapshots ?? undefined,
+    secrets,
   };
 
   if (authConfig?.authPolicy) {
@@ -498,8 +512,8 @@ export async function runFlow(
           continue;
         }
 
-        // Capture artifacts on error if available
-        if (ctx.artifacts) {
+        // Capture artifacts on error if available (skip in HTTP mode — no browser)
+        if (ctx.artifacts && !httpMode) {
           try {
             await ctx.artifacts.saveScreenshot(`error-${step.id}`);
             const html = await ctx.page.content();
@@ -516,7 +530,7 @@ export async function runFlow(
     }
 
     const durationMs = Date.now() - startTime;
-    const finalUrl = ctx.page.url();
+    const finalUrl = httpMode ? undefined : ctx.page.url();
 
     // Collect JMESPath hints from vars (stored by step handlers)
     const jmespathHints = (vars['__jmespath_hints'] as string[]) || [];
@@ -535,6 +549,7 @@ export async function runFlow(
         stepsExecuted,
         stepsTotal: steps.length,
       },
+      _vars: { ...vars },
     };
 
     // Only include _hints if there are any

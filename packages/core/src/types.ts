@@ -1,6 +1,7 @@
 import type { Browser, Page } from 'playwright';
 import type { DslStep } from './dsl/types.js';
 import type { NetworkCaptureApi } from './networkCapture.js';
+import type { SnapshotFile } from './requestSnapshot.js';
 
 /**
  * Primitive types supported in input/collectible schemas
@@ -268,6 +269,10 @@ export interface TaskPack {
    * Browser configuration
    */
   browser?: BrowserSettings;
+  /**
+   * Request snapshots for HTTP-first execution (loaded from snapshots.json)
+   */
+  snapshots?: SnapshotFile;
 }
 
 /**

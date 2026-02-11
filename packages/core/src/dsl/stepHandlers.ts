@@ -27,6 +27,9 @@ import { resolveTemplate } from './templating.js';
 import { resolveTargetWithFallback, selectorToTarget } from './target.js';
 import type { AuthFailureMonitor } from '../authResilience.js';
 import { search as jmesSearch, type JSONValue } from '@jmespath-community/jmespath';
+import type { SnapshotFile } from '../requestSnapshot.js';
+import { replayFromSnapshot } from '../httpReplay.js';
+import { validateResponse } from '../requestSnapshot.js';
 
 /**
  * Step execution context
@@ -50,6 +53,12 @@ export interface StepContext {
   previousTabIndex?: number;
   /** Task pack directory path (for resolving relative file paths) */
   packDir?: string;
+  /** If true, running in HTTP-only mode (no browser) */
+  httpMode?: boolean;
+  /** Request snapshots for HTTP-first execution */
+  snapshots?: SnapshotFile;
+  /** Secrets for template resolution in HTTP mode */
+  secrets?: Record<string, string>;
 }
 
 /**
@@ -970,6 +979,81 @@ async function executeSwitchTab(
   await targetPage.bringToFront();
 }
 
+/** Step types that are skipped silently in HTTP mode (setup/trigger steps). */
+const HTTP_MODE_SKIP_STEPS = new Set([
+  'navigate', 'click', 'fill', 'select_option', 'press_key',
+  'upload_file', 'wait_for', 'assert', 'frame', 'new_tab',
+  'switch_tab', 'network_find',
+]);
+
+/**
+ * Execute a network_replay step in HTTP-only mode using snapshot data.
+ */
+async function executeNetworkReplayHttp(
+  ctx: StepContext,
+  step: NetworkReplayStep,
+): Promise<void> {
+  if (!ctx.snapshots) {
+    throw new Error('network_replay in HTTP mode requires snapshots');
+  }
+  const snapshot = ctx.snapshots.snapshots[step.id];
+  if (!snapshot) {
+    throw new Error(`No snapshot found for step "${step.id}"`);
+  }
+
+  const result = await replayFromSnapshot(snapshot, ctx.inputs, ctx.vars, {
+    secrets: ctx.secrets,
+  });
+
+  // Validate the response — throw to trigger browser fallback if stale
+  const validation = validateResponse(snapshot, result);
+  if (!validation.valid) {
+    throw new Error(`Snapshot stale for step "${step.id}": ${validation.reason}`);
+  }
+
+  if (step.params.saveAs) {
+    ctx.vars[step.params.saveAs] = {
+      status: result.status,
+      contentType: result.contentType,
+      body: result.body,
+      bodySize: result.bodySize,
+    };
+  }
+
+  // Use 'path' with fallback to deprecated 'jsonPath'
+  const pathExpr = step.params.response.path || step.params.response.jsonPath;
+
+  let outValue: unknown;
+  if (step.params.response.as === 'json') {
+    try {
+      outValue = JSON.parse(result.body) as unknown;
+    } catch {
+      throw new Error(`network_replay (HTTP mode): response body is not valid JSON (status ${result.status})`);
+    }
+    if (pathExpr) {
+      const pathResult = getByPath(outValue, pathExpr);
+      outValue = pathResult.value;
+      if (pathResult.hint) {
+        ctx.vars['__jmespath_hint'] = pathResult.hint;
+      }
+    }
+  } else {
+    if (pathExpr) {
+      const pathResult = getByPath(JSON.parse(result.body) as unknown, pathExpr);
+      outValue = pathResult.value;
+      if (pathResult.hint) {
+        ctx.vars['__jmespath_hint'] = pathResult.hint;
+      }
+    } else {
+      outValue = result.body;
+    }
+    if (typeof outValue === 'object' && outValue !== null) {
+      outValue = JSON.stringify(outValue);
+    }
+  }
+  ctx.collectibles[step.params.out] = outValue;
+}
+
 /**
  * Executes a single DSL step
  */
@@ -977,6 +1061,18 @@ export async function executeStep(
   ctx: StepContext,
   step: DslStep
 ): Promise<void> {
+  // In HTTP mode, skip DOM/setup steps and use snapshot replay for network_replay
+  if (ctx.httpMode) {
+    if (HTTP_MODE_SKIP_STEPS.has(step.type)) {
+      return; // silently skip
+    }
+    if (step.type === 'network_replay') {
+      await executeNetworkReplayHttp(ctx, step);
+      return;
+    }
+    // network_extract, set_var, sleep execute normally below
+  }
+
   switch (step.type) {
     case 'navigate':
       await executeNavigate(ctx, step);

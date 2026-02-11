@@ -11,6 +11,8 @@ export * from './browserPersistence.js';
 export * from './packUtils.js';
 export * from './packVersioning.js';
 export * from './config.js';
+export * from './requestSnapshot.js';
+export * from './httpReplay.js';
 
 // DSL exports
 export * from './dsl/types.js';

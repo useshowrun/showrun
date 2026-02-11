@@ -2,6 +2,7 @@ import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import type { TaskPack, TaskPackManifest, InputSchema, CollectibleDefinition, SecretDefinition } from './types.js';
 import type { DslStep } from './dsl/types.js';
+import { loadSnapshots } from './requestSnapshot.js';
 
 /**
  * Structure of the .secrets.json file
@@ -78,6 +79,9 @@ export class TaskPackLoader {
       throw new Error('flow.json must have a "flow" array');
     }
 
+    // Optionally load snapshots.json (not an error if missing)
+    const snapshots = loadSnapshots(packPath);
+
     return {
       metadata: {
         id: manifest.id,
@@ -90,6 +94,7 @@ export class TaskPackLoader {
       flow: flowData.flow,
       auth: manifest.auth,
       browser: manifest.browser,
+      ...(snapshots ? { snapshots } : {}),
     };
   }
 

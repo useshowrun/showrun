@@ -674,4 +674,10 @@ export interface RunFlowResult {
    * These help AI agents understand why data extraction may have failed.
    */
   _hints?: string[];
+  /**
+   * Internal: resolved vars after flow execution. Used by snapshot capture
+   * to look up network entries by their runtime-resolved request IDs.
+   * Not part of the public API.
+   */
+  _vars?: Record<string, unknown>;
 }
