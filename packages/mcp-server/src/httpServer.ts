@@ -163,6 +163,7 @@ export async function createMCPServerOverHTTP(
                 headless: !headful,
                 sessionId: clientSessionId, // Use client's session ID for once-cache
                 profileId: pack.metadata.id,
+                packPath: packDir,
                 cacheDir: packDir,
               });
               const durationMs = Date.now() - startTime;

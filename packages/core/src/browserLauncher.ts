@@ -6,6 +6,8 @@
  */
 
 import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import { existsSync } from 'fs';
+import { join } from 'path';
 import type { BrowserEngine, BrowserSettings, BrowserPersistence } from './types.js';
 import { resolveBrowserDataDir } from './browserPersistence.js';
 
@@ -80,7 +82,12 @@ export async function launchBrowser(config: LaunchBrowserConfig): Promise<Browse
   } = config;
 
   const engine = browserSettings.engine ?? 'camoufox';
-  const persistence = browserSettings.persistence ?? 'none';
+  let persistence: BrowserPersistence = browserSettings.persistence ?? 'none';
+
+  // Auto-upgrade to profile persistence when packPath has an existing .browser-profile/
+  if (persistence === 'none' && packPath && existsSync(join(packPath, '.browser-profile'))) {
+    persistence = 'profile';
+  }
 
   // Resolve user data directory based on persistence mode
   const userDataDir = resolveBrowserDataDir({

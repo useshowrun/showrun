@@ -133,6 +133,7 @@ export async function createMCPServer(
               headless: !headful,
               sessionId: serverSessionId,
               profileId: pack.metadata.id,
+              packPath: packDir,
               cacheDir: packDir,
             });
 

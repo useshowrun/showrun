@@ -604,6 +604,8 @@ export async function createTaskPackEditorServer(
           runDir,
           logger,
           headless: true, // Default to headless for MCP runs
+          profileId: packId,
+          packPath: packInfo.packPath,
         });
 
         return {

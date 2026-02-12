@@ -10,6 +10,9 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [fixed] Auto-detect existing `.browser-profile/` in pack directory and use it even when `persistence` is not explicitly configured
+- [fixed] MCP server (stdio and HTTP) now passes `packPath` so Camoufox uses the pack's browser profile
+- [fixed] `editor_run_pack` now passes `profileId` and `packPath` so Camoufox reuses the pack's persistent browser profile instead of launching an ephemeral instance
 - [fixed] HTTP-only snapshot replay now uses Nunjucks for template resolution (supports filters like `| urlencode`)
 - [fixed] HTTP replay hangs due to stale `content-length` header from snapshot (now auto-removed, Node `fetch()` sets it correctly)
 - [fixed] HTTP replay requests have a 30s timeout via AbortController (prevents hanging on unresponsive servers)
