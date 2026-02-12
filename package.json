@@ -1,6 +1,6 @@
 {
   "name": "showrun",
-  "version": "0.1.1",
+  "version": "0.1.1a",
   "description": "TypeScript + Playwright framework for deterministic, versioned browser automation. Define flows in JSON or code, run via CLI or MCP, edit with AI-assisted dashboard (Teach Mode)",
   "type": "module",
   "bin": {
