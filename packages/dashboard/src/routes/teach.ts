@@ -18,6 +18,7 @@ import { createLlmProvider } from '../llm/index.js';
 import { runEditorAgent } from '../agents/editorAgent.js';
 import type { EditorAgentResult } from '../agents/types.js';
 import { appendFileSync, mkdirSync } from 'fs';
+import { assembleSystemPrompt } from '../promptAssembler.js';
 import { join } from 'path';
 
 /**
@@ -352,7 +353,24 @@ export function createTeachRouter(ctx: DashboardContext): Router {
       }
     }
 
-    let systemPrompt = ctx.systemPrompt;
+    // Build system prompt: use Techniques DB if available, otherwise fallback
+    let systemPrompt: string;
+    if (ctx.techniqueManager) {
+      try {
+        // Extract domain from user's first message for domain-specific techniques
+        const firstUserMsg = messages.find((m) => m.role === 'user')?.content || '';
+        const urlMatch = firstUserMsg.match(/https?:\/\/(?:www\.)?([^\/\s]+)/i);
+        const domain = urlMatch ? urlMatch[1] : undefined;
+
+        systemPrompt = await assembleSystemPrompt(ctx.techniqueManager, domain);
+      } catch (err) {
+        console.warn('[Agent] Failed to assemble system prompt from DB, using fallback:', err);
+        systemPrompt = ctx.systemPrompt;
+      }
+    } else {
+      systemPrompt = ctx.systemPrompt;
+    }
+
     if (effectivePackId) {
       systemPrompt = `${systemPrompt}\n\n**Pack "${effectivePackId}" is linked to this conversation. Use editor_read_pack() to see its current state, then use editor_apply_flow_patch to modify it. You do not need to pass packId — it is automatic.**`;
     }
@@ -539,6 +557,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
             conversationId: conversationId ?? null,
             headful: ctx.headful, // Dashboard always runs headful
             packMap: ctx.packMap,
+            techniqueManager: ctx.techniqueManager,
           };
           for (const tc of result.toolCalls) {
             let toolArgs: Record<string, unknown> = {};

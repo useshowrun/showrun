@@ -6,3 +6,4 @@ export { createSecretsRouter } from './secrets.js';
 export { createMcpRouter } from './mcp.js';
 export { createBrowserRouter } from './browser.js';
 export { createTeachRouter } from './teach.js';
+export { createTechniquesRouter } from './techniques.js';

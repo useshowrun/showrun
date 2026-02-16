@@ -9,7 +9,6 @@ import {
   discoverConfigDirs,
   loadConfig,
   getGlobalConfigDir,
-  resolveFilePath,
   ensureDir,
   atomicWrite,
   DEFAULT_CONFIG_TEMPLATE,
@@ -61,18 +60,6 @@ async function cmdConfigInit(args: string[]): Promise<void> {
     const content = JSON.stringify(DEFAULT_CONFIG_TEMPLATE, null, 2) + '\n';
     atomicWrite(configPath, content);
     console.log(`[Config] Created ${configPath}`);
-  }
-
-  // Copy system prompt if available and not already in the config dir
-  const promptFilename = 'EXPLORATION_AGENT_SYSTEM_PROMPT.md';
-  const promptDest = join(configDir, promptFilename);
-  if (!existsSync(promptDest)) {
-    const sourcePath = resolveFilePath(promptFilename);
-    if (sourcePath) {
-      const { copyFileSync } = await import('fs');
-      copyFileSync(sourcePath, promptDest);
-      console.log(`[Config] Copied ${promptFilename} to ${configDir}`);
-    }
   }
 
   console.log(`[Config] Config directory ready: ${configDir}`);

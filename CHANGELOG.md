@@ -10,6 +10,20 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [changed] System prompt now assembled dynamically from Techniques DB when available; falls back to built-in generic prompt when DB is unavailable
+- [removed] `EXPLORATION_AGENT_SYSTEM_PROMPT.md` — content migrated to `system_prompt` category seed techniques in the Techniques DB
+- [changed] `seedIfEmpty()` now supports incremental seeding — new seed techniques are added to existing DBs without skipping
+- [added] `TechniqueManager.listByCategory()` method for filtering techniques by category
+- [added] `system_prompt` category for TechniqueCategory — separates agent workflow instructions from knowledge techniques
+- [added] Dual vectorization modes: Weaviate-managed (text2vec-transformers, no API key) or bring-your-own-vectors (external embedding API)
+- [added] Techniques DB — vector-indexed knowledge store (`@showrun/techniques` package) using Weaviate for reusable agent learnings across sessions
+- [added] `showrun techniques` CLI subcommand with `setup`, `list`, `import`, and `export` operations
+- [added] Three new agent tools: `techniques_load`, `techniques_search`, `techniques_propose` for hypothesis-first flow creation
+- [added] REST API for techniques CRUD, batch review, and health check (`/api/techniques/*`)
+- [added] Phase 0 (LOAD KNOWLEDGE) and Phase 6b (CAPTURE LEARNINGS) in exploration agent system prompt
+- [added] Pre-session technique injection — P1 techniques auto-loaded into agent context
+- [added] Pluggable `VectorStore` interface for alternative vector DB backends
+- [changed] `ShowRunConfig` extended with `techniques` section (vectorStore, embedding, collectionName)
 - [fixed] Auto-detect existing `.browser-profile/` in pack directory and use it even when `persistence` is not explicitly configured
 - [fixed] MCP server (stdio and HTTP) now passes `packPath` so Camoufox uses the pack's browser profile
 - [fixed] `editor_run_pack` now passes `profileId` and `packPath` so Camoufox reuses the pack's persistent browser profile instead of launching an ephemeral instance

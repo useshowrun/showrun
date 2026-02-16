@@ -38,6 +38,20 @@ export interface ShowRunConfig {
     teachChatSystemPrompt?: string;
     explorationAgentPromptPath?: string;
   };
+  techniques?: {
+    vectorStore?: {
+      provider?: string;        // 'weaviate' (default)
+      url?: string;             // e.g. "http://localhost:8080"
+      apiKey?: string;
+      vectorizer?: string;      // e.g. 'text2vec-transformers' (default), 'none' for BYO vectors
+    };
+    embedding?: {               // Only needed when vectorizer='none' (bring-your-own-vectors)
+      apiKey?: string;
+      model?: string;           // e.g. "text-embedding-3-small"
+      baseUrl?: string;
+    };
+    collectionName?: string;    // default: "ShowrunTechniques"
+  };
 }
 
 export interface ResolvedConfigPaths {
@@ -186,6 +200,14 @@ const CONFIG_TO_ENV: Array<{ path: string[]; envVar: string }> = [
   { path: ['agent', 'transcriptLogging'], envVar: 'SHOWRUN_TRANSCRIPT_LOGGING' },
   { path: ['prompts', 'teachChatSystemPrompt'], envVar: 'TEACH_CHAT_SYSTEM_PROMPT' },
   { path: ['prompts', 'explorationAgentPromptPath'], envVar: 'EXPLORATION_AGENT_PROMPT_PATH' },
+  { path: ['techniques', 'vectorStore', 'provider'], envVar: 'VECTORSTORE_PROVIDER' },
+  { path: ['techniques', 'vectorStore', 'url'], envVar: 'WEAVIATE_URL' },
+  { path: ['techniques', 'vectorStore', 'apiKey'], envVar: 'WEAVIATE_API_KEY' },
+  { path: ['techniques', 'vectorStore', 'vectorizer'], envVar: 'WEAVIATE_VECTORIZER' },
+  { path: ['techniques', 'embedding', 'apiKey'], envVar: 'EMBEDDING_API_KEY' },
+  { path: ['techniques', 'embedding', 'model'], envVar: 'EMBEDDING_MODEL' },
+  { path: ['techniques', 'embedding', 'baseUrl'], envVar: 'EMBEDDING_BASE_URL' },
+  { path: ['techniques', 'collectionName'], envVar: 'TECHNIQUES_COLLECTION' },
 ];
 
 function getNestedValue(obj: Record<string, unknown>, path: string[]): unknown {
@@ -317,5 +339,10 @@ export const DEFAULT_CONFIG_TEMPLATE: ShowRunConfig = {
   prompts: {
     teachChatSystemPrompt: '',
     explorationAgentPromptPath: '',
+  },
+  techniques: {
+    vectorStore: { provider: 'weaviate', url: '', apiKey: '', vectorizer: '' },
+    embedding: { apiKey: '', model: '', baseUrl: '' },
+    collectionName: '',
   },
 };

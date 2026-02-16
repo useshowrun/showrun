@@ -412,7 +412,7 @@ When multiple config files are found, they are deep-merged with higher-priority 
 
 ### System Prompts
 
-The `showrun config init` command also copies `EXPLORATION_AGENT_SYSTEM_PROMPT.md` into the config directory. This means the agent prompt is available even when running ShowRun from outside the repo directory.
+The exploration agent's system prompt is assembled dynamically from the Techniques DB when available. When the DB is unavailable, a built-in fallback prompt is used. You can override the prompt via the `TEACH_CHAT_SYSTEM_PROMPT` env var (inline text) or `EXPLORATION_AGENT_PROMPT_PATH` env var (file path).
 
 ## MCP Server
 

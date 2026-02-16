@@ -19,6 +19,8 @@ export default defineConfig({
     '@showrun/taskpack-editor-mcp',
   ],
   // Keep native modules and heavy dependencies external
+  // @showrun/techniques is external because it's lazily loaded via dynamic import
+  // and brings in weaviate-client which must resolve from the techniques package
   external: [
     'playwright',
     'camoufox-js',
@@ -34,6 +36,7 @@ export default defineConfig({
     'jmespath',
     '@anthropic-ai/sdk',
     '@modelcontextprotocol/sdk',
+    '@showrun/techniques',
   ],
   esbuildOptions(options) {
     options.banner = {

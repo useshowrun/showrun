@@ -28,8 +28,9 @@ function findUiPath(): string {
 }
 
 import { discoverPacks, ConcurrencyLimiter } from '@showrun/mcp-server';
-import { ensureDir, resolveFilePath, ensureSystemPromptInConfigDir } from '@showrun/core';
+import { ensureDir } from '@showrun/core';
 import { RunManager } from './runManager.js';
+import { FALLBACK_SYSTEM_PROMPT } from './fallbackPrompt.js';
 import { initDatabase } from './db.js';
 import { createLlmProvider } from './llm/index.js';
 import { TaskPackEditorWrapper } from './mcpWrappers.js';
@@ -43,7 +44,10 @@ import {
   createMcpRouter,
   createBrowserRouter,
   createTeachRouter,
+  createTechniquesRouter,
 } from './routes/index.js';
+import { TechniqueManager, WeaviateVectorStore } from '@showrun/techniques';
+import type { VectorStoreConfig } from '@showrun/techniques';
 
 export interface DashboardOptions {
   packs: string[];
@@ -58,52 +62,36 @@ export interface DashboardOptions {
 }
 
 /**
- * Load system prompt from file or environment.
+ * Load the fallback system prompt.
+ *
+ * When the Techniques DB is available, the prompt is assembled dynamically
+ * from DB techniques by promptAssembler.ts (at request time in teach.ts).
+ * This fallback is used when the DB is unavailable.
  *
  * Priority:
- *   1. TEACH_CHAT_SYSTEM_PROMPT env var (inline text)
- *   2. EXPLORATION_AGENT_PROMPT_PATH env var (file path)
- *   3. resolveFilePath('EXPLORATION_AGENT_SYSTEM_PROMPT.md') — config dirs, cwd, ancestors
- *   4. Error message suggesting `showrun config init`
+ *   1. TEACH_CHAT_SYSTEM_PROMPT env var (inline text override)
+ *   2. EXPLORATION_AGENT_PROMPT_PATH env var (file path override)
+ *   3. Built-in FALLBACK_SYSTEM_PROMPT constant
  */
 function loadSystemPrompt(): string {
+  // Env var override: inline text
   const envPrompt = process.env.TEACH_CHAT_SYSTEM_PROMPT;
   if (envPrompt) return envPrompt;
 
-  const promptFilename = 'EXPLORATION_AGENT_SYSTEM_PROMPT.md';
-
-  // Check env var path override first
+  // Env var override: file path
   const envPath = process.env.EXPLORATION_AGENT_PROMPT_PATH;
-  let pathToLoad: string | null = null;
   if (envPath && existsSync(envPath)) {
-    pathToLoad = envPath;
-  }
-
-  // Fall back to config directory / cwd / ancestor discovery
-  if (!pathToLoad) {
-    pathToLoad = resolveFilePath(promptFilename);
-  }
-
-  if (pathToLoad) {
     try {
-      const content = readFileSync(pathToLoad, 'utf-8').trim();
-      console.log(`[Dashboard] System prompt loaded from ${pathToLoad}`);
-
-      try {
-        ensureSystemPromptInConfigDir(promptFilename, pathToLoad);
-      } catch {
-        // Non-fatal — prompt is already loaded, copy is just a convenience
-      }
-
+      const content = readFileSync(envPath, 'utf-8').trim();
+      console.log(`[Dashboard] System prompt loaded from ${envPath}`);
       return content;
     } catch (e) {
-      console.warn('[Dashboard] Failed to load system prompt:', e);
+      console.warn('[Dashboard] Failed to load system prompt from EXPLORATION_AGENT_PROMPT_PATH:', e);
     }
   }
 
-  console.error('[Dashboard] ERROR: No system prompt found.');
-  console.error('[Dashboard] Run `showrun config init` to set up configuration, or create EXPLORATION_AGENT_SYSTEM_PROMPT.md in the project root.');
-  return 'System prompt not configured. Run `showrun config init` or create EXPLORATION_AGENT_SYSTEM_PROMPT.md in the project root.';
+  console.log('[Dashboard] Using built-in fallback system prompt');
+  return FALLBACK_SYSTEM_PROMPT;
 }
 
 /**
@@ -183,34 +171,53 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     console.warn('[Dashboard] LLM provider not available (OPENAI_API_KEY not set)');
   }
 
-  // Load system prompt + action-first addon
-  const basePrompt = loadSystemPrompt();
+  // Initialize Techniques DB (optional — gracefully degrade if not configured)
+  let techniqueManager: TechniqueManager | null = null;
+  const weaviateUrl = process.env.WEAVIATE_URL;
 
-  // Action-first addon: agent MUST use tools, enforces two-agent architecture rules
-  const EXPLORATION_AGENT_ACTION_RULES =
-    `\n\nEXPLORATION AGENT RULES (MANDATORY):
-- You MUST use tools. Browser and Network tools are ALWAYS available. Tool calls are expected, not optional.
-- If packId is provided: FIRST call editor_read_pack to see the current flow state before doing anything else.
-- You are the EXPLORATION AGENT. You CANNOT build flows directly. You explore websites and delegate flow building to the Editor Agent via agent_build_flow.
-- You do NOT have access to editor_apply_flow_patch or editor_run_pack. Do not attempt to call them. Use agent_build_flow to delegate all flow building to the Editor Agent.
-- When the user asks to create a flow, add steps, or extract data: explore the site first, create a roadmap, get approval, then call agent_build_flow with comprehensive exploration context.
-- When the user asks to execute/run steps in the open browser: use browser_* tools (browser_goto, browser_click, browser_type, etc.) to perform the actions. These are for exploration, not for building flows.
-- When the user asks you to CLICK a link or button (e.g. "click the Sign in link"): use browser_click with linkText and role "link" or "button". For batch names, filter options, tabs, or list items (e.g. "Winter 2026", "Spring 2026") that are not <a> or <button>, use browser_click with linkText and role "text".
-- To understand page structure: use browser_get_dom_snapshot (returns interactive elements, forms, headings, navigation with target hints). Prefer it for exploration—it's text-based, cheap, and provides element targets.
-- To find which links are on the page: use browser_get_links (returns href and visible text for each link). Prefer it over screenshot when you need to choose or click a link.
-- For visual layout context (images, complex UI): use browser_screenshot. Use sparingly—only when visual layout matters.
-- You HAVE network inspection tools: browser_network_list, browser_network_search, browser_network_get, browser_network_get_response, browser_network_replay. Use them when the user wants to inspect a request or when you need to discover API endpoints. ALWAYS call browser_network_list(filter: "api") after every navigation.
-- When the user provides a request ID (e.g. "use request req-123"): call browser_network_get(requestId) for metadata. Use browser_network_get_response(requestId, full?) for the response body.
-- When the user asks for a request by description: use browser_network_search with a query substring to find matching entries.
-- When you need page context (e.g. "what page am I on?"): prefer browser_get_dom_snapshot for structure; use browser_screenshot only when visual layout is needed.
-- Prefer action over explanation. Explanations are optional; tool usage is mandatory when relevant.
-- Never reply with generic "here is what you can do" without calling tools. Always use browser tools, network tools, or agent_build_flow as needed.
-- Never refuse to use network tools or suggest manual extraction instead.
-- When calling agent_build_flow: include ALL discovered API endpoints (URL, method, response structure), DOM structure notes, auth info, pagination details. The Editor Agent has NO browser access—it can only build from what you provide.
-- Templating in DSL steps uses Nunjucks: {{inputs.x}}, {{vars.x}}, {{secret.NAME}}. For URL values use {{ inputs.x | urlencode }}.
-- If a tool call returns an error: do NOT retry the same call with identical arguments. Reply to the user with the error and suggest a different approach. One retry at most; then stop and respond.`;
+  if (weaviateUrl) {
+    try {
+      const vectorStoreConfig: VectorStoreConfig = {
+        url: weaviateUrl,
+        apiKey: process.env.WEAVIATE_API_KEY,
+        collectionName: process.env.TECHNIQUES_COLLECTION || undefined,
+      };
 
-  const systemPrompt = basePrompt + EXPLORATION_AGENT_ACTION_RULES;
+      // If EMBEDDING_API_KEY is set, use bring-your-own-vectors mode
+      const embeddingApiKey = process.env.EMBEDDING_API_KEY;
+      if (embeddingApiKey) {
+        vectorStoreConfig.embeddingConfig = {
+          apiKey: embeddingApiKey,
+          model: process.env.EMBEDDING_MODEL || 'text-embedding-3-small',
+          baseUrl: process.env.EMBEDDING_BASE_URL,
+        };
+      } else {
+        // Use Weaviate's built-in vectorizer
+        vectorStoreConfig.vectorizer = process.env.WEAVIATE_VECTORIZER || undefined;
+      }
+
+      const vectorStore = new WeaviateVectorStore(vectorStoreConfig);
+      await vectorStore.initialize();
+      techniqueManager = new TechniqueManager(vectorStore);
+
+      // Seed built-in techniques
+      const seeded = await techniqueManager.seedIfEmpty();
+      if (seeded > 0) {
+        console.log(`[Dashboard] Seeded ${seeded} built-in techniques`);
+      }
+      console.log('[Dashboard] Techniques DB initialized');
+    } catch (err) {
+      console.warn(`[Dashboard] Techniques DB not available: ${err instanceof Error ? err.message : String(err)}`);
+      techniqueManager = null;
+    }
+  } else {
+    console.log('[Dashboard] Techniques DB not configured (set WEAVIATE_URL to enable)');
+  }
+
+  // Load fallback system prompt (used when Techniques DB is unavailable).
+  // When the DB IS available, promptAssembler.ts builds the prompt dynamically
+  // from system-prompt seed techniques at request time (in teach.ts).
+  const systemPrompt = loadSystemPrompt();
 
   // Create Express app
   const app = express();
@@ -266,6 +273,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
     llmProvider,
     systemPrompt,
     pendingSecretsRequests,
+    techniqueManager,
   };
 
   // Mount route modules
@@ -277,6 +285,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   app.use(createMcpRouter(ctx));
   app.use(createBrowserRouter(ctx));
   app.use(createTeachRouter(ctx));
+  app.use(createTechniquesRouter(ctx));
 
   // Socket.IO: Handle connections
   io.on('connection', (socket) => {

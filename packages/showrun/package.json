@@ -38,6 +38,7 @@
     "@showrun/dashboard": "workspace:*",
     "@showrun/browser-inspector-mcp": "workspace:*",
     "@showrun/taskpack-editor-mcp": "workspace:*",
+    "@showrun/techniques": "workspace:*",
     "@types/node": "^20.11.0",
     "tsup": "^8.5.1",
     "typescript": "^5.3.3"

@@ -100,9 +100,10 @@ describe('Tool Definitions Split', () => {
     for (const tool of EDITOR_AGENT_TOOLS) {
       expect(masterNames.has(tool.function.name)).toBe(true);
     }
-    // Exploration tools should be in master (except agent_build_flow which is new)
+    // Exploration tools should be in master (except agent_build_flow and techniques_* which are defined separately)
     for (const tool of EXPLORATION_AGENT_TOOLS) {
       if (tool.function.name === 'agent_build_flow') continue;
+      if (tool.function.name.startsWith('techniques_')) continue;
       expect(masterNames.has(tool.function.name)).toBe(true);
     }
   });

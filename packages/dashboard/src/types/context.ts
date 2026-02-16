@@ -4,6 +4,7 @@ import type { MCPServerHTTPHandle, ConcurrencyLimiter } from '@showrun/mcp-serve
 import type { RunManager } from '../runManager.js';
 import type { TaskPackEditorWrapper } from '../mcpWrappers.js';
 import type { LlmProvider } from '../llm/provider.js';
+import type { TechniqueManager } from '@showrun/techniques';
 
 /** Entry in the pack lookup cache */
 export interface PackMapEntry {
@@ -55,4 +56,7 @@ export interface DashboardContext {
   llmProvider: LlmProvider | null;
   systemPrompt: string;
   pendingSecretsRequests: Map<string, PendingSecretsRequest>;
+
+  // Techniques DB (optional — null when vector store not configured)
+  techniqueManager: TechniqueManager | null;
 }

@@ -554,6 +554,95 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
   },
 ];
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// Technique DB tools (optional — only available when TechniqueManager is configured)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+export const TECHNIQUE_TOOL_DEFINITIONS: ToolDef[] = [
+  {
+    type: 'function',
+    function: {
+      name: 'techniques_load',
+      description:
+        'Load techniques up to a priority threshold. Returns both generic AND domain-matched specific techniques. ' +
+        'Call this at the START of every session with maxPriority=2 to get critical techniques. ' +
+        'If a domain is detected, include it to also load domain-specific techniques.',
+      parameters: {
+        type: 'object',
+        properties: {
+          maxPriority: {
+            type: 'number',
+            description: 'Load all techniques with priority <= this value (1-5). Start with 2 for P1-P2.',
+          },
+          domain: {
+            type: 'string',
+            description: 'Domain to load specific techniques for (e.g. "linkedin.com", "amazon.com").',
+          },
+        },
+        required: ['maxPriority'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'techniques_search',
+      description:
+        'Hybrid search the techniques DB for relevant patterns. Uses vector similarity + keyword matching. ' +
+        'Use this for on-demand lookups during exploration (e.g. "pagination pattern", "auth flow for linkedin").',
+      parameters: {
+        type: 'object',
+        properties: {
+          query: { type: 'string', description: 'Search query (e.g. "pagination API pattern", "login flow")' },
+          type: { type: 'string', enum: ['generic', 'specific'], description: 'Filter by technique type' },
+          domain: { type: 'string', description: 'Filter by domain (e.g. "linkedin.com")' },
+          category: { type: 'string', description: 'Filter by category (e.g. "api_extraction", "pagination")' },
+          maxPriority: { type: 'number', description: 'Only return techniques with priority <= this value' },
+        },
+        required: ['query'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'techniques_propose',
+      description:
+        'Propose new techniques learned during this session. Call after successfully completing a flow. ' +
+        'Each technique must specify type (generic=universal, specific=domain-bound) and priority (1-5). ' +
+        'Proposed techniques are saved with source="agent-learned" and are immediately active.',
+      parameters: {
+        type: 'object',
+        properties: {
+          techniques: {
+            type: 'array',
+            description: 'Array of techniques to propose',
+            items: {
+              type: 'object',
+              properties: {
+                title: { type: 'string', description: 'Short technique title' },
+                content: { type: 'string', description: 'Full technique description (will be embedded for search)' },
+                type: { type: 'string', enum: ['generic', 'specific'], description: 'generic=universal, specific=domain-bound' },
+                priority: { type: 'number', description: 'Priority 1-5 (1=critical, 5=edge-case)' },
+                domain: { type: 'string', description: 'Domain this applies to (required for specific, null for generic)' },
+                category: {
+                  type: 'string',
+                  enum: ['api_extraction', 'dom_extraction', 'navigation', 'auth', 'pagination', 'anti_detection', 'form_interaction', 'network_patterns', 'data_transformation', 'error_handling', 'system_prompt', 'general'],
+                  description: 'Technique category',
+                },
+                tags: { type: 'array', items: { type: 'string' }, description: 'Searchable tags' },
+                confidence: { type: 'number', description: 'Confidence score 0.0-1.0' },
+              },
+              required: ['title', 'content', 'type', 'priority', 'category', 'confidence'],
+            },
+          },
+        },
+        required: ['techniques'],
+      },
+    },
+  },
+];
+
 export interface AgentToolContext {
   taskPackEditor: TaskPackEditorWrapper;
   /** Current pack ID for template resolution (optional; needed for {{secret.X}} resolution) */
@@ -568,6 +657,8 @@ export interface AgentToolContext {
   headful?: boolean;
   /** Pack map for version auto-save (optional; provided by dashboard) */
   packMap?: Map<string, { pack: unknown; path: string }>;
+  /** Technique manager (null when vector store not configured) */
+  techniqueManager?: import('@showrun/techniques').TechniqueManager | null | undefined;
 }
 
 /**
@@ -738,12 +829,15 @@ const EXPLORATION_ONLY_TOOL_NAMES = new Set([
   'request_secrets',
   // Read-only pack inspection
   'editor_read_pack',
+  // Techniques DB
+  'techniques_load', 'techniques_search', 'techniques_propose',
 ]);
 
-/** Exploration Agent tools: browser + context + conversation + read_pack + agent_build_flow */
+/** Exploration Agent tools: browser + context + conversation + read_pack + agent_build_flow + techniques */
 export const EXPLORATION_AGENT_TOOLS: ToolDef[] = [
   ...MCP_AGENT_TOOL_DEFINITIONS.filter(t => EXPLORATION_ONLY_TOOL_NAMES.has(t.function.name)),
   AGENT_BUILD_FLOW_TOOL,
+  ...TECHNIQUE_TOOL_DEFINITIONS,
 ];
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -1180,6 +1274,58 @@ export async function executeAgentTool(
         const updated = updateConversation(ctx.conversationId, { packId });
         if (!updated) throw new Error('Conversation not found');
         return wrap(JSON.stringify({ success: true, packId }));
+      }
+      // ── Techniques DB tools (techniques_ prefix is NOT stripped) ──
+      case 'techniques_load': {
+        if (!ctx.techniqueManager) {
+          return wrap(JSON.stringify({ error: 'Techniques DB not configured. Set WEAVIATE_URL and EMBEDDING_API_KEY environment variables.' }));
+        }
+        const maxPriority = args.maxPriority as number;
+        const domain = args.domain as string | undefined;
+        if (typeof maxPriority !== 'number' || maxPriority < 1 || maxPriority > 5) {
+          throw new Error('maxPriority must be a number between 1 and 5');
+        }
+        const result = await ctx.techniqueManager.loadUpTo(maxPriority, domain);
+        return wrap(truncateToolOutput(JSON.stringify(result, null, 2), 'techniques_load'));
+      }
+      case 'techniques_search': {
+        if (!ctx.techniqueManager) {
+          return wrap(JSON.stringify({ error: 'Techniques DB not configured. Set WEAVIATE_URL and EMBEDDING_API_KEY environment variables.' }));
+        }
+        const query = args.query as string;
+        if (!query) throw new Error('query required');
+        const searchFilters: Record<string, unknown> = {};
+        if (args.type) searchFilters.type = args.type;
+        if (args.domain) searchFilters.domain = args.domain;
+        if (args.category) searchFilters.category = args.category;
+        if (args.maxPriority) searchFilters.maxPriority = args.maxPriority;
+        const results = await ctx.techniqueManager.search(query, searchFilters as any, 10);
+        return wrap(truncateToolOutput(JSON.stringify(results, null, 2), 'techniques_search'));
+      }
+      case 'techniques_propose': {
+        if (!ctx.techniqueManager) {
+          return wrap(JSON.stringify({ error: 'Techniques DB not configured. Set WEAVIATE_URL and EMBEDDING_API_KEY environment variables.' }));
+        }
+        const techniques = args.techniques as Array<Record<string, unknown>>;
+        if (!Array.isArray(techniques) || techniques.length === 0) {
+          throw new Error('techniques array is required and must not be empty');
+        }
+        const proposed = techniques.map(t => ({
+          title: t.title as string,
+          content: t.content as string,
+          type: t.type as 'generic' | 'specific',
+          priority: t.priority as number,
+          domain: (t.domain as string) ?? null,
+          category: t.category as string,
+          tags: (t.tags as string[]) ?? [],
+          confidence: t.confidence as number,
+        }));
+        const created = await ctx.techniqueManager.propose(proposed as any, ctx.conversationId ?? undefined, ctx.packId ?? undefined);
+        return wrap(JSON.stringify({
+          success: true,
+          proposedCount: created.length,
+          techniqueIds: created.map(t => t.id),
+        }, null, 2));
       }
       // Secrets request tool
       case 'request_secrets': {
