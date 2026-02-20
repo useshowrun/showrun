@@ -24,6 +24,8 @@ runs-dashboard/
 *.log
 pnpm-debug.log*
 npm-debug.log*
+data/
+EXAMPLE_PROMPT.md
 
 # OS
 .DS_Store
@@ -51,6 +53,8 @@ showrun-once-cache/
 coverage/
 
 # Local development task packs
+taskpacks/*
+!taskpaks/example-json
 taskpacks_local/
 
 # DB files

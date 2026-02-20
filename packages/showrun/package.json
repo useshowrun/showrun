@@ -1,6 +1,6 @@
 {
   "name": "showrun",
-  "version": "0.1.1",
+  "version": "0.1.1b",
   "description": "Task Pack framework for deterministic browser automations - single command dashboard",
   "type": "module",
   "main": "./dist/cli.js",

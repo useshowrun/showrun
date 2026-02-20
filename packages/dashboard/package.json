@@ -1,6 +1,6 @@
 {
   "name": "@showrun/dashboard",
-  "version": "0.1.1",
+  "version": "0.1.1b",
   "description": "Dashboard for running and observing Task Packs in real time",
   "type": "module",
   "main": "./dist/index.js",

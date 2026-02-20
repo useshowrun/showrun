@@ -1,6 +1,6 @@
 {
   "name": "@showrun/harness",
-  "version": "0.1.1",
+  "version": "0.1.1b",
   "description": "Task Pack execution library",
   "type": "module",
   "main": "./dist/index.js",

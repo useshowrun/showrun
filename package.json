@@ -15,8 +15,7 @@
     "dashboard": "node packages/showrun/dist/cli.js dashboard"
   },
   "workspaces": [
-    "packages/*",
-    "taskpacks/*"
+    "packages/*"
   ],
   "devDependencies": {
     "@types/node": "^20.11.0",
