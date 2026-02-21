@@ -53,10 +53,10 @@ echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
 npx camoufox-js fetch
 
 # 4. Launch the dashboard
-npx @showrun/cli dashboard --packs ./taskpacks_local
+npx showrun dashboard --packs ./taskpacks_local
 
 # Add --headful to see the browser window during automation
-npx @showrun/cli dashboard --packs ./taskpacks_local --headful
+npx showrun dashboard --packs ./taskpacks_local --headful
 ```
 
 ### From Git Clone

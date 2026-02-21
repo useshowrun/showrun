@@ -4,7 +4,7 @@
 #
 # Installs ShowRun and its dependencies:
 #   1. Node.js check (nvm-aware, requires >= 20)
-#   2. npm install -g @showrun/cli
+#   2. npm install -g showrun
 #   3. Camoufox browser (anti-detect Firefox)
 #   4. Global config directory setup
 #
@@ -165,8 +165,8 @@ if command -v showrun &>/dev/null; then
   info "ShowRun already installed ($CURRENT_VERSION), updating..."
 fi
 
-info "Running: npm install -g @showrun/cli"
-npm install -g @showrun/cli
+info "Running: npm install -g showrun"
+npm install -g showrun
 
 if ! command -v showrun &>/dev/null; then
   # npm global bin might not be in PATH

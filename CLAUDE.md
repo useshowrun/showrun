@@ -10,10 +10,10 @@ ShowRun is a TypeScript + Playwright framework for deterministic, versioned brow
 
 ```bash
 # Start dashboard instantly (after publishing to npm)
-npx @showrun/cli dashboard --packs ./my-taskpacks
+npx showrun dashboard --packs ./my-taskpacks
 
 # Or run a task pack directly
-npx @showrun/cli run ./my-pack --inputs '{}'
+npx showrun run ./my-pack --inputs '{}'
 ```
 
 ## Build & Run Commands (Development)

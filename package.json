@@ -1,6 +1,6 @@
 {
   "name": "showrun-monorepo",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "description": "TypeScript + Playwright framework for deterministic, versioned browser automation. Define flows in JSON or code, run via CLI or MCP, edit with AI-assisted dashboard (Teach Mode)",
   "type": "module",
@@ -8,7 +8,7 @@
     "showrun": "./bin/showrun.js"
   },
   "scripts": {
-    "build": "pnpm -r --filter=!@showrun/cli build && pnpm --filter=@showrun/cli build",
+    "build": "pnpm -r --filter=!showrun build && pnpm --filter=showrun build",
     "prepare": "pnpm build",
     "dev": "pnpm build && pnpm test:example",
     "test:example": "node packages/showrun/dist/cli.js run ./taskpacks/example-json --inputs '{}'",

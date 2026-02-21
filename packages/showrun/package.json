@@ -1,6 +1,6 @@
 {
-  "name": "@showrun/cli",
-  "version": "0.1.4",
+  "name": "showrun",
+  "version": "0.1.5",
   "description": "Task Pack framework for deterministic browser automations - single command dashboard",
   "type": "module",
   "main": "./dist/cli.js",
@@ -64,8 +64,5 @@
   },
   "engines": {
     "node": ">=20.0.0"
-  },
-  "publishConfig": {
-    "access": "public"
   }
 }

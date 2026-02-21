@@ -10,7 +10,7 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
-- [changed] CLI package renamed from `showrun` to `@showrun/cli` — use `npx @showrun/cli` instead of `npx showrun`; the `showrun` binary command remains unchanged after global install
+- [changed] CLI package reverted from `@showrun/cli` back to `showrun` — use `npx showrun` again
 - [changed] Root package.json marked `private: true` and renamed to `showrun-monorepo` to prevent accidental npm publishing
 - [added] LinkedIn Sales Navigator `pctEncode` seed technique — domain-specific knowledge for correct URL encoding with `()` delimiters in Sales Navigator query syntax
 - [fixed] `urlReplace`/`bodyReplace` array values now pass flow validation (runtime already supported arrays, but `validation.ts` rejected them)

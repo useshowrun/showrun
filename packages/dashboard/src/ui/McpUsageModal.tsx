@@ -69,11 +69,11 @@ function McpUsageModal({ packId, packPath, onClose, token }: McpUsageModalProps)
     if (!systemInfo) return '';
     const { nodePath, cliPath, useNpx } = systemInfo;
 
-    // When launched via npx/pnpm, use "npx @showrun/cli" so the config is portable.
+    // When launched via npx/pnpm, use "npx showrun" so the config is portable.
     // Otherwise fall back to the absolute node + cli.js path.
     const command = useNpx ? 'npx' : nodePath;
     const baseArgs = useNpx
-      ? ['@showrun/cli', 'serve', '--packs', packDir]
+      ? ['showrun', 'serve', '--packs', packDir]
       : [cliPath, 'serve', '--packs', packDir];
 
     if (format === 'vscode') {

@@ -24,7 +24,7 @@ if (!existsSync(cliPath)) {
     console.error('Error: ShowRun CLI not built and source not found.');
     console.error('');
     console.error('Install from npm:');
-    console.error('  npm install -g @showrun/cli');
+    console.error('  npm install -g showrun');
     console.error('');
     console.error('Or clone from GitHub:');
     console.error('  git clone https://github.com/useshowrun/showrun');

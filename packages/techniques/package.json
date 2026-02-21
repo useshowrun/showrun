@@ -1,6 +1,6 @@
 {
   "name": "@showrun/techniques",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Vector-indexed technique knowledge store for ShowRun agents",
   "type": "module",
   "main": "./dist/index.js",

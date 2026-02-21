@@ -9,7 +9,7 @@ A real-time web dashboard for running and observing Task Packs, with **Teach Mod
 showrun dashboard --packs ./taskpacks
 
 # Or via npx
-npx @showrun/cli dashboard --packs ./taskpacks
+npx showrun dashboard --packs ./taskpacks
 
 # With visible browser window
 showrun dashboard --packs ./taskpacks --headful
