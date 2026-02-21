@@ -10,6 +10,9 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] Setup wizard now asks for taskpacks directory location; seeds it with example-json pack; dashboard and serve commands use it as default
+- [fixed] MCP Usage modal now generates correct `--packs` path from server-side pack directories instead of broken client-side derivation
+- [fixed] Config loader `[Config] Loaded: ...` message no longer pollutes stdout, which broke stdio MCP transport
 - [added] First-run setup wizard — interactively prompts for API keys and config when running `showrun dashboard` without prior configuration
 - [changed] Dashboard data (database, run logs, default taskpacks) now stored in system data directory (`~/.local/share/showrun/`) instead of polluting the current working directory
 - [changed] Default taskpacks directory falls back to `~/.local/share/showrun/taskpacks/` when `--packs` is not specified and `./taskpacks` does not exist

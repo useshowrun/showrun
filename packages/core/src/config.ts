@@ -52,6 +52,7 @@ export interface ShowRunConfig {
     };
     collectionName?: string;    // default: "ShowrunTechniques"
   };
+  taskpacksDir?: string;       // Default taskpacks directory (cross-platform)
 }
 
 export interface ResolvedConfigPaths {
@@ -208,6 +209,7 @@ const CONFIG_TO_ENV: Array<{ path: string[]; envVar: string }> = [
   { path: ['techniques', 'embedding', 'model'], envVar: 'EMBEDDING_MODEL' },
   { path: ['techniques', 'embedding', 'baseUrl'], envVar: 'EMBEDDING_BASE_URL' },
   { path: ['techniques', 'collectionName'], envVar: 'TECHNIQUES_COLLECTION' },
+  { path: ['taskpacksDir'], envVar: 'SHOWRUN_TASKPACKS_DIR' },
 ];
 
 function getNestedValue(obj: Record<string, unknown>, path: string[]): unknown {
@@ -368,8 +370,8 @@ export function ensureSystemPromptInConfigDir(filename: string, sourcePath: stri
 
   ensureDir(globalDir);
   copyFileSync(sourcePath, destPath);
-  console.log(`[Config] Created config directory at ${globalDir}`);
-  console.log(`[Config] Copied ${filename} to ${destPath}`);
+  console.error(`[Config] Created config directory at ${globalDir}`);
+  console.error(`[Config] Copied ${filename} to ${destPath}`);
 
   return destPath;
 }
@@ -385,7 +387,7 @@ export function initConfig(): ResolvedConfigPaths {
   applyConfigToEnv(result.config);
 
   if (result.loadedFiles.length > 0) {
-    console.log(`[Config] Loaded: ${result.loadedFiles.join(', ')}`);
+    console.error(`[Config] Loaded: ${result.loadedFiles.join(', ')}`);
   }
 
   return result;

@@ -742,10 +742,15 @@ export default function ChatView({
                 role="assistant"
                 content={streamingContent || ''}
                 toolCalls={[
-                  ...toolTrace,
+                  ...toolTrace.map((t): ToolCall => ({
+                    tool: t.tool,
+                    args: (t.args && typeof t.args === 'object' && !Array.isArray(t.args)) ? t.args as Record<string, unknown> : undefined,
+                    result: t.result,
+                    success: t.success,
+                  })),
                   ...(activeToolExecution ? [{
                     tool: activeToolExecution.tool,
-                    args: activeToolExecution.args as Record<string, unknown>,
+                    args: (activeToolExecution.args && typeof activeToolExecution.args === 'object' && !Array.isArray(activeToolExecution.args)) ? activeToolExecution.args as Record<string, unknown> : undefined,
                     result: '(executing...)',
                     success: true,
                   }] : []),
@@ -971,7 +976,6 @@ export default function ChatView({
       {showMcpUsage && conversation?.packId && (
         <McpUsageModal
           packId={conversation.packId}
-          packPath={packs?.find(p => p.id === conversation.packId)?.path ?? ''}
           onClose={() => setShowMcpUsage(false)}
           token={token}
         />

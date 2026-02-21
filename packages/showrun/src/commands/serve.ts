@@ -68,6 +68,11 @@ export function parseServeArgs(args: string[]): ServeCommandOptions {
   }
 
   if (!packsStr) {
+    // Fall back to configured taskpacks directory
+    packsStr = process.env.SHOWRUN_TASKPACKS_DIR || '';
+  }
+
+  if (!packsStr) {
     console.error('Error: --packs <dir1,dir2,...> is required');
     console.error('Example: showrun serve --packs ./taskpacks');
     process.exit(1);

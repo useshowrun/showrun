@@ -1,5 +1,5 @@
 import { Router, type Request, type Response } from 'express';
-import { resolve } from 'path';
+import { resolve, dirname } from 'path';
 import type { DashboardContext } from '../types/context.js';
 import { discoverPacks } from '@showrun/mcp-server';
 import { TaskPackLoader } from '@showrun/core';
@@ -51,7 +51,8 @@ export function createConfigRouter(ctx: DashboardContext): Router {
   });
 
   // REST API: Get system info for MCP config generation
-  router.get('/api/system-info', (_req: Request, res: Response) => {
+  // Accepts optional ?packId= to resolve the pack's actual parent directory
+  router.get('/api/system-info', (req: Request, res: Response) => {
     // Detect whether showrun was launched via npx / global install or directly via node
     const isNpx = Boolean(
       process.env.npm_execpath || // running under npm/npx/pnpm
@@ -61,10 +62,25 @@ export function createConfigRouter(ctx: DashboardContext): Router {
     // process.argv[1] is the actual entry script that Node is running
     const cliPath = process.argv[1] ? resolve(process.argv[1]) : '';
 
+    // Derive --packs directory from the specific pack's real path on disk
+    const packId = req.query.packId as string | undefined;
+    let packDirs: string[];
+    if (packId) {
+      const entry = ctx.packMap.get(packId);
+      if (entry) {
+        packDirs = [dirname(entry.path)];
+      } else {
+        packDirs = ctx.packDirs.map((d) => resolve(d));
+      }
+    } else {
+      packDirs = ctx.packDirs.map((d) => resolve(d));
+    }
+
     res.json({
       nodePath: process.execPath,
       cliPath,
       useNpx: isNpx,
+      packDirs,
     });
   });
 

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 
 interface McpUsageModalProps {
   packId: string;
-  packPath: string;
   onClose: () => void;
   token: string;
 }
@@ -11,11 +10,12 @@ interface SystemInfo {
   nodePath: string;
   cliPath: string;
   useNpx: boolean;
+  packDirs: string[];
 }
 
 type Section = 'claude-desktop' | 'vscode' | 'cursor';
 
-function McpUsageModal({ packId, packPath, onClose, token }: McpUsageModalProps) {
+function McpUsageModal({ packId, onClose, token }: McpUsageModalProps) {
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -25,7 +25,7 @@ function McpUsageModal({ packId, packPath, onClose, token }: McpUsageModalProps)
   useEffect(() => {
     async function fetchSystemInfo() {
       try {
-        const res = await fetch('/api/system-info', {
+        const res = await fetch(`/api/system-info?packId=${encodeURIComponent(packId)}`, {
           headers: { 'x-showrun-token': token },
         });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -40,8 +40,8 @@ function McpUsageModal({ packId, packPath, onClose, token }: McpUsageModalProps)
     fetchSystemInfo();
   }, [token]);
 
-  // Derive the pack directory (parent of packPath) for --packs flag
-  const packDir = packPath ? packPath.replace(/\/[^/]+$/, '') : '';
+  // Use packDirs from system-info for the --packs flag
+  const packDirsStr = systemInfo?.packDirs?.join(',') ?? '';
 
   const handleCopy = async (json: string, section: Section) => {
     try {
@@ -73,8 +73,8 @@ function McpUsageModal({ packId, packPath, onClose, token }: McpUsageModalProps)
     // Otherwise fall back to the absolute node + cli.js path.
     const command = useNpx ? 'npx' : nodePath;
     const baseArgs = useNpx
-      ? ['showrun', 'serve', '--packs', packDir]
-      : [cliPath, 'serve', '--packs', packDir];
+      ? ['showrun', 'serve', '--packs', packDirsStr]
+      : [cliPath, 'serve', '--packs', packDirsStr];
 
     if (format === 'vscode') {
       return JSON.stringify(
