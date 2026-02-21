@@ -6,7 +6,7 @@ A TypeScript + Playwright framework for deterministic, versioned browser automat
 
 ## When to Use ShowRun
 
-- **No API available** — the site has no public API, or the API is incomplete / undocumented
+- **Works without an API** — automate sites with no public or documented API (e.g. legacy platforms), though it works just as well alongside existing APIs
 - **Browser agents are too slow or flaky** — you need production-grade reliability, not best-effort prompting
 - **Automation needs memory, iteration and speed** — workflows evolve, and you want versioned, repeatable runs
 - **AI discovers the workflow, humans own it** — use Teach Mode to let AI propose steps, then lock them into deterministic and exportable flows
