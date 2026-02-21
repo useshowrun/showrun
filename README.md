@@ -11,6 +11,43 @@ A TypeScript + Playwright framework for deterministic, versioned browser automat
 - **Automation needs memory, iteration and speed** — workflows evolve, and you want versioned, repeatable runs
 - **AI discovers the workflow, humans own it** — use Teach Mode to let AI propose steps, then lock them into deterministic and exportable flows
 
+## Quick Start
+
+### Using npx
+
+```bash
+# Launch the dashboard — that's it!
+# On first run, a setup wizard will prompt for your API key
+# and the Camoufox browser will be downloaded automatically.
+npx showrun dashboard --headful  # --headful is optional; omit for headless mode
+```
+
+### From Git Clone
+
+```bash
+# Clone the repository
+git clone https://github.com/useshowrun/showrun
+cd showrun
+
+# Install dependencies (requires pnpm)
+pnpm install
+
+# Approve native module builds (pnpm 10+ requires this for native deps like better-sqlite3)
+pnpm approve-builds
+
+# Build all packages
+pnpm build
+
+# Start the dashboard (Camoufox browser downloads automatically on first launch)
+pnpm dashboard --headful
+```
+
+### Run an Example
+
+```bash
+pnpm test:example
+```
+
 ## What is a Task Pack?
 
 A **Task Pack** is a self-contained, versioned automation module that:
@@ -43,91 +80,6 @@ Task Packs are designed to be:
     /example            # TypeScript task pack
     /example-json       # JSON-only task pack (no build step)
     /ycombinator.get.batch  # Example with network steps + run-once
-```
-
-## Quick Start
-
-### Using npx
-
-```bash
-# 1. Create a directory for your project
-mkdir my-showrun-project && cd my-showrun-project
-
-# 2. Create a .env file with your LLM API key (needed for Teach Mode)
-echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
-
-# 3. Download the Camoufox browser (anti-detection Firefox)
-npx camoufox-js fetch
-
-# 4. Launch the dashboard
-npx showrun dashboard --packs ./taskpacks_local
-
-# Add --headful to see the browser window during automation
-npx showrun dashboard --packs ./taskpacks_local --headful
-```
-
-### From Git Clone
-
-```bash
-# Clone the repository
-git clone https://github.com/useshowrun/showrun
-cd showrun
-
-# Install dependencies (requires pnpm)
-pnpm install
-
-# Approve native module builds if prompted
-pnpm approve-builds
-
-# Install camoufox browser (anti-detection Firefox)
-cd packages/dashboard && npx camoufox-js fetch && cd ../..
-
-# Build all packages
-pnpm build
-
-# Start the dashboard
-pnpm dashboard --packs ./taskpacks_local --headful
-```
-
-### Environment Setup
-
-At minimum, you need an LLM API key for Teach Mode (AI-assisted flow editing). You can configure this via a `.env` file or the config system (see [Configuration](#configuration) below):
-
-```bash
-# Option A: .env file in project root
-echo "ANTHROPIC_API_KEY=sk-ant-..." > .env
-
-# Option B: config.json (persists across projects)
-showrun config init --global
-# Then edit ~/.config/showrun/config.json (Linux/macOS) or %APPDATA%\showrun\config.json (Windows)
-```
-
-See `packages/dashboard/README.md` for the full list of supported environment variables and their config.json equivalents.
-
-### Development Setup
-
-```bash
-# Install dependencies (using pnpm)
-pnpm install
-
-# Approve native module builds if prompted
-pnpm approve-builds
-
-# Install camoufox browser
-npx camoufox-js fetch
-
-# Build all packages and task packs
-pnpm build
-```
-
-### Run Example Task Pack
-
-```bash
-# Run example
-pnpm test:example
-
-# Or use the unified CLI directly:
-node packages/showrun/dist/cli.js run ./taskpacks/example-json --inputs '{}'
 ```
 
 ## Creating a New Task Pack
@@ -202,24 +154,7 @@ That's it! See `taskpacks/example-json/` for a complete example.
 node packages/showrun/dist/cli.js run ./taskpacks/my-pack --inputs '{"url":"https://example.com"}'
 ```
 
-## Running Task Packs
-
-Use the unified `showrun` CLI to run task packs:
-
-```bash
-showrun run <pack-path> --inputs <json>
-```
-
-### Arguments
-
-- `<pack-path>`: Path to task pack directory (required)
-- `--inputs <json>`: JSON object with input values (defaults to `{}`)
-
-### Exit Codes
-
-- `0`: Success
-- `1`: Execution failure
-- `2`: Validation error (invalid inputs or pack structure)
+Exit codes: `0` success, `1` execution failure, `2` validation error.
 
 ## Logs and Artifacts
 
@@ -256,88 +191,19 @@ On error, the harness automatically saves:
 
 These are saved to `./runs/<timestamp>/artifacts/`.
 
-## Task Pack API
-
-### Input Schema
-
-Define inputs as a record of field definitions:
-
-```typescript
-inputs: {
-  fieldName: {
-    type: 'string' | 'number' | 'boolean',
-    required?: boolean,
-    description?: string,
-  }
-}
-```
-
-### Collectibles Schema
-
-Define collectibles as an array:
-
-```typescript
-collectibles: [
-  {
-    name: 'fieldName',
-    type: 'string' | 'number' | 'boolean',
-    description?: string,
-  }
-]
-```
-
-### Run Function
-
-```typescript
-async run(ctx: RunContext, inputs: Record<string, unknown>): Promise<RunResult>
-```
-
-**RunContext** provides:
-- `page`: Playwright Page object
-- `browser`: Playwright Browser object
-- `logger`: Structured logger (log events)
-- `artifacts`: Artifact manager (save screenshots/HTML)
-
-**RunResult** must return:
-- `collectibles`: Record of extracted data
-- `meta`: Metadata (url, durationMs, optional notes)
-
-## Development
-
-### Build
-
-```bash
-pnpm build
-```
-
-Builds all packages and task packs using TypeScript compiler.
-
-### Dev Mode
-
-```bash
-pnpm dev
-```
-
-Runs the harness in dev mode (requires building first or using ts-node).
-
 ## Dashboard & Teach Mode
 
 The dashboard is a web UI to run Task Packs, view runs and events, and edit flows with **Teach Mode** (AI-assisted step proposal using an LLM and browser MCP).
 
 ```bash
-# Build everything first
-pnpm build
-
-# Start the dashboard (serves UI + API; MCP servers are started on demand)
-pnpm --filter @showrun/dashboard start --packs ./taskpacks
-
-# With headful browser for runs (optional)
-pnpm --filter @showrun/dashboard start --packs ./taskpacks --headful
+pnpm dashboard                          # headless (default)
+pnpm dashboard --headful                # see the browser window
+pnpm dashboard --packs ./my-packs       # custom packs directory
 ```
 
-Then open the URL shown in the terminal (e.g. `http://localhost:5173`). You can run packs, inspect run events, and use Teach Mode to add steps to a flow by describing actions in the browser (the AI proposes DSL steps and applies patches via the editor MCP).
+Open the URL shown in the terminal. Use Teach Mode to let the AI propose DSL steps by describing actions in the browser.
 
-See `packages/dashboard/README.md` for environment variables (e.g. LLM API key for Teach Mode).
+See `packages/dashboard/README.md` for environment variables and full options.
 
 ## Configuration
 
@@ -423,25 +289,19 @@ The exploration agent's system prompt is assembled dynamically from the Techniqu
 
 ## MCP Server
 
-The framework includes an MCP (Model Context Protocol) server that exposes Task Packs as MCP tools over HTTP/SSE.
+Expose Task Packs as MCP tools for AI agents:
 
 ```bash
-pnpm build
-pnpm --filter @showrun/mcp-server run tp-mcp --packs ./taskpacks
+node packages/showrun/dist/cli.js serve --packs ./taskpacks          # stdio transport
+node packages/showrun/dist/cli.js serve --packs ./taskpacks --http   # HTTP/SSE transport
 ```
-
-- **Automatic discovery**: Finds Task Packs from specified directories
-- **Tool mapping**: Each pack is a callable MCP tool
-- **Concurrency**: Configurable concurrent execution
-- **Output**: Returns collectibles, metadata, and run paths
 
 See `packages/mcp-server/README.md` for details.
 
 ## Requirements
 
 - Node.js 20+
-- pnpm (or npm with workspaces)
-- Camoufox browser — anti-detection Firefox (`npx camoufox-js fetch`)
+- pnpm (for development; npx works for end users)
 
 ## Contributing
 

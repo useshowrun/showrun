@@ -20,8 +20,9 @@ export interface ServeCommandOptions {
 
 export function parseServeArgs(args: string[]): ServeCommandOptions {
   let packsStr: string | null = null;
-  // Default to headful if DISPLAY is available, otherwise headless
-  let headful = !!process.env.DISPLAY;
+  // Default to headful on macOS/Windows; on Linux require DISPLAY or WAYLAND_DISPLAY
+  const isLinux = process.platform === 'linux';
+  let headful = !isLinux || !!process.env.DISPLAY || !!process.env.WAYLAND_DISPLAY;
   let concurrency = 1;
   let baseRunDir = './runs';
   let http = false;
@@ -138,10 +139,10 @@ export async function cmdServe(args: string[]): Promise<void> {
       console.error('[MCP Server] Result stores disabled (--no-result-store)');
     }
 
-    // Warn if headful requested but no DISPLAY
-    if (options.headful && !process.env.DISPLAY) {
+    // Warn if headful requested but no display server available (Linux only)
+    if (options.headful && process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY) {
       console.error(
-        '[MCP Server] Warning: Headful mode requested but DISPLAY not set. ' +
+        '[MCP Server] Warning: Headful mode requested but DISPLAY/WAYLAND_DISPLAY not set. ' +
         'Will fall back to headless. Set DISPLAY or use xvfb-run to enable headful mode.'
       );
     }

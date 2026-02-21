@@ -21,10 +21,11 @@ npx showrun run ./my-pack --inputs '{}'
 ```bash
 # Install dependencies
 pnpm install
-npx camoufox-js fetch  # Download camoufox browser
+pnpm approve-builds  # Required for native modules (pnpm 10+)
 
 # Build all packages and task packs
 pnpm build
+# Camoufox browser downloads automatically on first launch
 
 # Run example task packs
 pnpm test:example           # TypeScript example

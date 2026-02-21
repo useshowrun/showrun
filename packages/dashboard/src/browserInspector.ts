@@ -3,10 +3,11 @@
  * Direct browser session management for Teach Mode
  */
 
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import { type Browser, type BrowserContext, type Page } from 'playwright';
+import { launchBrowser, type BrowserEngine } from '@showrun/core';
 import type { Target } from '@showrun/core';
 
-export type BrowserEngine = 'chromium' | 'camoufox';
+export type { BrowserEngine };
 
 // ElementFingerprint type (matches browser-inspector-mcp)
 export interface ElementFingerprint {
@@ -263,69 +264,16 @@ export async function startBrowserSession(
 ): Promise<string> {
   const { persistentContextDir, packId } = options ?? {};
 
-  let browser: Browser | null = null;
-  let context: BrowserContext;
-  let page: Page;
+  // Delegate browser launching to core's unified launcher
+  const coreSession = await launchBrowser({
+    browserSettings: { engine },
+    headless: !headful,
+    userDataDir: persistentContextDir,
+  });
 
-  if (engine === 'camoufox') {
-    // Dynamic import to avoid loading Camoufox when not needed
-    let Camoufox: (options: { headless?: boolean; user_data_dir?: string; humanize?: number | boolean }) => Promise<Browser | BrowserContext>;
-    try {
-      const camoufoxModule = await import('camoufox-js');
-      Camoufox = camoufoxModule.Camoufox;
-    } catch (error) {
-      throw new Error(
-        'Camoufox is not available. Run "npx camoufox-js fetch" to download the browser. ' +
-        `Error: ${error instanceof Error ? error.message : String(error)}`
-      );
-    }
-
-    if (persistentContextDir) {
-      // Ensure directory exists
-      const { mkdirSync } = await import('fs');
-      mkdirSync(persistentContextDir, { recursive: true });
-
-      // With user_data_dir, Camoufox returns BrowserContext directly (persistent context)
-      // humanize: adds human-like cursor movement delays (up to 2 seconds)
-      context = await Camoufox({
-        headless: !headful,
-        humanize: 2.0,
-        user_data_dir: persistentContextDir,
-      }) as unknown as BrowserContext;
-      page = context.pages()[0] || await context.newPage();
-      browser = null;
-      console.log(`[BrowserInspector] Started camoufox with persistent context: ${persistentContextDir}`);
-    } else {
-      // Ephemeral session - Camoufox returns Browser
-      // humanize: adds human-like cursor movement delays (up to 2 seconds)
-      browser = await Camoufox({ headless: !headful, humanize: 2.0 }) as Browser;
-      context = await browser.newContext();
-      page = await context.newPage();
-    }
-  } else {
-    // Default: Chromium
-    if (persistentContextDir) {
-      // Ensure directory exists
-      const { mkdirSync } = await import('fs');
-      mkdirSync(persistentContextDir, { recursive: true });
-
-      // Use persistent context for Chromium
-      context = await chromium.launchPersistentContext(persistentContextDir, {
-        headless: !headful,
-      });
-      page = context.pages()[0] || await context.newPage();
-      browser = null;
-      console.log(`[BrowserInspector] Started chromium with persistent context: ${persistentContextDir}`);
-    } else {
-      // Ephemeral session
-      browser = await chromium.launch({
-        headless: !headful,
-        channel: 'chromium',
-      });
-      context = await browser.newContext();
-      page = await context.newPage();
-    }
-  }
+  const browser = coreSession.browser;
+  const context = coreSession.context;
+  const page = coreSession.page;
 
   const sessionId = `session-${Date.now()}-${Math.random().toString(36).substring(7)}`;
   const networkBuffer: NetworkEntry[] = [];

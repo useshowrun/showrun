@@ -65,6 +65,11 @@ export interface LaunchBrowserConfig {
    * Pack directory path for profile persistence
    */
   packPath?: string;
+  /**
+   * Direct user data directory override.
+   * When set, bypasses persistence resolution (sessionId/packPath).
+   */
+  userDataDir?: string;
 }
 
 /**
@@ -84,17 +89,22 @@ export async function launchBrowser(config: LaunchBrowserConfig): Promise<Browse
   const engine = browserSettings.engine ?? 'camoufox';
   let persistence: BrowserPersistence = browserSettings.persistence ?? 'none';
 
-  // Auto-upgrade to profile persistence when packPath has an existing .browser-profile/
-  if (persistence === 'none' && packPath && existsSync(join(packPath, '.browser-profile'))) {
-    persistence = 'profile';
+  // Use explicit userDataDir if provided, otherwise resolve from persistence settings
+  let userDataDir: string | undefined;
+  if (config.userDataDir) {
+    userDataDir = config.userDataDir;
+    persistence = 'profile'; // Treat explicit dir as profile persistence
+  } else {
+    // Auto-upgrade to profile persistence when packPath has an existing .browser-profile/
+    if (persistence === 'none' && packPath && existsSync(join(packPath, '.browser-profile'))) {
+      persistence = 'profile';
+    }
+    userDataDir = resolveBrowserDataDir({
+      persistence,
+      sessionId,
+      packPath,
+    });
   }
-
-  // Resolve user data directory based on persistence mode
-  const userDataDir = resolveBrowserDataDir({
-    persistence,
-    sessionId,
-    packPath,
-  });
 
   if (engine === 'camoufox') {
     return launchCamoufox({
@@ -158,6 +168,36 @@ async function launchChromium(config: {
 }
 
 /**
+ * Ensures the Camoufox browser binary is downloaded.
+ * Auto-fetches on first use so `npx showrun dashboard` works as a one-liner.
+ */
+async function ensureCamoufoxBrowser(): Promise<void> {
+  try {
+    const pkgman = await import('camoufox-js/dist/pkgman.js');
+    const installDir = pkgman.INSTALL_DIR.toString();
+
+    // Check if browser is installed with a valid version file
+    if (existsSync(installDir)) {
+      try {
+        pkgman.installedVerStr();
+        return; // Already installed
+      } catch {
+        // version.json missing or corrupt — re-fetch
+      }
+    }
+
+    console.log('[ShowRun] Camoufox browser not found. Downloading automatically...');
+    const fetcher = new pkgman.CamoufoxFetcher();
+    await fetcher.install();
+  } catch (error) {
+    throw new Error(
+      'Failed to auto-download Camoufox browser. Try "npx camoufox-js fetch" manually. ' +
+      `Error: ${error instanceof Error ? error.message : String(error)}`
+    );
+  }
+}
+
+/**
  * Launches Camoufox browser (Firefox-based anti-detection)
  *
  * Note: When user_data_dir is provided, Camoufox returns a BrowserContext directly
@@ -172,6 +212,9 @@ async function launchCamoufox(config: {
 
   // Desktop-only screen constraints to prevent mobile fingerprints
   const screen = { minWidth: 1024, minHeight: 768 };
+
+  // Ensure the camoufox browser binary is downloaded before launching
+  await ensureCamoufoxBrowser();
 
   // Dynamic import to avoid loading Camoufox when not needed
   let Camoufox: (options: { headless?: boolean; user_data_dir?: string; humanize?: number | boolean; screen?: { minWidth?: number; maxWidth?: number; minHeight?: number; maxHeight?: number } }) => Promise<Browser | BrowserContext>;

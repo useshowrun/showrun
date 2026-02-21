@@ -10,16 +10,32 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [changed] Dashboard browser launching consolidated to use core's unified `launchBrowser()`, ensuring auto-fetch and consistent engine behavior
+- [added] Camoufox browser binary is auto-downloaded on first use; no manual `npx camoufox-js fetch` needed
+- [fixed] Headful mode now works on macOS/Windows without DISPLAY env var; DISPLAY check is Linux-only
 - [added] Setup wizard now asks for taskpacks directory location; seeds it with example-json pack; dashboard and serve commands use it as default
 - [fixed] MCP Usage modal now generates correct `--packs` path from server-side pack directories instead of broken client-side derivation
 - [fixed] Config loader `[Config] Loaded: ...` message no longer pollutes stdout, which broke stdio MCP transport
+
+## 0.1.7 — 2026-02-21
+
 - [added] First-run setup wizard — interactively prompts for API keys and config when running `showrun dashboard` without prior configuration
 - [changed] Dashboard data (database, run logs, default taskpacks) now stored in system data directory (`~/.local/share/showrun/`) instead of polluting the current working directory
 - [changed] Default taskpacks directory falls back to `~/.local/share/showrun/taskpacks/` when `--packs` is not specified and `./taskpacks` does not exist
 - [added] `getGlobalDataDir()` and `updateGlobalConfig()` helpers in `@showrun/core` for system data directory and config writing
 - [changed] `showrun uninstall` now also cleans up the data directory (`~/.local/share/showrun/`)
+
+## 0.1.5 — 2026-02-21
+
 - [changed] CLI package reverted from `@showrun/cli` back to `showrun` — use `npx showrun` again
+
+## 0.1.4 — 2026-02-20
+
+- [changed] CLI package renamed from `showrun` to `@showrun/cli`
 - [changed] Root package.json marked `private: true` and renamed to `showrun-monorepo` to prevent accidental npm publishing
+
+## 0.1.2 — 2026-02-19
+
 - [added] LinkedIn Sales Navigator `pctEncode` seed technique — domain-specific knowledge for correct URL encoding with `()` delimiters in Sales Navigator query syntax
 - [fixed] `urlReplace`/`bodyReplace` array values now pass flow validation (runtime already supported arrays, but `validation.ts` rejected them)
 - [changed] Editor Agent prompt: added complete flow.json example, consolidated override strategies (A/B/C), added common mistakes for missing `id`/`type`/`params` and one-at-a-time appends
@@ -111,7 +127,7 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## 0.1.1a — 2026-02-12
 
-- [fixed] `npx @showrun/cli` from git clone auto-builds if dist is missing (no more manual `pnpm build` required)
+- [fixed] `npx showrun` from git clone auto-builds if dist is missing (no more manual `pnpm build` required)
 
 ## 0.1.1 — 2026-02-11
 

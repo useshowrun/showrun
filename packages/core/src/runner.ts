@@ -87,14 +87,16 @@ export async function runTaskPack(
   mkdirSync(runDir, { recursive: true });
   mkdirSync(artifactsDir, { recursive: true });
 
-  // Auto-detect if we can run headful (check for DISPLAY)
-  // If headful was requested but no DISPLAY is available, fall back to headless
-  const hasDisplay = !!process.env.DISPLAY;
+  // Auto-detect if we can run headful
+  // On Linux, a DISPLAY (X11) or WAYLAND_DISPLAY is required for headful mode.
+  // On macOS/Windows, native window management handles it — no env var needed.
+  const isLinux = process.platform === 'linux';
+  const hasDisplay = !isLinux || !!process.env.DISPLAY || !!process.env.WAYLAND_DISPLAY;
   const headless = requestedHeadless || !hasDisplay;
 
   if (!requestedHeadless && !hasDisplay) {
     console.error(
-      '[Warning] Headful mode requested but no DISPLAY environment variable found. ' +
+      '[Warning] Headful mode requested but no DISPLAY/WAYLAND_DISPLAY environment variable found. ' +
       'Falling back to headless mode. Set DISPLAY or use xvfb-run to enable headful mode.'
     );
   }
