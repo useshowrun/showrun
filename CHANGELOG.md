@@ -10,6 +10,10 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [fixed] Agent-triggered `editor_run_pack` now skips HTTP-only replay mode, always using fresh browser execution to avoid stale snapshot loops
+- [fixed] Stop button no longer clears conversation from screen (was caused by premature DB reload racing with backend save)
+- [added] Agent now preserves rich tool call context across turns — tool_calls and tool results are saved to DB and reconstructed on follow-up messages
+
 ## 0.1.8 — 2026-02-22
 
 - [changed] Dashboard browser launching consolidated to use core's unified `launchBrowser()`, ensuring auto-fetch and consistent engine behavior

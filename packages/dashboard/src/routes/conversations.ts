@@ -66,9 +66,11 @@ export function createConversationsRouter(ctx: DashboardContext): Router {
     }
 
     const messages = getMessagesForConversation(id);
+    // Strip agentContext from response — it can be very large and is only used internally
+    const messagesWithoutContext = messages.map(({ agentContext, ...rest }) => rest);
     res.json({
       ...conversation,
-      messages,
+      messages: messagesWithoutContext,
     });
   });
 
@@ -175,7 +177,9 @@ export function createConversationsRouter(ctx: DashboardContext): Router {
     }
 
     const messages = getMessagesForConversation(id);
-    res.json(messages);
+    // Strip agentContext from response — it can be very large and is only used internally
+    const messagesWithoutContext = messages.map(({ agentContext, ...rest }) => rest);
+    res.json(messagesWithoutContext);
   });
 
   // Export conversation for debugging (includes all messages, tool calls, runs, etc.)

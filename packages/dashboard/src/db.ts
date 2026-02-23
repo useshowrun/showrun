@@ -25,6 +25,7 @@ export interface Message {
   content: string;
   toolCalls: string | null; // JSON array
   thinkingContent: string | null;
+  agentContext: string | null; // JSON: LLM-format messages for this agent turn (tool_calls + tool results)
   createdAt: number;
 }
 
@@ -171,6 +172,12 @@ function runMigrations(database: Database.Database): void {
       name: '004_add_plan_to_conversations',
       sql: `
         ALTER TABLE conversations ADD COLUMN plan TEXT;
+      `,
+    },
+    {
+      name: '006_add_agent_context',
+      sql: `
+        ALTER TABLE messages ADD COLUMN agentContext TEXT;
       `,
     },
     {
@@ -342,7 +349,8 @@ export function addMessage(
   role: 'user' | 'assistant' | 'system',
   content: string,
   toolCalls?: any[] | null,
-  thinkingContent?: string | null
+  thinkingContent?: string | null,
+  agentContext?: string | null
 ): Message {
   const database = getDatabase();
   const id = uuidv4();
@@ -350,8 +358,8 @@ export function addMessage(
 
   database
     .prepare(
-      `INSERT INTO messages (id, conversationId, role, content, toolCalls, thinkingContent, createdAt)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO messages (id, conversationId, role, content, toolCalls, thinkingContent, agentContext, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       id,
@@ -360,6 +368,7 @@ export function addMessage(
       content,
       toolCalls ? JSON.stringify(toolCalls) : null,
       thinkingContent ?? null,
+      agentContext ?? null,
       now
     );
 
@@ -375,6 +384,7 @@ export function addMessage(
     content,
     toolCalls: toolCalls ? JSON.stringify(toolCalls) : null,
     thinkingContent: thinkingContent ?? null,
+    agentContext: agentContext ?? null,
     createdAt: now,
   };
 }
@@ -403,6 +413,7 @@ function mapRowToMessage(row: any): Message {
     content: row.content,
     toolCalls: row.toolCalls,
     thinkingContent: row.thinkingContent,
+    agentContext: row.agentContext ?? null,
     createdAt: row.createdAt,
   };
 }

@@ -50,6 +50,10 @@ export interface RunTaskPackOptions {
    * Pre-loaded secrets (if not provided, will be loaded from packPath)
    */
   secrets?: Record<string, string>;
+  /**
+   * Skip HTTP-only replay mode and always use browser execution
+   */
+  skipHttpReplay?: boolean;
 }
 
 /**
@@ -112,7 +116,7 @@ export async function runTaskPack(
 
   // ─── HTTP-first execution ───────────────────────────────────────────
   const snapshots = taskPack.snapshots ?? null;
-  if (isFlowHttpCompatible(taskPack.flow, snapshots)) {
+  if (!options.skipHttpReplay && isFlowHttpCompatible(taskPack.flow, snapshots)) {
     logger.log({
       type: 'run_started',
       data: {
@@ -149,7 +153,7 @@ export async function runTaskPack(
 
   try {
     // Log run start (only if not already logged above)
-    if (!isFlowHttpCompatible(taskPack.flow, snapshots)) {
+    if (options.skipHttpReplay || !isFlowHttpCompatible(taskPack.flow, snapshots)) {
       logger.log({
         type: 'run_started',
         data: {

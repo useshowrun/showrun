@@ -445,7 +445,7 @@ export default function ChatView({
       }
       for (const line of buffer.split('\n')) processLine(line);
 
-      // Add assistant message with tool calls
+      // Add assistant message to local state for immediate display
       const assistantContent = result.assistantMessage?.content ?? result.error ?? '';
       const finalToolTrace = toolTrace.length > 0 ? toolTrace : result.toolTrace;
       const assistantMessage: Message = {
@@ -458,20 +458,8 @@ export default function ChatView({
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Save assistant message to database
-      try {
-        await apiCall(`/api/conversations/${conversation.id}/messages`, {
-          method: 'POST',
-          body: JSON.stringify({
-            role: 'assistant',
-            content: assistantContent,
-            toolCalls: finalToolTrace,
-            thinkingContent: streamingThinking || null,
-          }),
-        });
-      } catch (err) {
-        console.error('Failed to save assistant message:', err);
-      }
+      // Backend saves assistant message with rich agentContext — reload from DB for canonical state
+      await loadMessages(conversation.id);
 
       // Update browser state
       if (result.browser?.screenshotBase64) {
@@ -495,7 +483,7 @@ export default function ChatView({
         ? '(Stopped by user)'
         : `Error: ${err instanceof Error ? err.message : String(err)}`;
 
-      // Build message with captured data
+      // Build message with captured data for immediate display
       const finalContent = capturedContent || errorContent;
       const assistantMessage: Message = {
         id: `temp-${Date.now()}`,
@@ -507,22 +495,9 @@ export default function ChatView({
       };
       setMessages((prev) => [...prev, assistantMessage]);
 
-      // Persist the partial message to database
-      if (conversation) {
-        try {
-          await apiCall(`/api/conversations/${conversation.id}/messages`, {
-            method: 'POST',
-            body: JSON.stringify({
-              role: 'assistant',
-              content: finalContent,
-              toolCalls: capturedToolTrace.length > 0 ? capturedToolTrace : null,
-              thinkingContent: capturedThinking || null,
-            }),
-          });
-        } catch (saveErr) {
-          console.error('Failed to save partial assistant message:', saveErr);
-        }
-      }
+      // On abort: do NOT reload from DB — the backend save is async and races with us.
+      // The locally-constructed partial message above is the best state we have.
+      // On non-abort errors: also keep local state since backend may not have saved.
 
       if (!isAbort) {
         setError(err instanceof Error ? err.message : String(err));

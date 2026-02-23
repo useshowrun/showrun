@@ -431,6 +431,7 @@ export class TaskPackEditorWrapper {
         headless: !this.headful,
         profileId: packId,
         packPath: packInfo.path,
+        skipHttpReplay: true,
       });
 
       // Auto-store result if a store exists for this pack
