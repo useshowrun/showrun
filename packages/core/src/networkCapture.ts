@@ -159,6 +159,8 @@ export interface NetworkCaptureApi {
   exportEntry(requestId: string): NetworkEntrySerializable | null;
   /** Import a previously exported network entry into the buffer */
   importEntry(entry: NetworkEntrySerializable): void;
+  /** Get the captured response body for a request ID (no replay/re-fetch) */
+  getResponseBody(requestId: string): { status: number; contentType?: string; body: string; bodySize: number } | null;
 }
 
 let idCounter = 0;
@@ -481,6 +483,33 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
         contentType: entry.contentType,
         responseBodyText: entry.responseBodyText,
         responseBodyBase64: entry.responseBodyBase64,
+      };
+    },
+
+    getResponseBody(requestId: string): { status: number; contentType?: string; body: string; bodySize: number } | null {
+      const entry = mapById.get(requestId);
+      if (!entry) return null;
+
+      let body: string | null = null;
+      if (entry.responseBodyText != null) {
+        body = entry.responseBodyText;
+      } else if (entry.responseBodyBase64 != null) {
+        try {
+          const buf = Buffer.from(entry.responseBodyBase64, 'base64');
+          const decompressed = maybeDecompress(buf);
+          body = decompressed.toString('utf8');
+        } catch {
+          return null;
+        }
+      }
+
+      if (body == null) return null;
+
+      return {
+        status: entry.status ?? 0,
+        contentType: entry.contentType,
+        body,
+        bodySize: Buffer.byteLength(body, 'utf8'),
       };
     },
 

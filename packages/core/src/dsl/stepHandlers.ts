@@ -686,10 +686,19 @@ async function executeNetworkExtract(
   step: NetworkExtractStep
 ): Promise<void> {
   // Check vars first, then collectibles (network_replay uses 'out' for collectibles, 'saveAs' for vars)
-  const raw = ctx.vars[step.params.fromVar] ?? ctx.collectibles[step.params.fromVar];
+  let raw = ctx.vars[step.params.fromVar] ?? ctx.collectibles[step.params.fromVar];
   if (raw === undefined) {
     throw new Error(`network_extract: var "${step.params.fromVar}" is not set (checked vars and collectibles)`);
   }
+
+  // If raw is a request ID string from network_find, look up the response body from the capture buffer
+  if (typeof raw === 'string' && ctx.networkCapture) {
+    const captured = ctx.networkCapture.getResponseBody(raw);
+    if (captured) {
+      raw = captured; // Use the captured response object { status, contentType, body, bodySize }
+    }
+  }
+
   // Replay saveAs stores { body, status, contentType, bodySize }; support that or raw string
   const bodyStr =
     raw && typeof raw === 'object' && 'body' in raw && typeof (raw as { body: unknown }).body === 'string'

@@ -10,6 +10,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] `network_extract` can now read response body directly from `network_find` request ID without replaying the request
+
 ## 0.1.8 — 2026-02-22
 
 - [changed] Dashboard browser launching consolidated to use core's unified `launchBrowser()`, ensuring auto-fetch and consistent engine behavior
