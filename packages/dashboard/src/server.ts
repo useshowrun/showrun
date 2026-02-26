@@ -47,6 +47,7 @@ import {
   createBrowserRouter,
   createTeachRouter,
   createTechniquesRouter,
+  createRegistryRouter,
 } from './routes/index.js';
 import { TechniqueManager, WeaviateVectorStore } from '@showrun/techniques';
 import type { VectorStoreConfig } from '@showrun/techniques';
@@ -304,6 +305,7 @@ export async function startDashboard(options: DashboardOptions): Promise<void> {
   app.use(createBrowserRouter(ctx));
   app.use(createTeachRouter(ctx));
   app.use(createTechniquesRouter(ctx));
+  app.use(createRegistryRouter(ctx));
 
   // Socket.IO: Handle connections
   io.on('connection', (socket) => {

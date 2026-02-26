@@ -52,6 +52,9 @@ export interface ShowRunConfig {
     };
     collectionName?: string;    // default: "ShowrunTechniques"
   };
+  registry?: {
+    url?: string;               // Registry server URL (no default — registry features disabled if not set)
+  };
   taskpacksDir?: string;       // Default taskpacks directory (cross-platform)
 }
 
@@ -210,6 +213,7 @@ const CONFIG_TO_ENV: Array<{ path: string[]; envVar: string }> = [
   { path: ['techniques', 'embedding', 'baseUrl'], envVar: 'EMBEDDING_BASE_URL' },
   { path: ['techniques', 'collectionName'], envVar: 'TECHNIQUES_COLLECTION' },
   { path: ['taskpacksDir'], envVar: 'SHOWRUN_TASKPACKS_DIR' },
+  { path: ['registry', 'url'], envVar: 'SHOWRUN_REGISTRY_URL' },
 ];
 
 function getNestedValue(obj: Record<string, unknown>, path: string[]): unknown {
@@ -414,5 +418,8 @@ export const DEFAULT_CONFIG_TEMPLATE: ShowRunConfig = {
     vectorStore: { provider: 'weaviate', url: '', apiKey: '', vectorizer: '' },
     embedding: { apiKey: '', model: '', baseUrl: '' },
     collectionName: '',
+  },
+  registry: {
+    url: '',
   },
 };

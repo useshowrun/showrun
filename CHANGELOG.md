@@ -10,6 +10,14 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] Registry client in `@showrun/core` — publish, search, and install task packs from a remote registry
+- [added] OAuth Device Flow (RFC 8628) authentication — CLI and dashboard never handle passwords; users authorize in their browser
+- [added] `showrun registry` CLI command group with `login`, `logout`, `whoami`, `publish`, `search`, and `install` subcommands
+- [added] Dashboard registry integration — publish button in pack list and editor, device-flow login modal
+- [added] Dashboard `/api/registry/*` proxy endpoints for registry operations
+- [added] Token persistence in `~/.config/showrun/auth.json` with automatic access token refresh
+- [added] `registry.url` config option and `SHOWRUN_REGISTRY_URL` env var for registry server URL
+
 ## 0.1.8 — 2026-02-22
 
 - [changed] Dashboard browser launching consolidated to use core's unified `launchBrowser()`, ensuring auto-fetch and consistent engine behavior

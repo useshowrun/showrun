@@ -41,6 +41,8 @@ import {
   printUninstallHelp,
   cmdTechniques,
   printTechniquesHelp,
+  cmdRegistry,
+  printRegistryHelp,
 } from './commands/index.js';
 
 function printHelp(): void {
@@ -71,6 +73,13 @@ Commands:
     list                  List techniques (with filters)
     import <file>         Import a technique bundle
     export                Export techniques as JSON
+  registry <subcommand>   Interact with the task pack registry
+    login                 Authenticate via browser (OAuth Device Flow)
+    logout                Clear stored credentials
+    whoami                Show current authenticated user
+    publish               Publish a task pack to the registry
+    search <query>        Search for task packs
+    install <slug>        Install a task pack from the registry
 
 Options:
   --help, -h              Show help for a command
@@ -126,6 +135,9 @@ async function main(): Promise<void> {
       case 'techniques':
         printTechniquesHelp();
         break;
+      case 'registry':
+        printRegistryHelp();
+        break;
       default:
         printHelp();
     }
@@ -157,6 +169,9 @@ async function main(): Promise<void> {
         break;
       case 'techniques':
         await cmdTechniques(commandArgs);
+        break;
+      case 'registry':
+        await cmdRegistry(commandArgs);
         break;
       default:
         console.error(`Unknown command: ${command}. Use --help for usage.`);
