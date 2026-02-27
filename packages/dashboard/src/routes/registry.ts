@@ -146,6 +146,35 @@ export function createRegistryRouter(ctx: DashboardContext): Router {
     }
   });
 
+  // Report a pack
+  router.post('/api/registry/report/:slug', async (req: Request, res: Response) => {
+    const client = getClient();
+    if (!client) {
+      res.status(400).json({ error: 'Registry not configured' });
+      return;
+    }
+
+    if (!client.isAuthenticated()) {
+      res.status(401).json({ error: 'Not authenticated. Please log in first.' });
+      return;
+    }
+
+    const { slug } = req.params;
+    const { reason, description } = req.body;
+
+    if (!reason) {
+      res.status(400).json({ error: 'reason is required' });
+      return;
+    }
+
+    try {
+      await client.reportPack({ slug, reason, description });
+      res.json({ ok: true });
+    } catch (err) {
+      handleRegistryError(res, err);
+    }
+  });
+
   // Search packs
   router.get('/api/registry/search', async (req: Request, res: Response) => {
     const client = getClient();

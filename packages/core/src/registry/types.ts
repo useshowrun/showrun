@@ -112,6 +112,19 @@ export interface SearchQuery {
   limit?: number;
 }
 
+// ── Report ────────────────────────────────────────────────────────────────
+
+export type ReportReason = 'malicious' | 'spam' | 'inappropriate' | 'copyright';
+
+export interface ReportParams {
+  /** Pack slug to report */
+  slug: string;
+  /** Reason for the report */
+  reason: ReportReason;
+  /** Optional description (max 2000 characters) */
+  description?: string;
+}
+
 // ── Client interface ──────────────────────────────────────────────────────
 
 export interface IRegistryClient {
@@ -123,4 +136,5 @@ export interface IRegistryClient {
   publishPack(params: PublishParams): Promise<PublishResult>;
   searchPacks(query: SearchQuery): Promise<PaginatedResponse<PackSummary>>;
   installPack(slug: string, destDir: string, version?: string): Promise<void>;
+  reportPack(params: ReportParams): Promise<void>;
 }

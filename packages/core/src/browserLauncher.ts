@@ -80,6 +80,12 @@ export interface LaunchBrowserConfig {
    * Passed directly to Playwright/Camoufox launch options.
    */
   proxy?: ResolvedProxy;
+  /**
+   * Chrome DevTools Protocol URL to connect to an existing browser.
+   * When set, connects via CDP instead of launching a new browser.
+   * Chromium-only (Camoufox/Firefox does not support CDP).
+   */
+  cdpUrl?: string;
 }
 
 /**
@@ -89,6 +95,11 @@ export interface LaunchBrowserConfig {
  * @returns Browser session with context, page, and close function
  */
 export async function launchBrowser(config: LaunchBrowserConfig): Promise<BrowserSession> {
+  // CDP connection: connect to an existing Chrome browser instead of launching
+  if (config.cdpUrl) {
+    return connectCDP(config.cdpUrl);
+  }
+
   const {
     browserSettings = {},
     headless = true,
@@ -132,6 +143,30 @@ export async function launchBrowser(config: LaunchBrowserConfig): Promise<Browse
     persistence,
     proxy: config.proxy,
   });
+}
+
+/**
+ * Connects to an existing Chrome browser via Chrome DevTools Protocol.
+ * The external agent owns the browser — close() is a no-op (only disconnects the CDP session).
+ */
+async function connectCDP(cdpUrl: string): Promise<BrowserSession> {
+  const browser = await chromium.connectOverCDP(cdpUrl);
+  const contexts = browser.contexts();
+  const context = contexts.length > 0 ? contexts[0] : await browser.newContext();
+  const pages = context.pages();
+  const page = pages.length > 0 ? pages[0] : await context.newPage();
+
+  return {
+    context,
+    page,
+    browser,
+    engine: 'chromium',
+    persistence: 'none',
+    async close() {
+      // No-op: the external agent owns the browser.
+      // The CDP WebSocket disconnects automatically when the process exits.
+    },
+  };
 }
 
 /**

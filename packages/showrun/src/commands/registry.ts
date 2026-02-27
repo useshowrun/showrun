@@ -12,7 +12,7 @@ import { resolve } from 'path';
 import { existsSync } from 'fs';
 import { cwd, platform } from 'process';
 import { execSync } from 'child_process';
-import { RegistryClient, RegistryError } from '@showrun/core';
+import { RegistryClient, RegistryError, type ReportReason } from '@showrun/core';
 
 // ── Arg parsing helpers ───────────────────────────────────────────────────
 
@@ -196,6 +196,35 @@ async function cmdInstall(args: string[]): Promise<void> {
   console.log(`Installed ${slug} to ${resolve(resolvedDest, slug)}`);
 }
 
+const VALID_REPORT_REASONS = ['malicious', 'spam', 'inappropriate', 'copyright'] as const;
+
+async function cmdReport(args: string[]): Promise<void> {
+  const client = new RegistryClient();
+
+  const slug = getPositional(args);
+  if (!slug) {
+    throw new Error('Pack slug is required. Usage: showrun registry report <slug> --reason <reason>');
+  }
+
+  const reason = getFlag(args, '--reason') as ReportReason | undefined;
+  if (!reason) {
+    throw new Error(
+      `--reason is required. Valid reasons: ${VALID_REPORT_REASONS.join(', ')}`,
+    );
+  }
+  if (!VALID_REPORT_REASONS.includes(reason)) {
+    throw new Error(
+      `Invalid reason "${reason}". Valid reasons: ${VALID_REPORT_REASONS.join(', ')}`,
+    );
+  }
+
+  const description = getFlag(args, '--description');
+
+  await client.reportPack({ slug, reason, description });
+  console.log(`Report submitted for pack "${slug}" (reason: ${reason}).`);
+  console.log('The registry team will review your report. Thank you.');
+}
+
 // ── Command dispatch ──────────────────────────────────────────────────────
 
 export async function cmdRegistry(args: string[]): Promise<void> {
@@ -221,6 +250,9 @@ export async function cmdRegistry(args: string[]): Promise<void> {
         break;
       case 'install':
         await cmdInstall(subcommandArgs);
+        break;
+      case 'report':
+        await cmdReport(subcommandArgs);
         break;
       case undefined:
       case '--help':
@@ -270,6 +302,11 @@ Commands:
     --dir <path>          Destination directory (default: ./taskpacks)
     --version <ver>       Specific version (default: latest)
 
+  report        Report a pack for policy violation
+    <slug>                Pack slug (required)
+    --reason <reason>     malicious, spam, inappropriate, or copyright (required)
+    --description <text>  Additional details (optional, max 2000 chars)
+
 Environment:
   SHOWRUN_REGISTRY_URL    Registry server URL (or set registry.url in config.json)
 
@@ -279,6 +316,7 @@ Examples:
   showrun registry publish --path ./taskpacks/my-pack
   showrun registry search "linkedin"
   showrun registry install example-json --dir ./taskpacks
+  showrun registry report some-pack --reason malicious --description "Steals credentials"
   showrun registry logout
 `);
 }

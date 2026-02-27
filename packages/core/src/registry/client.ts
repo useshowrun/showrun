@@ -23,6 +23,7 @@ import type {
   PackDetail,
   PaginatedResponse,
   SearchQuery,
+  ReportParams,
   StoredAuth,
 } from './types.js';
 import type { TaskPackManifest, InputSchema, CollectibleDefinition } from '../types.js';
@@ -249,6 +250,20 @@ export class RegistryClient implements IRegistryClient {
 
     writeTaskPackManifest(packDir, versionData.manifest);
     writeFlowJson(packDir, versionData.flow);
+  }
+
+  // ── Reports ──────────────────────────────────────────────────────────
+
+  async reportPack(params: ReportParams): Promise<void> {
+    await this.request(
+      'POST',
+      `/api/packs/${encodeURIComponent(params.slug)}/report`,
+      {
+        reason: params.reason,
+        ...(params.description && { description: params.description }),
+      },
+      true,
+    );
   }
 
   // ── Internal request helper ───────────────────────────────────────────

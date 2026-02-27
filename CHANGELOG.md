@@ -10,6 +10,12 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] `--cdp-url` flag for `showrun run` — connect to an existing browser via Chrome DevTools Protocol instead of launching a new one
+- [added] Actionable error messages for missing inputs (prints schema) and missing secrets (prints file location + JSON template for `.secrets.json`)
+- [added] Post-execution reminder message about reporting non-functioning or malicious task packs
+- [added] CLI run results auto-stored to per-pack SQLite database (same as MCP server), disable with `--no-result-store`
+- [added] `showrun results` CLI command group with `list` and `query` subcommands for querying stored results with JMESPath filtering
+- [added] `showrun registry report` command — report packs for policy violations (malicious, spam, inappropriate, copyright) with dashboard proxy route
 - [added] Registry client in `@showrun/core` — publish, search, and install task packs from a remote registry
 - [added] OAuth Device Flow (RFC 8628) authentication — CLI and dashboard never handle passwords; users authorize in their browser
 - [added] `showrun registry` CLI command group with `login`, `logout`, `whoami`, `publish`, `search`, and `install` subcommands
