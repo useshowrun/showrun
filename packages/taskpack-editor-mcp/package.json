@@ -1,6 +1,6 @@
 {
   "name": "@showrun/taskpack-editor-mcp",
-  "version": "0.1.9",
+  "version": "0.1.10-rc.1",
   "description": "MCP server for editing JSON Task Packs",
   "type": "module",
   "main": "./dist/index.js",

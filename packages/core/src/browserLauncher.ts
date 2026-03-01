@@ -148,13 +148,17 @@ export async function launchBrowser(config: LaunchBrowserConfig): Promise<Browse
 /**
  * Connects to an existing Chrome browser via Chrome DevTools Protocol.
  * The external agent owns the browser — close() is a no-op (only disconnects the CDP session).
+ * Uses the last page in the list (most recently opened) and brings it to front.
  */
 async function connectCDP(cdpUrl: string): Promise<BrowserSession> {
   const browser = await chromium.connectOverCDP(cdpUrl);
   const contexts = browser.contexts();
   const context = contexts.length > 0 ? contexts[0] : await browser.newContext();
   const pages = context.pages();
-  const page = pages.length > 0 ? pages[0] : await context.newPage();
+  const page = pages.length > 0 ? pages[pages.length - 1] : await context.newPage();
+
+  // Bring the selected page to front so the flow runs in the visible tab
+  await page.bringToFront();
 
   return {
     context,

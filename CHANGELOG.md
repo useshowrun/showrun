@@ -10,6 +10,7 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] `scripts/release.js` — monorepo release script with RC workflow (`rc`, `stable`, `--dry-run`), publishes all 8 packages in dependency order
 - [added] `--cdp-url` flag for `showrun run` — connect to an existing browser via Chrome DevTools Protocol instead of launching a new one
 - [added] Actionable error messages for missing inputs (prints schema) and missing secrets (prints file location + JSON template for `.secrets.json`)
 - [added] Post-execution reminder message about reporting non-functioning or malicious task packs

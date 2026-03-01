@@ -1,6 +1,6 @@
 {
   "name": "@showrun/mcp-server",
-  "version": "0.1.9",
+  "version": "0.1.10-rc.1",
   "description": "MCP server for Task Pack framework",
   "type": "module",
   "main": "./dist/index.js",

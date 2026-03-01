@@ -1,6 +1,6 @@
 {
   "name": "showrun",
-  "version": "0.1.9",
+  "version": "0.1.10-rc.1",
   "description": "Task Pack framework for deterministic browser automations - single command dashboard",
   "type": "module",
   "main": "./dist/cli.js",
@@ -19,7 +19,7 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@anthropic-ai/tokenizer": "^0.0.4",
     "@modelcontextprotocol/sdk": "^1.12.0",
-    "@showrun/techniques": "^0.1.3",
+    "@showrun/techniques": "0.1.10-rc.1",
     "better-sqlite3": "^12.6.2",
     "camoufox-js": "^0.8.5",
     "cors": "^2.8.5",

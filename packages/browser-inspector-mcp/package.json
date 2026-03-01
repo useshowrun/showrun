@@ -1,6 +1,6 @@
 {
   "name": "@showrun/browser-inspector-mcp",
-  "version": "0.1.9",
+  "version": "0.1.10-rc.1",
   "description": "MCP server for browser inspection and element picking",
   "type": "module",
   "main": "./dist/index.js",

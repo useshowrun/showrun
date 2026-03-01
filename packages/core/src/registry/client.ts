@@ -191,7 +191,7 @@ export class RegistryClient implements IRegistryClient {
     }
 
     // Publish version
-    const versionData = await this.request<{ version: string }>(
+    const versionData = await this.request<{ version: string | { version?: string } }>(
       'POST',
       `/api/packs/${slug}/versions`,
       {
@@ -209,9 +209,18 @@ export class RegistryClient implements IRegistryClient {
       true,
     );
 
+    // The API may return version as a string or as an object with a nested version field
+    const rawVersion = versionData.version;
+    const version =
+      typeof rawVersion === 'string'
+        ? rawVersion
+        : (rawVersion && typeof rawVersion === 'object' && 'version' in rawVersion
+            ? String(rawVersion.version)
+            : manifest.version);
+
     return {
       slug,
-      version: versionData.version,
+      version,
       created,
       warnings,
     };

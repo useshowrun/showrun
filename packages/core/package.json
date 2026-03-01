@@ -1,6 +1,6 @@
 {
   "name": "@showrun/core",
-  "version": "0.1.9",
+  "version": "0.1.10-rc.1",
   "description": "Core types and utilities for Task Pack framework",
   "type": "module",
   "main": "./dist/index.js",
