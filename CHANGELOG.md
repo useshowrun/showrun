@@ -8,6 +8,24 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ---
 
+## Unreleased
+
+- [changed] Default registry URL set to `https://registry.showrun.co` — registry commands work out of the box without configuration
+- [added] `scripts/release.js` — monorepo release script with RC workflow (`rc`, `stable`, `--dry-run`), publishes all 8 packages in dependency order
+- [added] `--cdp-url` flag for `showrun run` — connect to an existing browser via Chrome DevTools Protocol instead of launching a new one
+- [added] Actionable error messages for missing inputs (prints schema) and missing secrets (prints file location + JSON template for `.secrets.json`)
+- [added] Post-execution reminder message about reporting non-functioning or malicious task packs
+- [added] CLI run results auto-stored to per-pack SQLite database (same as MCP server), disable with `--no-result-store`
+- [added] `showrun results` CLI command group with `list` and `query` subcommands for querying stored results with JMESPath filtering
+- [added] `showrun registry report` command — report packs for policy violations (malicious, spam, inappropriate, copyright) with dashboard proxy route
+- [added] Registry client in `@showrun/core` — publish, search, and install task packs from a remote registry
+- [added] OAuth Device Flow (RFC 8628) authentication — CLI and dashboard never handle passwords; users authorize in their browser
+- [added] `showrun registry` CLI command group with `login`, `logout`, `whoami`, `publish`, `search`, and `install` subcommands
+- [added] Dashboard registry integration — publish button in pack list and editor, device-flow login modal
+- [added] Dashboard `/api/registry/*` proxy endpoints for registry operations
+- [added] Token persistence in `~/.config/showrun/auth.json` with automatic access token refresh
+- [added] `registry.url` config option and `SHOWRUN_REGISTRY_URL` env var for registry server URL
+
 ## 0.1.9 - 2026-02-26
 
 - [fixed] `npx showrun` no longer triggers a full rebuild on every invocation — removed root `prepare` hook that ran `pnpm build` on every npm lifecycle event

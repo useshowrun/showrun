@@ -415,4 +415,7 @@ export const DEFAULT_CONFIG_TEMPLATE: ShowRunConfig = {
     embedding: { apiKey: '', model: '', baseUrl: '' },
     collectionName: '',
   },
+  registry: {
+    url: 'https://registry.showrun.co',
+  },
 };
