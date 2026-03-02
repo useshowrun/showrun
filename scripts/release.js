@@ -57,8 +57,39 @@ function parseRC(version) {
 
 function die(msg) {
   console.error(`\x1b[31mError:\x1b[0m ${msg}`);
+  rollbackVersions();
   process.exit(1);
 }
+
+// ---------------------------------------------------------------------------
+// Version rollback — restores package.json files via git checkout
+// ---------------------------------------------------------------------------
+
+let versionsChanged = false;
+
+const PKG_FILES = [
+  "package.json",
+  ...PACKAGES.map((d) => `${d}/package.json`),
+];
+
+function rollbackVersions() {
+  if (!versionsChanged) return;
+  console.error("\n\x1b[33mRolling back version changes...\x1b[0m");
+  try {
+    execSync(`git checkout -- ${PKG_FILES.join(" ")}`, { cwd: ROOT, stdio: "inherit" });
+    console.error("\x1b[33mVersions restored to previous state.\x1b[0m");
+  } catch {
+    console.error("\x1b[31mFailed to rollback. Restore manually: git checkout -- " + PKG_FILES.join(" ") + "\x1b[0m");
+  }
+  versionsChanged = false;
+}
+
+// Rollback on Ctrl+C
+process.on("SIGINT", () => {
+  console.error("\n\x1b[33mInterrupted.\x1b[0m");
+  rollbackVersions();
+  process.exit(130);
+});
 
 function run(cmd, opts = {}) {
   console.log(`\x1b[36m$ ${cmd}\x1b[0m`);
@@ -131,6 +162,7 @@ function updateVersions(newVersion, dryRun) {
     writePkg("packages/showrun", cliPkg);
   }
 
+  versionsChanged = true;
   console.log(`\nVersions updated to \x1b[32m${newVersion}\x1b[0m`);
   console.log(`@showrun/techniques dep set to \x1b[32m${techniquesDep}\x1b[0m`);
 }
@@ -264,6 +296,9 @@ Options:
   }
 
   publish(newVersion, dryRun);
+
+  // Publish succeeded — versions on npm match the files, don't rollback
+  versionsChanged = false;
   printSummary(newVersion, dryRun);
 }
 

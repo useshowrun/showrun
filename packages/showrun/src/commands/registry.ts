@@ -308,7 +308,7 @@ Commands:
     --description <text>  Additional details (optional, max 2000 chars)
 
 Environment:
-  SHOWRUN_REGISTRY_URL    Registry server URL (or set registry.url in config.json)
+  SHOWRUN_REGISTRY_URL    Registry server URL (default: https://registry.showrun.co)
 
 Examples:
   showrun registry login

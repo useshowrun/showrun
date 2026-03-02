@@ -68,13 +68,7 @@ export class RegistryClient implements IRegistryClient {
   private readonly registryUrl: string;
 
   constructor(registryUrl?: string) {
-    const url = registryUrl || process.env.SHOWRUN_REGISTRY_URL;
-    if (!url) {
-      throw new RegistryError(
-        'Registry not configured. Set SHOWRUN_REGISTRY_URL or registry.url in config.json.',
-        0,
-      );
-    }
+    const url = registryUrl || process.env.SHOWRUN_REGISTRY_URL || 'https://registry.showrun.co';
     // Strip trailing slash
     this.registryUrl = url.replace(/\/+$/, '');
   }
