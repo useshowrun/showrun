@@ -5,8 +5,25 @@ import { validateFlow, ValidationError } from './dsl/validation.js';
 /** Step types that produce collectible output via an "out" parameter */
 const STEPS_WITH_OUT = new Set([
   'extract_title', 'extract_text', 'extract_attribute',
-  'network_replay', 'network_extract',
+  'network_replay', 'network_extract', 'dom_scrape',
 ]);
+
+/**
+ * Collect all 'out' references from steps, recursing into for_each.do sub-steps.
+ * Also includes for_each.collect.out references.
+ */
+function collectOutRefs(steps: DslStep[], refs: Set<string>): void {
+  for (const step of steps) {
+    if (STEPS_WITH_OUT.has(step.type)) {
+      const out = (step.params as { out?: string })?.out;
+      if (out && typeof out === 'string') refs.add(out);
+    }
+    if (step.type === 'for_each') {
+      collectOutRefs(step.params.do, refs);
+      if (step.params.collect?.out) refs.add(step.params.collect.out);
+    }
+  }
+}
 
 /**
  * Validates that collectibles referenced in flow steps exist
@@ -18,15 +35,7 @@ export function validateCollectiblesMatchFlow(
   const collectibleNames = new Set(collectibles.map((c) => c.name));
   const referencedOuts = new Set<string>();
 
-  // Extract all 'out' parameters from steps that write to collectibles
-  for (const step of flow) {
-    if (STEPS_WITH_OUT.has(step.type)) {
-      const out = (step.params as { out?: string })?.out;
-      if (out && typeof out === 'string') {
-        referencedOuts.add(out);
-      }
-    }
-  }
+  collectOutRefs(flow, referencedOuts);
 
   // Check that all referenced outs exist in collectibles
   const mismatches: string[] = [];

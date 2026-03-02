@@ -265,6 +265,7 @@ const ALLOWED_PARAMS: Record<string, string[]> = {
   frame: ['frame', 'action'],
   new_tab: ['url', 'saveTabIndexAs'],
   switch_tab: ['tab', 'closeCurrentTab'],
+  for_each: ['items', 'as', 'do', 'collect'],
 };
 
 /**
@@ -950,9 +951,40 @@ function validateStep(step: unknown, stepIndex: number, errors: string[]): void 
       }
       break;
 
+    case 'for_each': {
+      if (typeof params.items !== 'string' || !params.items) {
+        errors.push(`${prefix}: ForEach step must have a non-empty string "items" in params`);
+      }
+      if (typeof params.as !== 'string' || !params.as) {
+        errors.push(`${prefix}: ForEach step must have a non-empty string "as" in params`);
+      }
+      if (!Array.isArray(params.do) || (params.do as unknown[]).length === 0) {
+        errors.push(`${prefix}: ForEach step must have a non-empty array "do" in params`);
+      } else {
+        const doSteps = params.do as unknown[];
+        for (let i = 0; i < doSteps.length; i++) {
+          validateStep(doSteps[i], i, errors);
+        }
+      }
+      if (params.collect !== undefined) {
+        if (!params.collect || typeof params.collect !== 'object' || Array.isArray(params.collect)) {
+          errors.push(`${prefix}: ForEach step "collect" must be an object`);
+        } else {
+          const collect = params.collect as Record<string, unknown>;
+          if (typeof collect.fromVar !== 'string' || !collect.fromVar) {
+            errors.push(`${prefix}: ForEach step "collect.fromVar" must be a non-empty string`);
+          }
+          if (typeof collect.out !== 'string' || !collect.out) {
+            errors.push(`${prefix}: ForEach step "collect.out" must be a non-empty string`);
+          }
+        }
+      }
+      break;
+    }
+
     default:
       errors.push(
-        `${prefix}: Unknown step type: ${s.type}. Supported types: navigate, extract_title, extract_text, extract_attribute, sleep, wait_for, click, fill, assert, set_var, network_find, network_replay, network_extract, select_option, press_key, upload_file, frame, new_tab, switch_tab`
+        `${prefix}: Unknown step type: ${s.type}. Supported types: navigate, extract_title, extract_text, extract_attribute, sleep, wait_for, click, fill, assert, set_var, network_find, network_replay, network_extract, select_option, press_key, upload_file, frame, new_tab, switch_tab, for_each`
       );
   }
 

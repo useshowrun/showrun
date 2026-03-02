@@ -42,10 +42,24 @@ export interface HttpReplayResult {
 const DOM_EXTRACTION_STEPS = new Set(['extract_text', 'extract_title', 'extract_attribute']);
 
 /**
+ * Flatten all steps including those nested inside for_each.do sub-steps.
+ */
+function flattenSteps(steps: DslStep[]): DslStep[] {
+  const result: DslStep[] = [];
+  for (const step of steps) {
+    result.push(step);
+    if (step.type === 'for_each') {
+      result.push(...flattenSteps(step.params.do));
+    }
+  }
+  return result;
+}
+
+/**
  * Check whether a flow can run in HTTP-only mode.
  *
  * Requirements:
- * 1. Every `network_replay` step has a corresponding, non-stale snapshot.
+ * 1. Every `network_replay` step (including those inside for_each) has a corresponding, non-stale snapshot.
  * 2. No DOM extraction steps exist in the flow.
  */
 export function isFlowHttpCompatible(
@@ -54,15 +68,17 @@ export function isFlowHttpCompatible(
 ): boolean {
   if (!snapshots) return false;
 
+  const allSteps = flattenSteps(steps);
+
   // Check for DOM extraction steps
-  for (const step of steps) {
+  for (const step of allSteps) {
     if (DOM_EXTRACTION_STEPS.has(step.type)) {
       return false;
     }
   }
 
   // Check that every network_replay step has a valid snapshot
-  const replaySteps = steps.filter((s) => s.type === 'network_replay');
+  const replaySteps = allSteps.filter((s) => s.type === 'network_replay');
   if (replaySteps.length === 0) return false; // No point in HTTP mode without replay steps
 
   for (const step of replaySteps) {

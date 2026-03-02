@@ -433,7 +433,16 @@ function captureSnapshots(
   networkCapture: NetworkCaptureApi,
   packPath: string,
 ): void {
-  const replaySteps = taskPack.flow.filter((s) => s.type === 'network_replay');
+  // Flatten steps to include network_replay steps nested inside for_each.do
+  function flattenForCapture(steps: import('./dsl/types.js').DslStep[]): import('./dsl/types.js').DslStep[] {
+    const out: import('./dsl/types.js').DslStep[] = [];
+    for (const s of steps) {
+      out.push(s);
+      if (s.type === 'for_each') out.push(...flattenForCapture(s.params.do));
+    }
+    return out;
+  }
+  const replaySteps = flattenForCapture(taskPack.flow).filter((s) => s.type === 'network_replay');
   if (replaySteps.length === 0) return;
 
   const vars = flowResult._vars ?? {};

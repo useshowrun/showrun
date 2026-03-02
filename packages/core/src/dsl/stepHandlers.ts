@@ -1204,6 +1204,9 @@ export async function executeStep(
     case 'switch_tab':
       await executeSwitchTab(ctx, step);
       break;
+    case 'for_each':
+      // for_each is handled by the interpreter before executeStep is called
+      throw new Error('for_each steps must be handled by the interpreter, not executeStep');
     default:
       // TypeScript exhaustiveness check
       const _exhaustive: never = step;

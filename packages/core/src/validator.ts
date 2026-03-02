@@ -70,6 +70,11 @@ export class InputValidator {
           return `Field ${fieldName} must be a boolean, got ${typeof value}`;
         }
         break;
+      case 'array':
+        if (!Array.isArray(value)) {
+          return `Field ${fieldName} must be an array, got ${typeof value}`;
+        }
+        break;
     }
     return null;
   }

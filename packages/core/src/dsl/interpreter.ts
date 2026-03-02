@@ -1,5 +1,5 @@
 import type { RunContext, RunResult, AuthConfig } from '../types.js';
-import type { DslStep, RunFlowOptions, RunFlowResult } from './types.js';
+import type { DslStep, ForEachStep, RunFlowOptions, RunFlowResult } from './types.js';
 import { validateFlow } from './validation.js';
 import { executeStep } from './stepHandlers.js';
 import { resolveTemplates } from './templating.js';
@@ -108,6 +108,73 @@ function redactSecrets<T>(obj: T, secretValues: string[]): T {
     return JSON.parse(str) as T;
   } catch {
     return obj;
+  }
+}
+
+/**
+ * Resolve the items array for a for_each step.
+ * Supports both template syntax ('{{inputs.x}}', '{{vars.x}}') and plain dot notation ('inputs.x', 'vars.x').
+ */
+function resolveForEachItems(
+  expr: string,
+  context: { inputs: Record<string, unknown>; vars: Record<string, unknown> },
+): unknown[] {
+  // Strip optional template braces: {{inputs.x}} → inputs.x
+  const bare = expr.trim().replace(/^\{\{(.+?)\}\}$/, '$1').trim();
+  const dot = bare.indexOf('.');
+  if (dot === -1) throw new Error(`for_each: 'items' must be 'inputs.fieldName' or 'vars.varName', got "${expr}"`);
+  const source = bare.slice(0, dot);
+  const field = bare.slice(dot + 1);
+  let val: unknown;
+  if (source === 'inputs') val = context.inputs[field];
+  else if (source === 'vars') val = context.vars[field];
+  else throw new Error(`for_each: 'items' source must be 'inputs' or 'vars', got "${source}"`);
+  if (!Array.isArray(val)) throw new Error(`for_each: '${expr}' must resolve to an array, got ${val === null ? 'null' : typeof val}`);
+  return val;
+}
+
+/**
+ * Execute a for_each step, running sub-steps for each item with per-iteration template resolution.
+ */
+async function executeForEachStep(
+  step: ForEachStep,
+  stepContext: import('./stepHandlers.js').StepContext,
+  variableContext: { inputs: Record<string, unknown>; vars: Record<string, unknown>; secrets?: Record<string, string> },
+  collectibles: Record<string, unknown>,
+): Promise<void> {
+  const items = resolveForEachItems(step.params.items, variableContext);
+  const accumulator: unknown[] = [];
+
+  for (const item of items) {
+    variableContext.vars[step.params.as] = item;
+
+    for (const subStep of step.params.do) {
+      const resolvedSubStep = {
+        ...subStep,
+        params: resolveTemplates(subStep.params, variableContext as import('./types.js').VariableContext),
+      } as DslStep;
+
+      try {
+        await executeStep(stepContext, resolvedSubStep);
+      } catch (err) {
+        if (subStep.optional || subStep.onError === 'continue') continue;
+        throw err;
+      }
+    }
+
+    if (step.params.collect) {
+      const val =
+        variableContext.vars[step.params.collect.fromVar] ??
+        collectibles[step.params.collect.fromVar] ??
+        null;
+      accumulator.push(val);
+    }
+  }
+
+  delete variableContext.vars[step.params.as];
+
+  if (step.params.collect) {
+    collectibles[step.params.collect.out] = JSON.stringify(accumulator);
   }
 }
 
@@ -270,6 +337,23 @@ export async function runFlow(
           if (!vars['__jmespath_hints']) vars['__jmespath_hints'] = [];
           (vars['__jmespath_hints'] as string[]).push(msg);
         }
+      }
+
+      // Special case: for_each handles its own per-iteration template resolution
+      if (step.type === 'for_each') {
+        ctx.logger.log({ type: 'step_started', data: { stepId: step.id, type: step.type, label: step.label || step.id } });
+        try {
+          await executeForEachStep(step, stepContext, variableContext, collectibles);
+          stepsExecuted++;
+          ctx.logger.log({ type: 'step_finished', data: { stepId: step.id, type: step.type, label: step.label || step.id, durationMs: Date.now() - stepStartTime } });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          ctx.logger.log({ type: 'error', data: { error: errorMessage, stepId: step.id, type: step.type } });
+          if (step.optional) { stepsExecuted++; continue; }
+          if ((step.onError ?? (stopOnError ? 'stop' : 'continue')) === 'continue') { stepsExecuted++; continue; }
+          throw error;
+        }
+        continue;
       }
 
       // Resolve templates in step params before execution

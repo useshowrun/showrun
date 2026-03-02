@@ -10,6 +10,12 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] `crunchbase-funding-rounds` taskpack: fetches funding round entity details by slug via `GET /v4/data/entities/funding_rounds/{slug}`, using capture-and-replay pattern
+- [added] `crunchbase-investments` taskpack: fetches investments list for organizations via `POST /overrides?section_ids=["investments"]`, using capture-and-replay pattern
+- [fixed] `network_replay` now uses `page.evaluate(fetch(...))` instead of `page.request.fetch()`, so replayed requests use the browser's real HTTP/2 + TLS 1.3 stack and pass Cloudflare bot detection
+- [fixed] `crunchbase-organization` taskpack updated to target the new `GET /v4/data/entities/organizations/{permalink}` API, replacing the defunct `POST /overrides` endpoint
+- [added] `for_each` DSL step type for iterating over array inputs/vars, with optional `collect` to accumulate results into a JSON array collectible
+- [added] `array` input type for task pack inputs, enabling batch processing of multiple values
 - [added] `network_extract` can now read response body directly from `network_find` request ID without replaying the request
 
 ## 0.1.8 — 2026-02-22

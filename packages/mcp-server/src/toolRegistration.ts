@@ -42,6 +42,9 @@ export function inputSchemaToZodSchema(inputs: InputSchema): z.ZodRawShape {
       case 'boolean':
         zodType = z.boolean();
         break;
+      case 'array':
+        zodType = z.array(z.unknown());
+        break;
       default:
         zodType = z.string();
     }

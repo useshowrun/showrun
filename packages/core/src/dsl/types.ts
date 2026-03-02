@@ -616,6 +616,69 @@ export interface SwitchTabStep extends BaseDslStep {
 }
 
 /**
+ * For-each step — iterates over an array input or var, running sub-steps for each item.
+ *
+ * Items source: use 'inputs.fieldName' or 'vars.varName' (dot notation, no braces).
+ * Also accepts '{{inputs.fieldName}}' or '{{vars.varName}}' template syntax.
+ *
+ * Example:
+ * ```json
+ * {
+ *   "id": "fetch_all_orgs",
+ *   "type": "for_each",
+ *   "params": {
+ *     "items": "inputs.permalinks",
+ *     "as": "permalink",
+ *     "do": [
+ *       {
+ *         "id": "replay_org_api",
+ *         "type": "network_replay",
+ *         "params": {
+ *           "requestId": "snapshot://replay_org_api",
+ *           "overrides": { "urlReplace": [{ "find": "/organizations/[^/]+/", "replace": "/organizations/{{vars.permalink}}/" }] },
+ *           "auth": "browser_context",
+ *           "out": "iter_result",
+ *           "response": { "as": "json" }
+ *         }
+ *       }
+ *     ],
+ *     "collect": { "fromVar": "iter_result", "out": "org_data_list" }
+ *   }
+ * }
+ * ```
+ */
+export interface ForEachStep extends BaseDslStep {
+  type: 'for_each';
+  params: {
+    /**
+     * Source array. Use dot notation: 'inputs.fieldName' or 'vars.varName'.
+     * Also accepts template syntax: '{{inputs.fieldName}}' or '{{vars.varName}}'.
+     * The referenced field must resolve to an array at runtime.
+     */
+    items: string;
+    /**
+     * Variable name for the current item in each iteration.
+     * Accessible in sub-step params as {{vars.<as>}}.
+     */
+    as: string;
+    /**
+     * Steps to execute for each item.
+     */
+    do: DslStep[];
+    /**
+     * Optional: after each iteration, read this var (set by saveAs) or collectible
+     * (set by out) and accumulate the values into a JSON array stored in the output collectible.
+     */
+    collect?: {
+      /** Var name (from saveAs) or collectible name (from out) to read per iteration */
+      fromVar: string;
+      /** Collectible name to store the accumulated JSON array (must be declared in collectibles) */
+      out: string;
+    };
+  };
+}
+
+/**
  * Union type of all supported DSL steps
  */
 export type DslStep =
@@ -637,7 +700,8 @@ export type DslStep =
   | UploadFileStep
   | FrameStep
   | NewTabStep
-  | SwitchTabStep;
+  | SwitchTabStep
+  | ForEachStep;
 
 /**
  * Options for running a flow

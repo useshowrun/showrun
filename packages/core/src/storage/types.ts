@@ -19,7 +19,7 @@ export type StorageCapability =
  */
 export interface CollectibleSchemaField {
   name: string;
-  type: 'string' | 'number' | 'boolean';
+  type: 'string' | 'number' | 'boolean' | 'array';
   description?: string;
 }
 

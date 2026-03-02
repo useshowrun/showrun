@@ -6,7 +6,7 @@ import type { SnapshotFile } from './requestSnapshot.js';
 /**
  * Primitive types supported in input/collectible schemas
  */
-export type PrimitiveType = 'string' | 'number' | 'boolean';
+export type PrimitiveType = 'string' | 'number' | 'boolean' | 'array';
 
 /**
  * Secret definition for task pack secrets

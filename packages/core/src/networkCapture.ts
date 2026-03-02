@@ -15,6 +15,16 @@ const SENSITIVE_HEADER_NAMES = new Set([
   'proxy-authorization',
 ]);
 
+// Headers the browser Fetch API forbids setting explicitly (per spec).
+// Cookies are injected automatically from the browser's cookie jar when
+// running fetch() inside page.evaluate(), so 'cookie' must not be passed.
+const FETCH_FORBIDDEN_HEADERS = new Set([
+  'cookie', 'cookie2', 'set-cookie',
+  'host', 'content-length', 'accept-encoding',
+  'connection', 'transfer-encoding', 'keep-alive',
+  'upgrade', 'te', 'trailer',
+]);
+
 const POST_DATA_TRUNCATE = 64 * 1024; // 64KB
 const RESPONSE_BODY_MAX_STORE_BYTES = 5 * 1024 * 1024; // 5MB - full body stored when under this (for replay, extract, responseContains)
 const NETWORK_BUFFER_MAX_ENTRIES = 300;
@@ -384,14 +394,6 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
         }
       }
 
-      // Playwright: page.request is APIRequestContext sharing cookies with the browser context
-      const requestContext = (page as { request?: { fetch: (url: string, options?: object) => Promise<{ status: () => number; headers: () => Record<string, string>; body: () => Promise<Buffer> }> } }).request;
-      if (!requestContext || typeof requestContext.fetch !== 'function') {
-        throw new Error(
-          'Browser context does not support API request (replay). Playwright version may be too old.'
-        );
-      }
-
       let url = entry.url;
       if (overrides?.urlReplace) {
         // Normalize to array (accepts single object or array)
@@ -438,23 +440,43 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
         url = u.toString();
       }
 
-      const response = await requestContext.fetch(url, {
-        method,
-        headers,
-        data: body,
-      });
+      // Strip headers the browser Fetch API forbids setting explicitly.
+      // HTTP/2 pseudo-headers (:authority, :method, :path, :scheme) are also invalid.
+      // Cookies are injected automatically from the browser's cookie jar.
+      const pageHeaders: Record<string, string> = {};
+      for (const [k, v] of Object.entries(headers)) {
+        const lower = k.toLowerCase();
+        if (FETCH_FORBIDDEN_HEADERS.has(lower) || lower.startsWith(':')) continue;
+        pageHeaders[k] = v;
+      }
 
-      const respBody = await response.body();
-      const bodySize = respBody.length;
-      const contentType = response.headers()['content-type'] ?? response.headers()['Content-Type'];
-      const bodyText =
-        bodySize <= RESPONSE_BODY_MAX_STORE_BYTES && isTextOrJsonContentType(contentType)
-          ? respBody.toString('utf8')
-          : respBody.toString('utf8').slice(0, 2048) + (bodySize > 2048 ? '...[truncated]' : '');
+      // Run the request via page.evaluate(fetch()) so it uses the browser's real HTTP/2 +
+      // TLS 1.3 stack — the same fingerprint as organic page requests. This avoids bot-detection
+      // 403s from Cloudflare and similar, which block Playwright's page.request.fetch() because
+      // it uses a separate HTTP client with a different TLS fingerprint.
+      const result = await page.evaluate(
+        async ({ url, method, headers, body }: { url: string; method: string; headers: Record<string, string>; body: string | null }) => {
+          const init: RequestInit = { method, headers };
+          if (body !== null && method !== 'GET' && method !== 'HEAD') {
+            init.body = body;
+          }
+          const response = await fetch(url, init);
+          const responseBody = await response.text();
+          return {
+            status: response.status,
+            contentType: response.headers.get('content-type') ?? undefined,
+            body: responseBody,
+          };
+        },
+        { url, method, headers: pageHeaders, body: body ?? null }
+      ) as { status: number; contentType?: string; body: string };
+
+      const bodyText = result.body;
+      const bodySize = Buffer.byteLength(bodyText, 'utf8');
 
       return {
-        status: response.status(),
-        contentType,
+        status: result.status,
+        contentType: result.contentType,
         body: bodyText,
         bodySize,
       };

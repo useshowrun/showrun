@@ -62,3 +62,6 @@ taskpacks_local/
 
 # Claude Code local files (may contain credentials)
 .claude/*.local.md
+
+# Temporary files
+.temp
