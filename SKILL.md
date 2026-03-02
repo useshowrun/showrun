@@ -7,7 +7,7 @@ ShowRun gives you access to **task packs** — pre-built, versioned browser auto
 ## Prerequisites
 
 - `showrun` CLI available on PATH (`npm install -g showrun@rc`)
-- Registry URL configured via `SHOWRUN_REGISTRY_URL` environment variable
+- Registry defaults to `https://registry.showrun.co` (override via `SHOWRUN_REGISTRY_URL` env var or `registry.url` in config)
 - On first run, ShowRun auto-downloads its built-in browser (Camoufox, a Firefox-based anti-detection browser). If this fails, run: `npx camoufox-js fetch`
 
 ---

@@ -420,6 +420,6 @@ export const DEFAULT_CONFIG_TEMPLATE: ShowRunConfig = {
     collectionName: '',
   },
   registry: {
-    url: '',
+    url: 'https://registry.showrun.co',
   },
 };
