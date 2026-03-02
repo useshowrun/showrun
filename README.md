@@ -1,7 +1,5 @@
 # ShowRun
 
-> **Experimental** — This project is in early development. APIs, file formats, and CLI interfaces may change without notice. Use at your own risk.
-
 A TypeScript + Playwright framework for deterministic, versioned browser automation **Task Packs**: define flows in JSON or code, run them via CLI or MCP, and edit them with an AI-assisted dashboard (Teach Mode).
 
 ## When to Use ShowRun
@@ -302,6 +300,8 @@ See `packages/mcp-server/README.md` for details.
 
 - Node.js 20+
 - pnpm (for development; npx works for end users)
+
+> **Experimental** — This project is in early development. APIs, file formats, and CLI interfaces may change without notice.
 
 ## Contributing
 
