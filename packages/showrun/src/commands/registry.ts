@@ -173,7 +173,7 @@ async function cmdSearch(args: string[]): Promise<void> {
   for (const pack of result.data) {
     const vis = pack.visibility === 'private' ? ' [private]' : '';
     const ver = pack.latestVersion ? ` v${pack.latestVersion}` : '';
-    console.log(`  ${pack.slug}${ver}${vis}`);
+    console.log(`  @${pack.owner.username}/${pack.slug}${ver}${vis}`);
     console.log(`    ${pack.description || 'No description'}`);
     console.log();
   }
