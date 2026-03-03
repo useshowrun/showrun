@@ -12,6 +12,8 @@ export { JSONLLogger } from './logger.js';
 export { TaskPackRunner } from './runner.js';
 export { SQLiteResultStore } from './storage/sqliteStore.js';
 export { InMemoryResultStore } from './storage/inMemoryStore.js';
+export { executeShowScript, type ShowScriptContext, type ShowScriptOptions } from './showscript-interpreter.js';
+export { runShowScript, type ShowScriptRunOptions, type ShowScriptRunResult } from './showscript-runner.js';
 
 export interface RunPackOptions {
   /** Path to the task pack directory */

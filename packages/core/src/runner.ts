@@ -19,6 +19,21 @@ import type { NetworkCaptureApi } from './networkCapture.js';
 /**
  * Options for running a task pack
  */
+/**
+ * Callback for executing ShowScript packs.
+ * Core cannot import harness (circular dep), so harness provides this executor.
+ */
+export type ShowScriptExecutor = (opts: {
+  source: string;
+  page: Page;
+  browser: Browser;
+  inputs: Record<string, unknown>;
+  secrets: Record<string, string>;
+  logger: Logger;
+  networkCapture?: NetworkCaptureApi;
+  packDir?: string;
+}) => Promise<RunResult>;
+
 export interface RunTaskPackOptions {
   /**
    * Directory to store run artifacts and logs
@@ -61,6 +76,10 @@ export interface RunTaskPackOptions {
    * instead of launching a new one.
    */
   cdpUrl?: string;
+  /**
+   * Executor for ShowScript packs (provided by harness to avoid circular deps)
+   */
+  showscriptExecutor?: ShowScriptExecutor;
 }
 
 /**
@@ -212,49 +231,70 @@ export async function runTaskPack(
       networkCapture
     );
 
-    // Execute declarative DSL flow
-    const flowResult = await runFlow(runContext, taskPack.flow, {
-      inputs: inputsWithDefaults,
-      auth: taskPack.auth,
-      sessionId: options.sessionId,
-      profileId: options.profileId,
-      cacheDir: options.cacheDir,
-      secrets,
-    });
+    let result: RunResult;
 
-    // Filter collectibles to only include those defined in the pack
-    // This prevents intermediate variables from polluting the output
-    const definedCollectibleNames = new Set(
-      (taskPack.collectibles || []).map(c => c.name)
-    );
-    const filteredCollectibles: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(flowResult.collectibles)) {
-      if (definedCollectibleNames.has(key)) {
-        filteredCollectibles[key] = value;
+    if (taskPack.kind === 'showscript') {
+      // ─── ShowScript execution ─────────────────────────────────
+      if (!options.showscriptExecutor) {
+        throw new Error('ShowScript executor not provided. Ensure @showrun/harness is used to run showscript packs.');
       }
-    }
+      if (!taskPack.showscriptSource) {
+        throw new Error('ShowScript source is missing from the task pack.');
+      }
 
-    // Convert RunFlowResult to RunResult format
-    const result: RunResult = {
-      collectibles: filteredCollectibles,
-      meta: {
-        url: flowResult.meta.url,
-        durationMs: flowResult.meta.durationMs,
-        notes: `Executed ${flowResult.meta.stepsExecuted}/${flowResult.meta.stepsTotal} steps`,
-      },
-    };
+      result = await options.showscriptExecutor({
+        source: taskPack.showscriptSource,
+        page,
+        browser: browserProxy,
+        inputs: inputsWithDefaults,
+        secrets,
+        logger,
+        networkCapture,
+        packDir: packPath,
+      });
+    } else {
+      // ─── JSON-DSL execution ───────────────────────────────────
+      const flowResult = await runFlow(runContext, taskPack.flow, {
+        inputs: inputsWithDefaults,
+        auth: taskPack.auth,
+        sessionId: options.sessionId,
+        profileId: options.profileId,
+        cacheDir: options.cacheDir,
+        secrets,
+      });
 
-    // Propagate diagnostic hints if present
-    if (flowResult._hints && flowResult._hints.length > 0) {
-      result._hints = flowResult._hints;
-    }
+      // Filter collectibles to only include those defined in the pack
+      const definedCollectibleNames = new Set(
+        (taskPack.collectibles || []).map(c => c.name)
+      );
+      const filteredCollectibles: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(flowResult.collectibles)) {
+        if (definedCollectibleNames.has(key)) {
+          filteredCollectibles[key] = value;
+        }
+      }
 
-    // Capture snapshots for network_replay steps after successful browser run
-    if (packPath && networkCapture) {
-      try {
-        captureSnapshots(taskPack, flowResult, networkCapture, packPath);
-      } catch (snapErr) {
-        console.warn(`[runner] Failed to capture snapshots: ${snapErr instanceof Error ? snapErr.message : String(snapErr)}`);
+      result = {
+        collectibles: filteredCollectibles,
+        meta: {
+          url: flowResult.meta.url,
+          durationMs: flowResult.meta.durationMs,
+          notes: `Executed ${flowResult.meta.stepsExecuted}/${flowResult.meta.stepsTotal} steps`,
+        },
+      };
+
+      // Propagate diagnostic hints if present
+      if (flowResult._hints && flowResult._hints.length > 0) {
+        result._hints = flowResult._hints;
+      }
+
+      // Capture snapshots for network_replay steps after successful browser run
+      if (packPath && networkCapture) {
+        try {
+          captureSnapshots(taskPack, flowResult, networkCapture, packPath);
+        } catch (snapErr) {
+          console.warn(`[runner] Failed to capture snapshots: ${snapErr instanceof Error ? snapErr.message : String(snapErr)}`);
+        }
       }
     }
 

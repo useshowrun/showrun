@@ -21,6 +21,7 @@
   },
   "dependencies": {
     "@jmespath-community/jmespath": "^1.3.0",
+    "@showrun/showscript": "workspace:*",
     "camoufox-js": "^0.8.5",
     "nunjucks": "^3.2.4",
     "otplib": "^12.0.1",

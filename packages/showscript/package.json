@@ -1,7 +1,7 @@
 {
-  "name": "@showrun/harness",
-  "version": "0.1.10-rc.4",
-  "description": "Task Pack execution library",
+  "name": "@showrun/showscript",
+  "version": "0.1.0",
+  "description": "ShowScript DSL parser for ShowRun browser automation",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -15,20 +15,15 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "build:grammar": "peggy --format es -o src/generated-parser.js src/grammar.pegjs",
+    "build": "pnpm build:grammar && tsc",
     "test": "vitest run",
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@jmespath-community/jmespath": "^1.3.0",
-    "@showrun/core": "workspace:*",
-    "@showrun/showscript": "workspace:*",
-    "better-sqlite3": "^12.6.2",
-    "playwright": "^1.58.0",
-    "winston": "^3.19.0"
+    "peggy": "^5.0.6"
   },
   "devDependencies": {
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^20.11.0",
     "typescript": "^5.3.3",
     "vitest": "^3.0.0"
@@ -38,7 +33,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/useshowrun/showrun.git",
-    "directory": "packages/harness"
+    "directory": "packages/showscript"
   },
   "homepage": "https://github.com/useshowrun/showrun",
   "bugs": {

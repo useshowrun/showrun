@@ -15,9 +15,9 @@ export interface SecretsFile {
 /**
  * Loads a Task Pack from a directory path
  *
- * Only json-dsl format is supported:
- * - taskpack.json: metadata with kind: "json-dsl"
- * - flow.json: inputs, collectibles, and flow steps
+ * Supported formats:
+ * - json-dsl: taskpack.json + flow.json (inputs, collectibles, flow steps)
+ * - showscript: taskpack.json + flow.showscript (ShowScript DSL)
  */
 export class TaskPackLoader {
   /**
@@ -43,20 +43,31 @@ export class TaskPackLoader {
       throw new Error('taskpack.json missing required fields: id, name, version');
     }
 
-    // Only json-dsl format is supported
-    if (manifest.kind !== 'json-dsl') {
-      throw new Error('taskpack.json must have "kind": "json-dsl". Other formats are no longer supported.');
+    // Validate kind
+    if (manifest.kind !== 'json-dsl' && manifest.kind !== 'showscript') {
+      throw new Error('taskpack.json "kind" must be "json-dsl" or "showscript".');
     }
 
     return manifest;
   }
 
   /**
-   * Load task pack from directory (json-dsl format only)
+   * Load task pack from directory
    */
   static async loadTaskPack(packPath: string): Promise<TaskPack> {
     const manifest = this.loadManifest(packPath);
 
+    if (manifest.kind === 'showscript') {
+      return this.loadShowScriptPack(packPath, manifest);
+    }
+
+    return this.loadJsonDslPack(packPath, manifest);
+  }
+
+  /**
+   * Load a json-dsl task pack
+   */
+  private static loadJsonDslPack(packPath: string, manifest: TaskPackManifest): TaskPack {
     const flowPath = join(packPath, 'flow.json');
     if (!existsSync(flowPath)) {
       throw new Error(`flow.json not found for json-dsl pack: ${flowPath}`);
@@ -89,12 +100,46 @@ export class TaskPackLoader {
         version: manifest.version,
         description: manifest.description,
       },
+      kind: 'json-dsl',
       inputs: flowData.inputs || {},
       collectibles: flowData.collectibles || [],
       flow: flowData.flow,
       auth: manifest.auth,
       browser: manifest.browser,
       ...(snapshots ? { snapshots } : {}),
+    };
+  }
+
+  /**
+   * Load a showscript task pack
+   */
+  private static loadShowScriptPack(packPath: string, manifest: TaskPackManifest): TaskPack {
+    const scriptPath = join(packPath, 'flow.showscript');
+    if (!existsSync(scriptPath)) {
+      throw new Error(`flow.showscript not found for showscript pack: ${scriptPath}`);
+    }
+
+    let source: string;
+    try {
+      source = readFileSync(scriptPath, 'utf-8');
+    } catch (error) {
+      throw new Error(`Failed to read flow.showscript: ${error instanceof Error ? error.message : String(error)}`);
+    }
+
+    return {
+      metadata: {
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description,
+      },
+      kind: 'showscript',
+      inputs: {},
+      collectibles: [],
+      flow: [], // empty — showscript packs don't use DSL steps
+      showscriptSource: source,
+      auth: manifest.auth,
+      browser: manifest.browser,
     };
   }
 

@@ -1,7 +1,26 @@
 import { join } from 'path';
-import type { TaskPack, RunResult } from '@showrun/core';
+import type { TaskPack, RunResult, ShowScriptExecutor } from '@showrun/core';
 import { runTaskPack } from '@showrun/core';
 import { JSONLLogger } from './logger.js';
+import { runShowScript } from './showscript-runner.js';
+
+/**
+ * ShowScript executor that bridges core → harness.
+ * Passed as a callback to core's runTaskPack to avoid circular deps.
+ */
+const showscriptExecutor: ShowScriptExecutor = async (opts) => {
+  return runShowScript({
+    scriptPath: 'flow.showscript',
+    source: opts.source,
+    page: opts.page,
+    browser: opts.browser,
+    inputs: opts.inputs,
+    secrets: opts.secrets,
+    logger: opts.logger,
+    networkCapture: opts.networkCapture,
+    packDir: opts.packDir,
+  });
+};
 
 /**
  * Runs a task pack with Playwright
@@ -26,6 +45,7 @@ export class TaskPackRunner {
       logger: this.logger,
       headless: options?.headful !== true,
       cdpUrl: options?.cdpUrl,
+      showscriptExecutor,
     });
 
     // Return just the RunResult part (without paths)

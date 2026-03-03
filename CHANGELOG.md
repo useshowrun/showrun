@@ -10,6 +10,9 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] ShowScript taskpack support — `showrun run` can now execute `.showscript` files via `kind: "showscript"` in taskpack.json; core loader, runner, and types updated; example taskpack at `taskpacks/example-showscript/`
+- [added] ShowScript AST interpreter and runner in `@showrun/harness` — executes `.showscript` files directly from AST without converting to JSON-DSL; supports all step types, control flow, loops-as-expressions, target selectors, built-in functions, and f-string interpolation
+- [added] New `@showrun/showscript` package — PEG-based parser for ShowScript DSL producing a typed AST (parsing only, no code generation yet)
 - [fixed] Release script rollback now uses in-memory snapshots instead of `git checkout`, preventing multi-version revert when git working tree has prior uncommitted changes
 - [changed] Registry client, CLI, and dashboard now use scoped `@username/slug` pack identifiers — install and report commands require the full ref; search results display the scoped format; publish keeps using the short slug (server infers username)
 - [changed] `resolveDefaultPacksDir()` extracted to `@showrun/core` — shared fallback chain (env → local `./taskpacks` → system data dir) used by dashboard, registry install, and serve commands

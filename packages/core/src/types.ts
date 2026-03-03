@@ -91,15 +91,15 @@ export interface TaskPackMetadata {
 /**
  * Task Pack manifest (taskpack.json)
  *
- * Only json-dsl format is supported:
- * - taskpack.json: metadata with kind: "json-dsl"
- * - flow.json: inputs, collectibles, and flow steps
+ * Supported formats:
+ * - "json-dsl": taskpack.json + flow.json (inputs, collectibles, flow steps)
+ * - "showscript": taskpack.json + flow.showscript (ShowScript DSL)
  */
 export interface TaskPackManifest extends TaskPackMetadata {
   /**
-   * Pack kind: must be "json-dsl"
+   * Pack kind
    */
-  kind: 'json-dsl';
+  kind: 'json-dsl' | 'showscript';
   /**
    * Auth configuration for resilience and recovery
    */
@@ -264,9 +264,17 @@ export interface TaskPack {
   inputs: InputSchema;
   collectibles: CollectibleDefinition[];
   /**
-   * Declarative flow of DSL steps
+   * Pack kind (default: 'json-dsl')
+   */
+  kind?: 'json-dsl' | 'showscript';
+  /**
+   * Declarative flow of DSL steps (json-dsl packs)
    */
   flow: DslStep[];
+  /**
+   * Raw ShowScript source (showscript packs)
+   */
+  showscriptSource?: string;
   /**
    * Auth configuration for resilience and recovery
    */
