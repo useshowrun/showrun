@@ -62,6 +62,23 @@ function tokenExpiresWithin(token: string, seconds: number): boolean {
   return Date.now() + seconds * 1000 >= expiresAt;
 }
 
+// ── Scoped path helper ────────────────────────────────────────────────────
+
+/**
+ * Build the API path segment for a scoped pack reference (`@username/slug`).
+ * Returns `@encodedUser/encodedSlug` suitable for URL path interpolation.
+ */
+function packApiPath(ref: string): string {
+  const m = ref.match(/^@([^/]+)\/(.+)$/);
+  if (!m) {
+    throw new RegistryError(
+      `Invalid pack ref "${ref}". Expected @username/slug`,
+      400,
+    );
+  }
+  return `@${encodeURIComponent(m[1])}/${encodeURIComponent(m[2])}`;
+}
+
 // ── RegistryClient ────────────────────────────────────────────────────────
 
 export class RegistryClient implements IRegistryClient {
@@ -161,10 +178,12 @@ export class RegistryClient implements IRegistryClient {
 
     const slug = userSlug || manifest.id;
 
-    // Try to get existing pack; create if 404
+    // Try to get existing pack; create if 404.
+    // Publish uses the short slug — server infers the @username scope from the
+    // auth token. The deprecated slug-only paths still work for this purpose.
     let created = false;
     try {
-      await this.request('GET', `/api/packs/${slug}`, undefined, true);
+      await this.request('GET', `/api/packs/${encodeURIComponent(slug)}`, undefined, true);
     } catch (err) {
       if (err instanceof RegistryError && err.status === 404) {
         await this.request(
@@ -187,7 +206,7 @@ export class RegistryClient implements IRegistryClient {
     // Publish version
     const versionData = await this.request<{ version: string | { version?: string } }>(
       'POST',
-      `/api/packs/${slug}/versions`,
+      `/api/packs/${encodeURIComponent(slug)}/versions`,
       {
         version: manifest.version,
         manifest: {
@@ -231,24 +250,26 @@ export class RegistryClient implements IRegistryClient {
     return this.request<PaginatedResponse<PackSummary>>('GET', path, undefined, false);
   }
 
-  async installPack(slug: string, destDir: string, version?: string): Promise<void> {
+  async installPack(ref: string, destDir: string, version?: string): Promise<void> {
+    const scopedPath = packApiPath(ref);
+
     // Get pack detail
-    const detail = await this.request<PackDetail>('GET', `/api/packs/${slug}`, undefined, false);
+    const detail = await this.request<PackDetail>('GET', `/api/packs/${scopedPath}`, undefined, false);
 
     // Determine version to install
     const targetVersion = version || detail.latestVersion;
     if (!targetVersion) {
-      throw new RegistryError(`Pack "${slug}" has no published versions`, 404);
+      throw new RegistryError(`Pack "${ref}" has no published versions`, 404);
     }
 
     // Get version data (manifest + flow)
     const versionData = await this.request<{
       manifest: TaskPackManifest;
       flow: { inputs?: InputSchema; collectibles?: CollectibleDefinition[]; flow: DslStep[] };
-    }>('GET', `/api/packs/${slug}/versions/${targetVersion}`, undefined, false);
+    }>('GET', `/api/packs/${scopedPath}/versions/${targetVersion}`, undefined, false);
 
-    // Write to local directory
-    const packDir = join(destDir, slug);
+    // Write to local directory — creates nested @username/slug/ structure
+    const packDir = join(destDir, ref);
     ensureDir(packDir);
 
     writeTaskPackManifest(packDir, versionData.manifest);
@@ -260,7 +281,7 @@ export class RegistryClient implements IRegistryClient {
   async reportPack(params: ReportParams): Promise<void> {
     await this.request(
       'POST',
-      `/api/packs/${encodeURIComponent(params.slug)}/report`,
+      `/api/packs/${packApiPath(params.slug)}/report`,
       {
         reason: params.reason,
         ...(params.description && { description: params.description }),

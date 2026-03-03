@@ -56,6 +56,7 @@ export interface StoredAuth {
 
 export interface PackSummary {
   id: string;
+  /** Scoped identifier in `@username/slug` format */
   slug: string;
   name: string;
   description?: string;
@@ -89,7 +90,7 @@ export interface PaginatedResponse<T> {
 export interface PublishParams {
   /** Local pack directory path */
   packPath: string;
-  /** Registry slug (defaults to pack ID) */
+  /** Short pack name — server prefixes `@username/` from auth token (defaults to pack ID) */
   slug?: string;
   /** Visibility: public or private */
   visibility?: 'public' | 'private';
@@ -98,6 +99,7 @@ export interface PublishParams {
 }
 
 export interface PublishResult {
+  /** Scoped identifier returned by server in `@username/slug` format */
   slug: string;
   version: string;
   created: boolean;
@@ -117,7 +119,7 @@ export interface SearchQuery {
 export type ReportReason = 'malicious' | 'spam' | 'inappropriate' | 'copyright';
 
 export interface ReportParams {
-  /** Pack slug to report */
+  /** Scoped pack ref to report (`@username/slug`) */
   slug: string;
   /** Reason for the report */
   reason: ReportReason;
@@ -135,6 +137,6 @@ export interface IRegistryClient {
   isAuthenticated(): boolean;
   publishPack(params: PublishParams): Promise<PublishResult>;
   searchPacks(query: SearchQuery): Promise<PaginatedResponse<PackSummary>>;
-  installPack(slug: string, destDir: string, version?: string): Promise<void>;
+  installPack(ref: string, destDir: string, version?: string): Promise<void>;
   reportPack(params: ReportParams): Promise<void>;
 }

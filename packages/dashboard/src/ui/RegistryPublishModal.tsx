@@ -215,7 +215,8 @@ function RegistryPublishModal({ packId, packName, packVersion, onClose }: Regist
             </p>
             <div
               style={{
-                background: 'var(--bg-secondary, #f5f5f5)',
+                background: 'var(--bg-card, #2c3544)',
+                color: 'var(--text-primary)',
                 padding: '16px',
                 borderRadius: '8px',
                 textAlign: 'center',
@@ -248,7 +249,7 @@ function RegistryPublishModal({ packId, packName, packVersion, onClose }: Regist
               Publishing <strong>{packName}</strong> v{packVersion}
             </p>
             <div style={fieldStyle}>
-              <label><strong>Slug:</strong></label>
+              <label><strong>Slug:</strong> <span style={{ fontWeight: 'normal', color: 'var(--text-muted)' }}>(your username is auto-prefixed)</span></label>
               <input
                 type="text"
                 value={slug}

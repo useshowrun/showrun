@@ -146,8 +146,8 @@ export function createRegistryRouter(ctx: DashboardContext): Router {
     }
   });
 
-  // Report a pack
-  router.post('/api/registry/report/:slug', async (req: Request, res: Response) => {
+  // Report a pack (scoped ref: @username/slug)
+  router.post('/api/registry/report/@:username/:slug', async (req: Request, res: Response) => {
     const client = getClient();
     if (!client) {
       res.status(400).json({ error: 'Registry not configured' });
@@ -159,7 +159,7 @@ export function createRegistryRouter(ctx: DashboardContext): Router {
       return;
     }
 
-    const { slug } = req.params;
+    const ref = `@${req.params.username}/${req.params.slug}`;
     const { reason, description } = req.body;
 
     if (!reason) {
@@ -168,7 +168,7 @@ export function createRegistryRouter(ctx: DashboardContext): Router {
     }
 
     try {
-      await client.reportPack({ slug, reason, description });
+      await client.reportPack({ slug: ref, reason, description });
       res.json({ ok: true });
     } catch (err) {
       handleRegistryError(res, err);

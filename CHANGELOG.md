@@ -10,6 +10,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [changed] Registry client, CLI, and dashboard now use scoped `@username/slug` pack identifiers — install and report commands require the full ref; search results display the scoped format; publish keeps using the short slug (server infers username)
+- [changed] `resolveDefaultPacksDir()` extracted to `@showrun/core` — shared fallback chain (env → local `./taskpacks` → system data dir) used by dashboard, registry install, and serve commands
 - [changed] Default registry URL set to `https://registry.showrun.co` — registry commands work out of the box without configuration
 - [added] `scripts/release.js` — monorepo release script with RC workflow (`rc`, `stable`, `--dry-run`), publishes all 8 packages in dependency order
 - [added] `--cdp-url` flag for `showrun run` — connect to an existing browser via Chrome DevTools Protocol instead of launching a new one
