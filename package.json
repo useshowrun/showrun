@@ -1,6 +1,6 @@
 {
   "name": "showrun-monorepo",
-  "version": "0.1.10-rc.2",
+  "version": "0.1.10-rc.3",
   "private": true,
   "description": "TypeScript + Playwright framework for deterministic, versioned browser automation. Define flows in JSON or code, run via CLI or MCP, edit with AI-assisted dashboard (Teach Mode)",
   "type": "module",
