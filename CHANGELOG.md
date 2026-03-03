@@ -10,6 +10,7 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [fixed] Release script rollback now uses in-memory snapshots instead of `git checkout`, preventing multi-version revert when git working tree has prior uncommitted changes
 - [changed] Registry client, CLI, and dashboard now use scoped `@username/slug` pack identifiers — install and report commands require the full ref; search results display the scoped format; publish keeps using the short slug (server infers username)
 - [changed] `resolveDefaultPacksDir()` extracted to `@showrun/core` — shared fallback chain (env → local `./taskpacks` → system data dir) used by dashboard, registry install, and serve commands
 - [changed] Default registry URL set to `https://registry.showrun.co` — registry commands work out of the box without configuration
