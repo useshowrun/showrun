@@ -12,7 +12,7 @@ import { resolve } from 'path';
 import { existsSync } from 'fs';
 import { cwd, platform } from 'process';
 import { execSync } from 'child_process';
-import { RegistryClient, RegistryError, type ReportReason } from '@showrun/core';
+import { RegistryClient, RegistryError, resolveDefaultPacksDir, type ReportReason } from '@showrun/core';
 
 // ── Arg parsing helpers ───────────────────────────────────────────────────
 
@@ -173,9 +173,8 @@ async function cmdSearch(args: string[]): Promise<void> {
   for (const pack of result.data) {
     const vis = pack.visibility === 'private' ? ' [private]' : '';
     const ver = pack.latestVersion ? ` v${pack.latestVersion}` : '';
-    console.log(`  ${pack.slug}${ver}${vis}`);
+    console.log(`  @${pack.owner.username}/${pack.slug}${ver}${vis}`);
     console.log(`    ${pack.description || 'No description'}`);
-    console.log(`    by ${pack.owner.username}`);
     console.log();
   }
 }
@@ -183,17 +182,21 @@ async function cmdSearch(args: string[]): Promise<void> {
 async function cmdInstall(args: string[]): Promise<void> {
   const client = new RegistryClient();
 
-  const slug = getPositional(args);
-  if (!slug) throw new Error('Pack slug is required. Usage: showrun registry install <slug>');
+  const ref = getPositional(args);
+  if (!ref) {
+    throw new Error(
+      'Pack ref is required. Usage: showrun registry install <@username/slug>',
+    );
+  }
 
-  const destDir = getFlag(args, '--dir') || resolve(cwd(), 'taskpacks');
+  const destDir = getFlag(args, '--dir') || resolveDefaultPacksDir();
   const version = getFlag(args, '--version');
 
   const resolvedDest = resolve(cwd(), destDir);
-  console.log(`Installing ${slug}${version ? `@${version}` : ''} to ${resolvedDest}...`);
+  console.log(`Installing ${ref}${version ? `@${version}` : ''} to ${resolvedDest}...`);
 
-  await client.installPack(slug, resolvedDest, version);
-  console.log(`Installed ${slug} to ${resolve(resolvedDest, slug)}`);
+  await client.installPack(ref, resolvedDest, version);
+  console.log(`Installed ${ref} to ${resolve(resolvedDest, ref)}`);
 }
 
 const VALID_REPORT_REASONS = ['malicious', 'spam', 'inappropriate', 'copyright'] as const;
@@ -201,9 +204,11 @@ const VALID_REPORT_REASONS = ['malicious', 'spam', 'inappropriate', 'copyright']
 async function cmdReport(args: string[]): Promise<void> {
   const client = new RegistryClient();
 
-  const slug = getPositional(args);
-  if (!slug) {
-    throw new Error('Pack slug is required. Usage: showrun registry report <slug> --reason <reason>');
+  const ref = getPositional(args);
+  if (!ref) {
+    throw new Error(
+      'Pack ref is required. Usage: showrun registry report <@username/slug> --reason <reason>',
+    );
   }
 
   const reason = getFlag(args, '--reason') as ReportReason | undefined;
@@ -220,8 +225,8 @@ async function cmdReport(args: string[]): Promise<void> {
 
   const description = getFlag(args, '--description');
 
-  await client.reportPack({ slug, reason, description });
-  console.log(`Report submitted for pack "${slug}" (reason: ${reason}).`);
+  await client.reportPack({ slug: ref, reason, description });
+  console.log(`Report submitted for pack "${ref}" (reason: ${reason}).`);
   console.log('The registry team will review your report. Thank you.');
 }
 
@@ -298,12 +303,12 @@ Commands:
     --limit <N>           Results per page
 
   install       Install a task pack from the registry
-    <slug>                Pack slug (required)
+    <@username/slug>      Scoped pack ref (required)
     --dir <path>          Destination directory (default: ./taskpacks)
     --version <ver>       Specific version (default: latest)
 
   report        Report a pack for policy violation
-    <slug>                Pack slug (required)
+    <@username/slug>      Scoped pack ref (required)
     --reason <reason>     malicious, spam, inappropriate, or copyright (required)
     --description <text>  Additional details (optional, max 2000 chars)
 
@@ -315,8 +320,8 @@ Examples:
   showrun registry whoami
   showrun registry publish --path ./taskpacks/my-pack
   showrun registry search "linkedin"
-  showrun registry install example-json --dir ./taskpacks
-  showrun registry report some-pack --reason malicious --description "Steals credentials"
+  showrun registry install @user/example-json --dir ./taskpacks
+  showrun registry report @user/some-pack --reason malicious --description "Steals credentials"
   showrun registry logout
 `);
 }

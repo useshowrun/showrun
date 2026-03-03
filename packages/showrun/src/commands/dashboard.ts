@@ -6,7 +6,7 @@ import { resolve } from 'path';
 import { existsSync } from 'fs';
 import { cwd } from 'process';
 import { startDashboard } from '@showrun/dashboard';
-import { getGlobalDataDir, ensureDir } from '@showrun/core';
+import { getGlobalDataDir, ensureDir, resolveDefaultPacksDir } from '@showrun/core';
 import { needsSetup, runSetupWizard } from '../setupWizard.js';
 
 /**
@@ -139,23 +139,9 @@ export function parseDashboardArgs(args: string[]): DashboardCommandOptions {
 
   // Default packs directory if not specified
   if (!result.packs || result.packs.length === 0) {
-    // 1. Check configured taskpacks dir (set during setup wizard)
-    const configuredDir = process.env.SHOWRUN_TASKPACKS_DIR;
-    if (configuredDir && existsSync(configuredDir)) {
-      result.packs = [configuredDir];
-    } else {
-      // 2. Try local ./taskpacks (project context)
-      const localPacksDir = resolve(projectRoot, './taskpacks');
-      if (existsSync(localPacksDir)) {
-        result.packs = [localPacksDir];
-      } else {
-        // 3. Fall back to system data directory — create if needed
-        const systemPacksDir = resolve(globalDataDir, 'taskpacks');
-        ensureDir(systemPacksDir);
-        result.packs = [systemPacksDir];
-        console.log(`[Dashboard] Using default taskpacks directory: ${systemPacksDir}`);
-      }
-    }
+    const defaultDir = resolveDefaultPacksDir();
+    ensureDir(defaultDir);
+    result.packs = [defaultDir];
   }
 
   return result as DashboardCommandOptions;

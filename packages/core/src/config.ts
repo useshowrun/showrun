@@ -355,6 +355,22 @@ export function getGlobalDataDir(): string {
 }
 
 /**
+ * Resolve the default taskpacks directory using a standard fallback chain:
+ *   1. SHOWRUN_TASKPACKS_DIR env var (set during setup wizard)
+ *   2. Local ./taskpacks in cwd
+ *   3. System data directory (~/.local/share/showrun/taskpacks)
+ */
+export function resolveDefaultPacksDir(): string {
+  const configuredDir = process.env.SHOWRUN_TASKPACKS_DIR;
+  if (configuredDir && existsSync(configuredDir)) return configuredDir;
+
+  const localDir = join(process.cwd(), 'taskpacks');
+  if (existsSync(localDir)) return localDir;
+
+  return join(getGlobalDataDir(), 'taskpacks');
+}
+
+/**
  * Ensure a system prompt file exists in a config directory.
  * If the prompt was found outside config dirs (e.g. repo root), copy it
  * into the global config dir so it's available when running from any directory.
