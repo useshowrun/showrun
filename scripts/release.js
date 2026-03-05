@@ -62,7 +62,7 @@ function die(msg) {
 }
 
 // ---------------------------------------------------------------------------
-// Version rollback — restores package.json files via git checkout
+// Version rollback — restores package.json files from in-memory snapshots
 // ---------------------------------------------------------------------------
 
 let versionsChanged = false;
@@ -72,14 +72,33 @@ const PKG_FILES = [
   ...PACKAGES.map((d) => `${d}/package.json`),
 ];
 
+/** Pre-modification snapshots of package.json contents, keyed by relative path */
+const pkgSnapshots = new Map();
+
+function snapshotVersions() {
+  pkgSnapshots.clear();
+  for (const rel of PKG_FILES) {
+    const abs = join(ROOT, rel);
+    pkgSnapshots.set(rel, readFileSync(abs, "utf-8"));
+  }
+}
+
 function rollbackVersions() {
   if (!versionsChanged) return;
   console.error("\n\x1b[33mRolling back version changes...\x1b[0m");
-  try {
-    execSync(`git checkout -- ${PKG_FILES.join(" ")}`, { cwd: ROOT, stdio: "inherit" });
+  let ok = true;
+  for (const [rel, content] of pkgSnapshots) {
+    try {
+      writeFileSync(join(ROOT, rel), content);
+    } catch (e) {
+      console.error(`\x1b[31mFailed to restore ${rel}: ${e.message}\x1b[0m`);
+      ok = false;
+    }
+  }
+  if (ok) {
     console.error("\x1b[33mVersions restored to previous state.\x1b[0m");
-  } catch {
-    console.error("\x1b[31mFailed to rollback. Restore manually: git checkout -- " + PKG_FILES.join(" ") + "\x1b[0m");
+  } else {
+    console.error("\x1b[31mSome files could not be restored. Check the package.json files manually.\x1b[0m");
   }
   versionsChanged = false;
 }
@@ -142,6 +161,9 @@ function updateVersions(newVersion, dryRun) {
     console.log(`  [dry-run] Would set @showrun/techniques dep to ${techniquesDep}`);
     return;
   }
+
+  // Snapshot current state so rollback can restore without git
+  snapshotVersions();
 
   // Root package.json
   const rootPkg = readPkg(".");

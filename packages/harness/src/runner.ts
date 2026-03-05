@@ -19,12 +19,13 @@ export class TaskPackRunner {
   async run(
     taskPack: TaskPack,
     inputs: Record<string, unknown>,
-    options?: { headful?: boolean }
+    options?: { headful?: boolean; cdpUrl?: string }
   ): Promise<RunResult> {
     const result = await runTaskPack(taskPack, inputs, {
       runDir: this.runsDir,
       logger: this.logger,
       headless: options?.headful !== true,
+      cdpUrl: options?.cdpUrl,
     });
 
     // Return just the RunResult part (without paths)

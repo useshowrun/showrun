@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import type { Socket } from 'socket.io-client';
 import NewPackModal from './NewPackModal.js';
 import PackEditor from './PackEditor.js';
+import RegistryPublishModal from './RegistryPublishModal.js';
 
 interface Pack {
   id: string;
@@ -31,6 +32,7 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
   const [packsList, setPacksList] = useState(packs);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [publishPackId, setPublishPackId] = useState<string | null>(null);
 
   // Sync packsList with packs prop when it changes
   React.useEffect(() => {
@@ -266,6 +268,16 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
                       className="btn-secondary"
                       onClick={(e) => {
                         e.stopPropagation();
+                        setPublishPackId(pack.id);
+                      }}
+                      style={{ padding: '6px 12px', fontSize: '12px' }}
+                    >
+                      Publish
+                    </button>
+                    <button
+                      className="btn-secondary"
+                      onClick={(e) => {
+                        e.stopPropagation();
                         setEditingPackId(pack.id);
                       }}
                       style={{ padding: '6px 12px', fontSize: '12px' }}
@@ -295,6 +307,18 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
           )}
         </div>
       </div>
+
+      {publishPackId && (() => {
+        const pubPack = packsList.find(p => p.id === publishPackId);
+        return pubPack ? (
+          <RegistryPublishModal
+            packId={pubPack.id}
+            packName={pubPack.name}
+            packVersion={pubPack.version}
+            onClose={() => setPublishPackId(null)}
+          />
+        ) : null;
+      })()}
 
       {selectedPack && (
         <div className="card">

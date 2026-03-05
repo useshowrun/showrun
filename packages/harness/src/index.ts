@@ -22,6 +22,8 @@ export interface RunPackOptions {
   headful?: boolean;
   /** Base directory for run outputs (default: ./runs) */
   baseRunDir?: string;
+  /** Chrome DevTools Protocol URL to connect to an existing browser */
+  cdpUrl?: string;
 }
 
 export interface RunPackResult extends RunResult {
@@ -33,7 +35,7 @@ export interface RunPackResult extends RunResult {
  * Run a task pack programmatically
  */
 export async function runPack(options: RunPackOptions): Promise<RunPackResult> {
-  const { packPath, inputs = {}, headful = false, baseRunDir = './runs' } = options;
+  const { packPath, inputs = {}, headful = false, baseRunDir = './runs', cdpUrl } = options;
 
   const resolvedPackPath = resolve(packPath);
   if (!existsSync(resolvedPackPath)) {
@@ -50,7 +52,7 @@ export async function runPack(options: RunPackOptions): Promise<RunPackResult> {
 
   // Run task pack
   const runner = new TaskPackRunner(runsDir);
-  const result = await runner.run(taskPack, inputs, { headful });
+  const result = await runner.run(taskPack, inputs, { headful, cdpUrl });
 
   return {
     ...result,

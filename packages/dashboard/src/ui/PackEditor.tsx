@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import type { Socket } from 'socket.io-client';
 import TeachMode from './TeachMode.js';
 import SecretsEditor from './SecretsEditor.js';
+import RegistryPublishModal from './RegistryPublishModal.js';
 
 interface Pack {
   id: string;
@@ -34,6 +35,7 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
   const [warnings, setWarnings] = useState<string[]>([]);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [validationResult, setValidationResult] = useState<{ ok: boolean; errors: string[]; warnings: string[] } | null>(null);
+  const [showPublishModal, setShowPublishModal] = useState(false);
 
   useEffect(() => {
     loadPackFiles();
@@ -203,11 +205,25 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
 
   return (
     <div>
+      {showPublishModal && (
+        <RegistryPublishModal
+          packId={pack.id}
+          packName={pack.name}
+          packVersion={pack.version}
+          onClose={() => setShowPublishModal(false)}
+        />
+      )}
       <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2>Edit Pack: {pack.name}</h2>
         <div>
           <button onClick={onBack} style={{ marginRight: '10px' }}>Back to Packs</button>
-          <button 
+          <button
+            onClick={() => setShowPublishModal(true)}
+            style={{ marginRight: '10px' }}
+          >
+            Publish to Registry
+          </button>
+          <button
             onClick={handleRun} 
             disabled={saving || loading || !isJsonValid}
             title={

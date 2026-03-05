@@ -10,3 +10,5 @@ export { cmdConfig, printConfigHelp } from './config.js';
 export { cmdMcp, printMcpHelp } from './mcp.js';
 export { cmdUninstall, printUninstallHelp } from './uninstall.js';
 export { cmdTechniques, printTechniquesHelp } from './techniques.js';
+export { cmdRegistry, printRegistryHelp } from './registry.js';
+export { cmdResults, printResultsHelp } from './results.js';

@@ -56,6 +56,11 @@ export interface RunTaskPackOptions {
    * Skip HTTP-only replay mode and always use browser execution
    */
   skipHttpReplay?: boolean;
+  /**
+   * Chrome DevTools Protocol URL to connect to an existing browser
+   * instead of launching a new one.
+   */
+  cdpUrl?: string;
 }
 
 /**
@@ -180,6 +185,7 @@ export async function runTaskPack(
       sessionId: options.sessionId,
       packPath: options.packPath ?? options.cacheDir,
       proxy: resolvedProxy ?? undefined,
+      cdpUrl: options.cdpUrl,
     });
     page = browserSession.page;
 

@@ -52,6 +52,9 @@ export interface ShowRunConfig {
     };
     collectionName?: string;    // default: "ShowrunTechniques"
   };
+  registry?: {
+    url?: string;               // Registry server URL (no default — registry features disabled if not set)
+  };
   taskpacksDir?: string;       // Default taskpacks directory (cross-platform)
 }
 
@@ -210,6 +213,7 @@ const CONFIG_TO_ENV: Array<{ path: string[]; envVar: string }> = [
   { path: ['techniques', 'embedding', 'baseUrl'], envVar: 'EMBEDDING_BASE_URL' },
   { path: ['techniques', 'collectionName'], envVar: 'TECHNIQUES_COLLECTION' },
   { path: ['taskpacksDir'], envVar: 'SHOWRUN_TASKPACKS_DIR' },
+  { path: ['registry', 'url'], envVar: 'SHOWRUN_REGISTRY_URL' },
 ];
 
 function getNestedValue(obj: Record<string, unknown>, path: string[]): unknown {
@@ -348,6 +352,22 @@ export function getGlobalDataDir(): string {
   }
   const xdgData = process.env.XDG_DATA_HOME || join(homedir(), '.local', 'share');
   return join(xdgData, 'showrun');
+}
+
+/**
+ * Resolve the default taskpacks directory using a standard fallback chain:
+ *   1. SHOWRUN_TASKPACKS_DIR env var (set during setup wizard)
+ *   2. Local ./taskpacks in cwd
+ *   3. System data directory (~/.local/share/showrun/taskpacks)
+ */
+export function resolveDefaultPacksDir(): string {
+  const configuredDir = process.env.SHOWRUN_TASKPACKS_DIR;
+  if (configuredDir && existsSync(configuredDir)) return configuredDir;
+
+  const localDir = join(process.cwd(), 'taskpacks');
+  if (existsSync(localDir)) return localDir;
+
+  return join(getGlobalDataDir(), 'taskpacks');
 }
 
 /**

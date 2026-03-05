@@ -14,6 +14,9 @@ export * from './config.js';
 export * from './requestSnapshot.js';
 export * from './httpReplay.js';
 
+// Registry exports
+export * from './registry/index.js';
+
 // Proxy exports
 export * from './proxy/index.js';
 
