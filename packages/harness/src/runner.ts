@@ -1,6 +1,6 @@
 import { join } from 'path';
 import type { TaskPack, RunResult } from '@showrun/core';
-import { runTaskPack } from '@showrun/core';
+import { runTaskPack, executePlaywrightJs } from '@showrun/core';
 import { JSONLLogger } from './logger.js';
 
 /**
@@ -26,6 +26,7 @@ export class TaskPackRunner {
       logger: this.logger,
       headless: options?.headful !== true,
       cdpUrl: options?.cdpUrl,
+      playwrightJsExecutor: executePlaywrightJs,
     });
 
     // Return just the RunResult part (without paths)

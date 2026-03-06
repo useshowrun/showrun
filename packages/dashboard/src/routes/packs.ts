@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { resolve } from 'path';
-import { existsSync, rmSync } from 'fs';
+import { existsSync, readFileSync, rmSync } from 'fs';
 import type { DashboardContext } from '../types/context.js';
 import { createTokenChecker } from '../helpers/auth.js';
 import { discoverPacks } from '@showrun/mcp-server';
@@ -121,25 +121,23 @@ export function createPacksRouter(ctx: DashboardContext): Router {
       return res.status(404).json({ error: 'Pack not found' });
     }
 
-    // Only allow JSON-DSL packs - check manifest kind
     try {
       const manifest = TaskPackLoader.loadManifest(packInfo.path);
-      if (manifest.kind !== 'json-dsl') {
-        return res.status(400).json({ error: 'Pack is not a JSON-DSL pack' });
-      }
-    } catch (error) {
-      // If we can't load manifest, assume it's not json-dsl
-      return res.status(400).json({
-        error: 'Pack is not a JSON-DSL pack or manifest is invalid',
-        details: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    try {
       const taskpackPath = resolve(packInfo.path, 'taskpack.json');
-      const flowPath = resolve(packInfo.path, 'flow.json');
-
       const taskpackJson = readJsonFile<TaskPackManifest>(taskpackPath);
+
+      if (manifest.kind === 'playwright-js') {
+        // Return the playwright-js source
+        const flowPath = resolve(packInfo.path, 'flow.playwright.js');
+        const source = existsSync(flowPath) ? readFileSync(flowPath, 'utf-8') : '';
+        return res.json({
+          taskpackJson,
+          playwrightJsSource: source,
+        });
+      }
+
+      // json-dsl: return flow.json
+      const flowPath = resolve(packInfo.path, 'flow.json');
       const flowJson = readJsonFile<{
         inputs?: InputSchema;
         collectibles?: CollectibleDefinition[];

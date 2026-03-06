@@ -4,6 +4,7 @@
  * These can be called directly without MCP protocol overhead
  */
 
+import { readFileSync } from 'fs';
 import type { DslStep, CollectibleDefinition, TaskPackManifest } from '@showrun/core';
 import {
   TaskPackLoader,
@@ -16,6 +17,7 @@ import {
   writeTaskPackManifest,
   sanitizePackId,
   generateResultKey,
+  executePlaywrightJs,
 } from '@showrun/core';
 import type { ResultStoreProvider, CollectibleSchemaField } from '@showrun/core';
 import { discoverPacks } from '@showrun/mcp-server';
@@ -175,8 +177,14 @@ export class TaskPackEditorWrapper {
     }
 
     const manifest = TaskPackLoader.loadManifest(packInfo.path);
-    if (manifest.kind !== 'json-dsl') {
-      throw new Error(`Pack ${packId} is not a JSON-DSL pack`);
+
+    if (manifest.kind === 'playwright-js') {
+      const flowPath = resolve(packInfo.path, 'flow.playwright.js');
+      const source = readFileSync(flowPath, 'utf-8');
+      return {
+        taskpackJson: manifest,
+        playwrightJsSource: source,
+      };
     }
 
     const flowPath = resolve(packInfo.path, 'flow.json');
@@ -432,6 +440,7 @@ export class TaskPackEditorWrapper {
         profileId: packId,
         packPath: packInfo.path,
         skipHttpReplay: true,
+        playwrightJsExecutor: executePlaywrightJs,
       });
 
       // Auto-store result if a store exists for this pack

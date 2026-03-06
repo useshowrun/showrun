@@ -257,23 +257,26 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
                     {pack.kind === 'json-dsl' && (
                       <span style={{ marginLeft: '8px', color: '#007bff', fontSize: '11px' }}>[JSON]</span>
                     )}
+                    {pack.kind === 'playwright-js' && (
+                      <span style={{ marginLeft: '8px', color: '#e67e22', fontSize: '11px' }}>[Playwright JS]</span>
+                    )}
                   </div>
                   <div className="description">
                     {pack.description || 'No description'}
                   </div>
                 </div>
-                {pack.kind === 'json-dsl' && (
-                  <div style={{ display: 'flex', gap: '8px', marginLeft: '12px' }}>
-                    <button
-                      className="btn-secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setPublishPackId(pack.id);
-                      }}
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                    >
-                      Publish
-                    </button>
+                <div style={{ display: 'flex', gap: '8px', marginLeft: '12px' }}>
+                  <button
+                    className="btn-secondary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setPublishPackId(pack.id);
+                    }}
+                    style={{ padding: '6px 12px', fontSize: '12px' }}
+                  >
+                    Publish
+                  </button>
+                  {pack.kind === 'json-dsl' && (
                     <button
                       className="btn-secondary"
                       onClick={(e) => {
@@ -284,23 +287,23 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
                     >
                       Edit
                     </button>
-                    <button
-                      className="btn-secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteConfirm(pack.id);
-                      }}
-                      style={{
-                        padding: '6px 12px',
-                        fontSize: '12px',
-                        color: 'var(--error)',
-                        borderColor: 'var(--error)',
-                      }}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                )}
+                  )}
+                  <button
+                    className="btn-secondary"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDeleteConfirm(pack.id);
+                    }}
+                    style={{
+                      padding: '6px 12px',
+                      fontSize: '12px',
+                      color: 'var(--error)',
+                      borderColor: 'var(--error)',
+                    }}
+                  >
+                    Delete
+                  </button>
+                </div>
               </div>
             </div>
           ))

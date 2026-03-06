@@ -43,20 +43,32 @@ export class TaskPackLoader {
       throw new Error('taskpack.json missing required fields: id, name, version');
     }
 
-    // Only json-dsl format is supported
-    if (manifest.kind !== 'json-dsl') {
-      throw new Error('taskpack.json must have "kind": "json-dsl". Other formats are no longer supported.');
+    // Validate kind
+    const validKinds = ['json-dsl', 'playwright-js'];
+    if (!validKinds.includes(manifest.kind)) {
+      throw new Error(`taskpack.json "kind" must be one of: ${validKinds.join(', ')}. Got: "${manifest.kind}"`);
     }
 
     return manifest;
   }
 
   /**
-   * Load task pack from directory (json-dsl format only)
+   * Load task pack from directory
    */
   static async loadTaskPack(packPath: string): Promise<TaskPack> {
     const manifest = this.loadManifest(packPath);
 
+    if (manifest.kind === 'playwright-js') {
+      return this.loadPlaywrightJsPack(packPath, manifest);
+    }
+
+    return this.loadJsonDslPack(packPath, manifest);
+  }
+
+  /**
+   * Load a json-dsl task pack
+   */
+  private static loadJsonDslPack(packPath: string, manifest: TaskPackManifest): TaskPack {
     const flowPath = join(packPath, 'flow.json');
     if (!existsSync(flowPath)) {
       throw new Error(`flow.json not found for json-dsl pack: ${flowPath}`);
@@ -95,6 +107,34 @@ export class TaskPackLoader {
       auth: manifest.auth,
       browser: manifest.browser,
       ...(snapshots ? { snapshots } : {}),
+    };
+  }
+
+  /**
+   * Load a playwright-js task pack
+   */
+  private static loadPlaywrightJsPack(packPath: string, manifest: TaskPackManifest): TaskPack {
+    const flowPath = join(packPath, 'flow.playwright.js');
+    if (!existsSync(flowPath)) {
+      throw new Error(`flow.playwright.js not found for playwright-js pack: ${flowPath}`);
+    }
+
+    const source = readFileSync(flowPath, 'utf-8');
+
+    return {
+      metadata: {
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description,
+      },
+      kind: 'playwright-js',
+      inputs: manifest.inputs || {},
+      collectibles: manifest.collectibles || [],
+      flow: [], // Not used for playwright-js packs
+      playwrightJsSource: source,
+      auth: manifest.auth,
+      browser: manifest.browser,
     };
   }
 

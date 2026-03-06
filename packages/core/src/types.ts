@@ -97,9 +97,9 @@ export interface TaskPackMetadata {
  */
 export interface TaskPackManifest extends TaskPackMetadata {
   /**
-   * Pack kind: must be "json-dsl"
+   * Pack kind
    */
-  kind: 'json-dsl';
+  kind: 'json-dsl' | 'playwright-js';
   /**
    * Auth configuration for resilience and recovery
    */
@@ -112,6 +112,14 @@ export interface TaskPackManifest extends TaskPackMetadata {
    * Browser configuration
    */
   browser?: BrowserSettings;
+  /**
+   * Input schema (used by playwright-js packs where inputs are declared in taskpack.json)
+   */
+  inputs?: InputSchema;
+  /**
+   * Collectible definitions (used by playwright-js packs where collectibles are declared in taskpack.json)
+   */
+  collectibles?: CollectibleDefinition[];
 }
 
 /**
@@ -264,9 +272,17 @@ export interface TaskPack {
   inputs: InputSchema;
   collectibles: CollectibleDefinition[];
   /**
+   * Pack kind (default: 'json-dsl')
+   */
+  kind?: 'json-dsl' | 'playwright-js';
+  /**
    * Declarative flow of DSL steps
    */
   flow: DslStep[];
+  /**
+   * Raw Playwright JS source code (for playwright-js packs)
+   */
+  playwrightJsSource?: string;
   /**
    * Auth configuration for resilience and recovery
    */

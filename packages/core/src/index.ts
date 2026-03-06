@@ -31,3 +31,4 @@ export * from './dsl/validation.js';
 export * from './dsl/templating.js';
 export * from './dsl/target.js';
 export * from './dsl/conditions.js';
+export * from './dsl/playwrightJsExecutor.js';

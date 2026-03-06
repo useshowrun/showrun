@@ -10,7 +10,7 @@ import { randomUUID } from 'crypto';
 import * as z from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { TaskPack, InputSchema, ResultStoreProvider, CollectibleSchemaField } from '@showrun/core';
-import { runTaskPack, generateResultKey } from '@showrun/core';
+import { runTaskPack, generateResultKey, executePlaywrightJs } from '@showrun/core';
 import { JSONLLogger } from '@showrun/harness';
 import type { DiscoveredPack } from './packDiscovery.js';
 import type { ConcurrencyLimiter } from './concurrency.js';
@@ -172,6 +172,7 @@ export function registerPackTools(
               profileId: pack.metadata.id,
               packPath: packDir,
               cacheDir: packDir,
+              playwrightJsExecutor: executePlaywrightJs,
             });
             const durationMs = Date.now() - startTime;
 
