@@ -388,30 +388,30 @@ describe('Secrets Resolution Integration', () => {
       );
     });
 
-    it('main agent tool list excludes pack creation/linking tools', async () => {
-      // Import the filtered tool definitions
-      const { MAIN_AGENT_TOOL_DEFINITIONS } = await import('../agentTools.js');
+    it('exploration agent tools exclude pack creation/linking tools', async () => {
+      // Import the exploration agent tool definitions
+      const { EXPLORATION_AGENT_TOOLS } = await import('../agentTools.js');
 
-      // Verify editor_create_pack is NOT in the main agent's tool list
-      const hasCreatePack = MAIN_AGENT_TOOL_DEFINITIONS.some(
+      // Verify editor_create_pack is NOT in the exploration agent's tool list
+      const hasCreatePack = EXPLORATION_AGENT_TOOLS.some(
         (t) => t.function.name === 'editor_create_pack'
       );
       expect(hasCreatePack).toBe(false);
 
-      // Verify conversation_link_pack is NOT in the main agent's tool list
-      const hasLinkPack = MAIN_AGENT_TOOL_DEFINITIONS.some(
+      // Verify conversation_link_pack is NOT in the exploration agent's tool list
+      const hasLinkPack = EXPLORATION_AGENT_TOOLS.some(
         (t) => t.function.name === 'conversation_link_pack'
       );
       expect(hasLinkPack).toBe(false);
 
-      // Verify other tools ARE in the list
-      const hasReadPack = MAIN_AGENT_TOOL_DEFINITIONS.some(
+      // Verify editor_read_pack IS in the list (exploration can read)
+      const hasReadPack = EXPLORATION_AGENT_TOOLS.some(
         (t) => t.function.name === 'editor_read_pack'
       );
       expect(hasReadPack).toBe(true);
 
-      // Verify browser_goto is in the list (browser_start_session was removed - sessions are auto-managed)
-      const hasBrowserGoto = MAIN_AGENT_TOOL_DEFINITIONS.some(
+      // Verify browser_goto is in the list
+      const hasBrowserGoto = EXPLORATION_AGENT_TOOLS.some(
         (t) => t.function.name === 'browser_goto'
       );
       expect(hasBrowserGoto).toBe(true);

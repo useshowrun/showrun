@@ -13,7 +13,6 @@ import { randomBytes } from 'crypto';
 
 // Mock heavy dependencies before importing the module under test
 vi.mock('../agentTools.js', () => ({
-  MAIN_AGENT_TOOL_DEFINITIONS: [],
   EXPLORATION_AGENT_TOOLS: [
     { type: 'function', function: { name: 'browser_goto', description: 'Go to URL', parameters: { type: 'object', properties: {} } } },
   ],

@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { resolve } from 'path';
-import { existsSync, rmSync } from 'fs';
+import { existsSync, rmSync, readFileSync } from 'fs';
 import type { DashboardContext } from '../types/context.js';
 import { createTokenChecker } from '../helpers/auth.js';
 import { discoverPacks } from '@showrun/mcp-server';
@@ -18,6 +18,7 @@ import {
   restoreVersion,
 } from '@showrun/core';
 import type { TaskPackManifest, InputSchema, CollectibleDefinition, DslStep } from '@showrun/core';
+import { parse as parseShowScript } from '@showrun/showscript';
 
 export function createPacksRouter(ctx: DashboardContext): Router {
   const router = Router();
@@ -112,7 +113,7 @@ export function createPacksRouter(ctx: DashboardContext): Router {
     }
   });
 
-  // REST API: Get pack files (taskpack.json and flow.json)
+  // REST API: Get pack files (taskpack.json and flow.json/flow.showscript)
   router.get('/api/packs/:packId/files', async (req: Request, res: Response) => {
     const { packId } = req.params;
     const packInfo = findPackById(packId);
@@ -121,34 +122,98 @@ export function createPacksRouter(ctx: DashboardContext): Router {
       return res.status(404).json({ error: 'Pack not found' });
     }
 
-    // Only allow JSON-DSL packs - check manifest kind
     try {
       const manifest = TaskPackLoader.loadManifest(packInfo.path);
-      if (manifest.kind !== 'json-dsl') {
-        return res.status(400).json({ error: 'Pack is not a JSON-DSL pack' });
-      }
-    } catch (error) {
-      // If we can't load manifest, assume it's not json-dsl
-      return res.status(400).json({
-        error: 'Pack is not a JSON-DSL pack or manifest is invalid',
-        details: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    try {
       const taskpackPath = resolve(packInfo.path, 'taskpack.json');
-      const flowPath = resolve(packInfo.path, 'flow.json');
-
       const taskpackJson = readJsonFile<TaskPackManifest>(taskpackPath);
-      const flowJson = readJsonFile<{
-        inputs?: InputSchema;
-        collectibles?: CollectibleDefinition[];
-        flow: DslStep[];
-      }>(flowPath);
 
-      res.json({
-        taskpackJson,
-        flowJson,
+      // Handle JSON-DSL packs
+      if (manifest.kind === 'json-dsl' || !manifest.kind) {
+        const flowPath = resolve(packInfo.path, 'flow.json');
+        const flowJson = readJsonFile<{
+          inputs?: InputSchema;
+          collectibles?: CollectibleDefinition[];
+          flow: DslStep[];
+        }>(flowPath);
+
+        return res.json({
+          taskpackJson,
+          flowJson,
+        });
+      }
+
+      // Handle ShowScript packs
+      if (manifest.kind === 'showscript') {
+        const flowPath = resolve(packInfo.path, 'flow.showscript');
+        if (!existsSync(flowPath)) {
+          return res.json({
+            taskpackJson,
+            flowJson: { inputs: {}, flow: [] },
+            showscript: null,
+          });
+        }
+
+        const showscriptContent = readFileSync(flowPath, 'utf-8');
+
+        // Parse ShowScript to extract inputs
+        try {
+          const ast = parseShowScript(showscriptContent);
+          const inputs: InputSchema = {};
+
+          // Helper to convert ShowScript type to PrimitiveType
+          const toPrimitiveType = (typeSpec: string): 'string' | 'number' | 'boolean' => {
+            switch (typeSpec) {
+              case 'number': return 'number';
+              case 'bool': return 'boolean';
+              default: return 'string'; // string, secret, array, object -> string
+            }
+          };
+
+          // Helper to extract default value
+          const getDefaultValue = (defaultValue: unknown): string | number | boolean | undefined => {
+            if (!defaultValue || typeof defaultValue !== 'object') return undefined;
+            const dv = defaultValue as { type: string; value: unknown };
+            if (dv.type === 'StringLiteral') return dv.value as string;
+            if (dv.type === 'NumberLiteral') return dv.value as number;
+            if (dv.type === 'BooleanLiteral') return dv.value as boolean;
+            return undefined;
+          };
+
+          // Extract inputs from AST
+          for (const block of ast.blocks) {
+            if (block.type === 'InputsBlock') {
+              for (const decl of block.declarations) {
+                const inputDef: { type: 'string' | 'number' | 'boolean'; default?: string | number | boolean } = {
+                  type: toPrimitiveType(decl.typeSpec),
+                };
+                const defaultVal = getDefaultValue(decl.defaultValue);
+                if (defaultVal !== undefined) {
+                  inputDef.default = defaultVal;
+                }
+                inputs[decl.name] = inputDef;
+              }
+            }
+          }
+
+          return res.json({
+            taskpackJson,
+            flowJson: { inputs, flow: [] },
+            showscript: showscriptContent,
+          });
+        } catch (parseError) {
+          // If parsing fails, still return the raw content
+          return res.json({
+            taskpackJson,
+            flowJson: { inputs: {}, flow: [] },
+            showscript: showscriptContent,
+            parseError: parseError instanceof Error ? parseError.message : String(parseError),
+          });
+        }
+      }
+
+      // Unknown pack kind
+      return res.status(400).json({
+        error: `Unknown pack kind: ${manifest.kind}`,
       });
     } catch (error) {
       res.status(500).json({

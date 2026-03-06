@@ -10,6 +10,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] Registry publish and install support for ShowScript packs — `showscript` kind sends source string instead of flow JSON; install writes `flow.showscript`; dashboard Publish button enabled for ShowScript packs
+- [changed] Editor Agent converted from JSON-DSL to ShowScript — new tools (`showscript_validate`, `showscript_write_flow`, `showscript_read_flow`), ShowScript-focused system prompt, removed `editor_apply_flow_patch` from editor tool set
 - [added] ShowScript taskpack support — `showrun run` can now execute `.showscript` files via `kind: "showscript"` in taskpack.json; core loader, runner, and types updated; example taskpack at `taskpacks/example-showscript/`
 - [added] ShowScript AST interpreter and runner in `@showrun/harness` — executes `.showscript` files directly from AST without converting to JSON-DSL; supports all step types, control flow, loops-as-expressions, target selectors, built-in functions, and f-string interpolation
 - [added] New `@showrun/showscript` package — PEG-based parser for ShowScript DSL producing a typed AST (parsing only, no code generation yet)

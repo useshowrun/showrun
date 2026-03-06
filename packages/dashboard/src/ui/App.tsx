@@ -344,6 +344,7 @@ function App() {
             conversation={selectedConversation}
             token={config.token}
             packs={packs}
+            socket={socket}
             onConversationUpdate={handleConversationUpdate}
             onCreateConversationWithPack={handleNewChatWithPack}
           />

@@ -7,7 +7,6 @@ import { proposeStep, type ProposeStepRequest } from '../teachMode.js';
 import { updateConversation, getConversation, getAllConversations, getMessagesForConversation, createConversationTranscript, addMessage } from '../db.js';
 import type { ChatMessage, ToolCall, StreamEvent, ChatWithToolsResult, ToolDef } from '../llm/provider.js';
 import {
-  MAIN_AGENT_TOOL_DEFINITIONS,
   EXPLORATION_AGENT_TOOLS,
   executeAgentTool,
   getConversationBrowserSession,
@@ -376,7 +375,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
       messages: Array<{ role: 'user' | 'assistant' | 'tool'; content: string; name?: string }>;
       packId?: string | null;
       conversationId?: string | null;
-      /** If true, stream flow_updated after each editor_apply_flow_patch so the UI can update in real time */
+      /** If true, stream flow_updated after each showscript_write_flow so the UI can update in real time */
       stream?: boolean;
     };
 
@@ -459,7 +458,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
     }
 
     if (effectivePackId) {
-      systemPrompt = `${systemPrompt}\n\n**Pack "${effectivePackId}" is linked to this conversation. Use editor_read_pack() to see its current state, then use editor_apply_flow_patch to modify it. You do not need to pass packId — it is automatic.**`;
+      systemPrompt = `${systemPrompt}\n\n**Pack "${effectivePackId}" is linked to this conversation. Use editor_read_pack() to see its current state, then use showscript_write_flow to write a ShowScript flow. You do not need to pass packId — it is automatic.**`;
     }
     // Note: Browser sessions are now managed automatically per-conversation.
     // No need to inform the AI about session management.
@@ -696,6 +695,9 @@ export function createTeachRouter(ctx: DashboardContext): Router {
             headful: ctx.headful, // Dashboard always runs headful
             packMap: ctx.packMap,
             techniqueManager: ctx.techniqueManager,
+            onPackFilesUpdated: () => {
+              ctx.io.emit('packs:updated', ctx.packMap.size);
+            },
           };
           for (const tc of result.toolCalls) {
             let toolArgs: Record<string, unknown> = {};
@@ -1014,7 +1016,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
                 url: execResult.browserSnapshot.url,
               };
             }
-            if (tc.name === 'editor_apply_flow_patch' && effectivePackId) {
+            if ((tc.name === 'editor_apply_flow_patch' || tc.name === 'showscript_write_flow') && effectivePackId) {
               try {
                 const { flowJson } = await ctx.taskPackEditor.readPack(effectivePackId);
                 updatedFlow = flowJson;

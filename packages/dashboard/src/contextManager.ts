@@ -147,22 +147,6 @@ export function getPlan(sessionKey: string): string | null {
 }
 
 /**
- * Clear a plan for a session
- */
-export function clearPlan(sessionKey: string): void {
-  planStorageCache.delete(sessionKey);
-
-  // Clear from database if it's a conversation ID
-  if (isConversationId(sessionKey)) {
-    try {
-      setConversationPlan(sessionKey, '');
-    } catch (err) {
-      console.warn(`[ContextManager] Failed to clear plan from DB:`, err);
-    }
-  }
-}
-
-/**
  * Summarize older messages to reduce context size
  * Returns a new message array with older messages summarized
  *
@@ -274,43 +258,6 @@ Keep the summary under 2000 words. Focus on information needed to continue the c
     return { messages: fallbackMessages, wasSummarized: false, tokensBefore, tokensAfter };
   }
 }
-
-/**
- * MCP Tool definition for saving plans
- */
-export const PLAN_TOOL_DEFINITION = {
-  type: 'function' as const,
-  function: {
-    name: 'agent_save_plan',
-    description: 'Save the current plan/strategy for this task. Use this to persist important context that should survive conversation summarization. Call this whenever you formulate a multi-step plan.',
-    parameters: {
-      type: 'object' as const,
-      properties: {
-        plan: {
-          type: 'string',
-          description: 'The plan text to save. Should include: goal, steps, current progress, and any important decisions.',
-        },
-      },
-      required: ['plan'],
-    },
-  },
-};
-
-/**
- * MCP Tool definition for getting plans
- */
-export const GET_PLAN_TOOL_DEFINITION = {
-  type: 'function' as const,
-  function: {
-    name: 'agent_get_plan',
-    description: 'Retrieve the saved plan for this task. Use this at the start of a conversation or after summarization to recover context.',
-    parameters: {
-      type: 'object' as const,
-      properties: {},
-      required: [],
-    },
-  },
-};
 
 /**
  * Force summarization regardless of token count.

@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { type Socket } from 'socket.io-client';
 import MessageBubble, { type ToolCall } from './MessageBubble.js';
 import ChatInput from './ChatInput.js';
 import SecretsPanel from './SecretsPanel.js';
@@ -48,6 +49,7 @@ interface ChatViewProps {
   conversation: Conversation | null;
   token: string;
   packs?: Array<{ id: string; path: string; name: string }>;
+  socket?: Socket | null;
   onConversationUpdate?: (updates: Partial<Conversation>) => void;
   onNewMessage?: (message: Message) => void;
   onCreateConversationWithPack?: (packId: string) => Promise<void>;
@@ -57,6 +59,7 @@ export default function ChatView({
   conversation,
   token,
   packs,
+  socket,
   onConversationUpdate,
   onNewMessage,
   onCreateConversationWithPack,
@@ -138,31 +141,57 @@ export default function ChatView({
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, streamingContent]);
 
+  // Function to fetch flow input schema
+  const fetchFlowInputSchema = async (packId: string) => {
+    try {
+      const res = await fetch(`/api/packs/${packId}/files`, {
+        headers: { 'Content-Type': 'application/json', 'x-showrun-token': token },
+      });
+      if (!res.ok) {
+        setFlowInputSchema(null);
+        return;
+      }
+      const data = await res.json();
+      const inputs = data?.flowJson?.inputs ?? null;
+      setFlowInputSchema(inputs);
+      // Pre-fill default values
+      if (inputs) {
+        const defaults: Record<string, string | number | boolean> = {};
+        for (const [key, schema] of Object.entries(inputs) as [string, { type: string; default?: unknown }][]) {
+          if (schema.default !== undefined) {
+            defaults[key] = schema.default as string | number | boolean;
+          }
+        }
+        setRunInputValues(defaults);
+      } else {
+        setRunInputValues({});
+      }
+    } catch {
+      setFlowInputSchema(null);
+    }
+  };
+
   // Fetch flow input schema when pack changes
   useEffect(() => {
     if (!conversation?.packId) { setFlowInputSchema(null); return; }
-    fetch(`/api/packs/${conversation.packId}/files`, {
-      headers: { 'Content-Type': 'application/json', 'x-showrun-token': token },
-    })
-      .then(res => res.ok ? res.json() : null)
-      .then(data => {
-        const inputs = data?.flowJson?.inputs ?? null;
-        setFlowInputSchema(inputs);
-        // Pre-fill default values
-        if (inputs) {
-          const defaults: Record<string, string | number | boolean> = {};
-          for (const [key, schema] of Object.entries(inputs) as [string, { type: string; default?: unknown }][]) {
-            if (schema.default !== undefined) {
-              defaults[key] = schema.default as string | number | boolean;
-            }
-          }
-          setRunInputValues(defaults);
-        } else {
-          setRunInputValues({});
-        }
-      })
-      .catch(() => setFlowInputSchema(null));
+    fetchFlowInputSchema(conversation.packId);
   }, [conversation?.packId]);
+
+  // Re-fetch flow input schema when packs:updated event is received
+  useEffect(() => {
+    if (!socket || !conversation?.packId) return;
+
+    const handlePacksUpdated = () => {
+      if (conversation?.packId) {
+        fetchFlowInputSchema(conversation.packId);
+      }
+    };
+
+    socket.on('packs:updated', handlePacksUpdated);
+    return () => {
+      socket.off('packs:updated', handlePacksUpdated);
+    };
+  }, [socket, conversation?.packId]);
 
   // Auto-collapse right panel on small screens
   useEffect(() => {

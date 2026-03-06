@@ -25,6 +25,7 @@
     "@anthropic-ai/tokenizer": "^0.0.4",
     "@showrun/core": "workspace:*",
     "@showrun/harness": "workspace:*",
+    "@showrun/showscript": "workspace:*",
     "@showrun/mcp-server": "workspace:*",
     "@showrun/techniques": "workspace:*",
     "better-sqlite3": "^12.6.2",

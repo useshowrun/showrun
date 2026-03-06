@@ -257,12 +257,15 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
                     {pack.kind === 'json-dsl' && (
                       <span style={{ marginLeft: '8px', color: '#007bff', fontSize: '11px' }}>[JSON]</span>
                     )}
+                    {pack.kind === 'showscript' && (
+                      <span style={{ marginLeft: '8px', color: '#e67e22', fontSize: '11px' }}>[ShowScript]</span>
+                    )}
                   </div>
                   <div className="description">
                     {pack.description || 'No description'}
                   </div>
                 </div>
-                {pack.kind === 'json-dsl' && (
+                {(pack.kind === 'json-dsl' || pack.kind === 'showscript') && (
                   <div style={{ display: 'flex', gap: '8px', marginLeft: '12px' }}>
                     <button
                       className="btn-secondary"
@@ -274,31 +277,35 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
                     >
                       Publish
                     </button>
-                    <button
-                      className="btn-secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingPackId(pack.id);
-                      }}
-                      style={{ padding: '6px 12px', fontSize: '12px' }}
-                    >
-                      Edit
-                    </button>
-                    <button
-                      className="btn-secondary"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setDeleteConfirm(pack.id);
-                      }}
-                      style={{
-                        padding: '6px 12px',
-                        fontSize: '12px',
-                        color: 'var(--error)',
-                        borderColor: 'var(--error)',
-                      }}
-                    >
-                      Delete
-                    </button>
+                    {pack.kind === 'json-dsl' && (
+                      <>
+                        <button
+                          className="btn-secondary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setEditingPackId(pack.id);
+                          }}
+                          style={{ padding: '6px 12px', fontSize: '12px' }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          className="btn-secondary"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setDeleteConfirm(pack.id);
+                          }}
+                          style={{
+                            padding: '6px 12px',
+                            fontSize: '12px',
+                            color: 'var(--error)',
+                            borderColor: 'var(--error)',
+                          }}
+                        >
+                          Delete
+                        </button>
+                      </>
+                    )}
                   </div>
                 )}
               </div>

@@ -6,7 +6,6 @@ import { describe, it, expect } from 'vitest';
 import {
   EXPLORATION_AGENT_TOOLS,
   EDITOR_AGENT_TOOLS,
-  MAIN_AGENT_TOOL_DEFINITIONS,
   MCP_AGENT_TOOL_DEFINITIONS,
 } from '../../agentTools.js';
 
@@ -52,16 +51,21 @@ describe('Tool Definitions Split', () => {
     expect(names).not.toContain('editor_validate_flow');
     expect(names).not.toContain('editor_run_pack');
     expect(names).not.toContain('editor_create_pack');
+    expect(names).not.toContain('showscript_validate');
+    expect(names).not.toContain('showscript_write_flow');
+    expect(names).not.toContain('showscript_read_flow');
   });
 
-  it('EDITOR_AGENT_TOOLS contains only editor tools', () => {
+  it('EDITOR_AGENT_TOOLS contains ShowScript and editor tools', () => {
     const names = EDITOR_AGENT_TOOLS.map(t => t.function.name);
     expect(names).toContain('editor_read_pack');
     expect(names).toContain('editor_list_secrets');
-    expect(names).toContain('editor_apply_flow_patch');
     expect(names).toContain('editor_run_pack');
+    expect(names).toContain('showscript_write_flow');
+    expect(names).toContain('showscript_read_flow');
+    expect(names).not.toContain('editor_apply_flow_patch');
     expect(names).not.toContain('editor_validate_flow');
-    expect(names).toHaveLength(4);
+    expect(names).toHaveLength(5);
   });
 
   it('EDITOR_AGENT_TOOLS does NOT contain browser or conversation tools', () => {
@@ -84,14 +88,6 @@ describe('Tool Definitions Split', () => {
     expect(params.required).toContain('instruction');
     expect(params.required).toContain('explorationContext');
     expect(params.required).not.toContain('testInputs');
-  });
-
-  it('MAIN_AGENT_TOOL_DEFINITIONS still exists for backward compat', () => {
-    expect(MAIN_AGENT_TOOL_DEFINITIONS.length).toBeGreaterThan(0);
-    // Should not include initializer-only tools
-    const names = MAIN_AGENT_TOOL_DEFINITIONS.map(t => t.function.name);
-    expect(names).not.toContain('editor_create_pack');
-    expect(names).not.toContain('conversation_link_pack');
   });
 
   it('all tool definitions in splits come from MCP_AGENT_TOOL_DEFINITIONS or are new', () => {

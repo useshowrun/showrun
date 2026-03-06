@@ -8,7 +8,8 @@
 
 import { join } from 'path';
 import { TaskPackLoader } from '../loader.js';
-import { readJsonFile, ensureDir, writeTaskPackManifest, writeFlowJson } from '../packUtils.js';
+import { readFileSync } from 'fs';
+import { readJsonFile, ensureDir, writeTaskPackManifest, writeFlowJson, writeShowScript } from '../packUtils.js';
 import { loadTokens, saveTokens, clearTokens } from './tokenStore.js';
 import type {
   IRegistryClient,
@@ -169,12 +170,7 @@ export class RegistryClient implements IRegistryClient {
 
     // Load local pack
     const manifest = TaskPackLoader.loadManifest(packPath);
-    const flowPath = join(packPath, 'flow.json');
-    const flowData = readJsonFile<{
-      inputs?: InputSchema;
-      collectibles?: CollectibleDefinition[];
-      flow: DslStep[];
-    }>(flowPath);
+    const isShowScript = manifest.kind === 'showscript';
 
     const slug = userSlug || manifest.id;
 
@@ -203,22 +199,37 @@ export class RegistryClient implements IRegistryClient {
       }
     }
 
+    // Build version publish body
+    const versionBody: Record<string, unknown> = {
+      version: manifest.version,
+      manifest: {
+        id: manifest.id,
+        name: manifest.name,
+        version: manifest.version,
+        description: manifest.description,
+        kind: manifest.kind,
+      },
+      changelog,
+    };
+
+    if (isShowScript) {
+      const source = readFileSync(join(packPath, 'flow.showscript'), 'utf-8');
+      versionBody.showscript = source;
+    } else {
+      const flowPath = join(packPath, 'flow.json');
+      const flowData = readJsonFile<{
+        inputs?: InputSchema;
+        collectibles?: CollectibleDefinition[];
+        flow: DslStep[];
+      }>(flowPath);
+      versionBody.flow = flowData;
+    }
+
     // Publish version
     const versionData = await this.request<{ version: string | { version?: string } }>(
       'POST',
       `/api/packs/${encodeURIComponent(slug)}/versions`,
-      {
-        version: manifest.version,
-        manifest: {
-          id: manifest.id,
-          name: manifest.name,
-          version: manifest.version,
-          description: manifest.description,
-          kind: manifest.kind,
-        },
-        flow: flowData,
-        changelog,
-      },
+      versionBody,
       true,
     );
 
@@ -262,10 +273,11 @@ export class RegistryClient implements IRegistryClient {
       throw new RegistryError(`Pack "${ref}" has no published versions`, 404);
     }
 
-    // Get version data (manifest + flow)
+    // Get version data (manifest + flow or showscript)
     const versionData = await this.request<{
       manifest: TaskPackManifest;
-      flow: { inputs?: InputSchema; collectibles?: CollectibleDefinition[]; flow: DslStep[] };
+      flow?: { inputs?: InputSchema; collectibles?: CollectibleDefinition[]; flow: DslStep[] };
+      showscript?: string;
     }>('GET', `/api/packs/${scopedPath}/versions/${targetVersion}`, undefined, false);
 
     // Write to local directory — creates nested @username/slug/ structure
@@ -273,7 +285,12 @@ export class RegistryClient implements IRegistryClient {
     ensureDir(packDir);
 
     writeTaskPackManifest(packDir, versionData.manifest);
-    writeFlowJson(packDir, versionData.flow);
+
+    if (versionData.showscript) {
+      writeShowScript(packDir, versionData.showscript);
+    } else if (versionData.flow) {
+      writeFlowJson(packDir, versionData.flow);
+    }
   }
 
   // ── Reports ──────────────────────────────────────────────────────────

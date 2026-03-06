@@ -9,7 +9,7 @@ import type { RunResult } from '@showrun/core';
 import { TaskPackRunner } from './runner.js';
 
 export { JSONLLogger } from './logger.js';
-export { TaskPackRunner } from './runner.js';
+export { TaskPackRunner, showscriptExecutor } from './runner.js';
 export { SQLiteResultStore } from './storage/sqliteStore.js';
 export { InMemoryResultStore } from './storage/inMemoryStore.js';
 export { executeShowScript, type ShowScriptContext, type ShowScriptOptions } from './showscript-interpreter.js';

@@ -6,6 +6,7 @@
 import type { LlmProvider } from './provider.js';
 import { OpenAIProvider } from './openai.js';
 import { AnthropicProvider } from './anthropic.js';
+import { CliProxyProvider } from './cliproxy.js';
 
 export function createLlmProvider(): LlmProvider {
   // Auto-detect provider based on available API keys
@@ -17,6 +18,11 @@ export function createLlmProvider(): LlmProvider {
       return new OpenAIProvider();
     case 'anthropic':
       return new AnthropicProvider();
+    case 'cliproxy':
+      // CLI Proxy provider: prepends system prompt to first user message
+      // instead of using `system` parameter. Workaround for CLI Proxy API
+      // which replaces system prompts for certain user agents.
+      return new CliProxyProvider();
     default:
       throw new Error(`Unsupported LLM provider: ${provider}`);
   }

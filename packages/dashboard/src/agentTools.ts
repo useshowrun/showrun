@@ -15,7 +15,8 @@ import {
   type Conversation,
 } from './db.js';
 import { join } from 'path';
-import { mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { parse as parseShowScript, ShowScriptSyntaxError } from '@showrun/showscript';
 
 /**
  * Redact common sensitive patterns (tokens, passwords, credentials) from error messages.
@@ -145,7 +146,7 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
     function: {
       name: 'editor_create_pack',
       description:
-        'Create a new JSON Task Pack. Call this FIRST when starting work on a new automation flow. Returns the created pack info including packId. After creating, use editor_apply_flow_patch to add steps to the flow. Also call conversation_link_pack to associate the pack with the current conversation.',
+        'Create a new Task Pack. Call this FIRST when starting work on a new automation flow. Returns the created pack info including packId. After creating, use showscript_write_flow to write a ShowScript flow. Also call conversation_link_pack to associate the pack with the current conversation.',
       parameters: {
         type: 'object',
         properties: {
@@ -172,6 +173,35 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
           inputs: { type: 'object', description: 'Input values object' },
         },
         required: ['inputs'],
+      },
+    },
+  },
+  // ── ShowScript tools ──
+  {
+    type: 'function',
+    function: {
+      name: 'showscript_write_flow',
+      description:
+        'Write ShowScript source to the linked pack\'s flow.showscript file. Validates the source first and returns errors if invalid. Also updates taskpack.json kind to "showscript".',
+      parameters: {
+        type: 'object',
+        properties: {
+          source: { type: 'string', description: 'ShowScript source code to write' },
+        },
+        required: ['source'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'showscript_read_flow',
+      description:
+        'Read the current flow.showscript content from the linked pack. Returns the ShowScript source code, or an error if no flow.showscript exists.',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
       },
     },
   },
@@ -705,6 +735,8 @@ export interface AgentToolContext {
   packMap?: Map<string, { pack: unknown; path: string }>;
   /** Technique manager (null when vector store not configured) */
   techniqueManager?: import('@showrun/techniques').TechniqueManager | null | undefined;
+  /** Callback when pack files are updated (e.g., showscript written) */
+  onPackFilesUpdated?: () => void;
 }
 
 /**
@@ -793,6 +825,7 @@ function toolNameToInternal(name: string): string {
   if (name.startsWith('browser_')) return name.slice(8);
   if (name.startsWith('agent_')) return name.slice(6);
   if (name.startsWith('conversation_')) return name.slice(13);
+  if (name.startsWith('showscript_')) return 'showscript_' + name.slice(11); // keep full name for dispatch
   return name;
 }
 
@@ -850,16 +883,6 @@ export interface ExecuteToolResult {
  * Execute one agent tool by name (editor.* or browser.*) with parsed arguments.
  * Returns string for LLM and optional browser snapshot for response.
  */
-/** Tools that only the initializer agent should use (pack creation is automatic now) */
-const INITIALIZER_ONLY_TOOLS = new Set([
-  'editor_create_pack',
-  'conversation_link_pack',
-]);
-
-/** Tool definitions for the main agent (excludes pack creation/linking - handled by initializer) */
-export const MAIN_AGENT_TOOL_DEFINITIONS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
-  t => !INITIALIZER_ONLY_TOOLS.has(t.function.name)
-);
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Two-Agent Architecture: Exploration + Editor tool splits
@@ -872,7 +895,7 @@ const AGENT_BUILD_FLOW_TOOL: ToolDef = {
     name: 'agent_build_flow',
     description:
       'Delegate flow building to the Editor Agent. Call this after exploration is complete and roadmap is approved. ' +
-      'The Editor Agent will build the DSL flow, test it with editor_run_pack, and return results. ' +
+      'The Editor Agent will build the ShowScript flow, test it with editor_run_pack, and return results. ' +
       'You MUST provide comprehensive exploration context (all API endpoints, DOM structure, auth info, pagination). ' +
       'Do not call this more than 3 times per conversation.',
     parameters: {
@@ -881,21 +904,20 @@ const AGENT_BUILD_FLOW_TOOL: ToolDef = {
         instruction: {
           type: 'string',
           description:
-            'The approved roadmap + implementation instructions. Include: what steps to build, approach (API vs DOM), data to extract, inputs/collectibles to define.',
+            'The approved roadmap + implementation instructions. Include: what steps to build, approach (API vs DOM), data to extract, inputs/outputs to define.',
         },
         explorationContext: {
           type: 'string',
           description:
             'All exploration findings. Include: API endpoints discovered (URL, method, response structure), ' +
-            'the EXACT request body for POST requests, ' +
-            'whether the site supports URL-based filtering (e.g., /items?category=X triggers filtered API calls) — ' +
-            'if yes, provide a hardcoded example URL with a specific filter value so the Editor Agent can use the ' +
-            '"navigate with known value then bodyReplace" strategy for complex POST bodies. ' +
-            'Also include DOM structure notes, auth requirements, pagination info, and relevant techniques from the Techniques DB.',
+            'the EXACT request body for POST requests (especially facetFilters or query params), ' +
+            'captured request IDs from browser_network_get, ' +
+            'URL-based filtering info if the site supports it. ' +
+            'Also include DOM structure notes, auth requirements, pagination info.',
         },
         testInputs: {
           type: 'object',
-          description: 'Input values for testing the flow with editor_run_pack (e.g., {"batch": "W24"}).',
+          description: 'Input values for testing the flow with editor_run_pack (e.g., {"batch": "Winter 2024"}).',
         },
       },
       required: ['instruction', 'explorationContext'],
@@ -903,12 +925,13 @@ const AGENT_BUILD_FLOW_TOOL: ToolDef = {
   },
 };
 
-/** Editor-only tools (for the Editor Agent) */
+/** Editor-only tools (for the Editor Agent) — ShowScript workflow */
 const EDITOR_TOOL_NAMES = new Set([
   'editor_read_pack',
   'editor_list_secrets',
-  'editor_apply_flow_patch',
   'editor_run_pack',
+  'showscript_write_flow',
+  'showscript_read_flow',
 ]);
 
 /** Editor Agent tools: editor tools only (no browser, no conversation) */
@@ -1192,9 +1215,9 @@ export async function executeAgentTool(
         // Check if conversation already has a linked pack
         if (ctx.packId) {
           return wrap(JSON.stringify({
-            error: `A pack is already linked to this conversation: "${ctx.packId}". Do not create a new pack. Use editor_read_pack() to see the current flow, then use editor_apply_flow_patch to modify it.`,
+            error: `A pack is already linked to this conversation: "${ctx.packId}". Do not create a new pack. Use editor_read_pack() to see the current flow, then use showscript_write_flow to write a new flow.`,
             existingPackId: ctx.packId,
-            suggestion: 'Call editor_read_pack() first to understand the existing flow, then use editor_apply_flow_patch to make changes.',
+            suggestion: 'Call editor_read_pack() first to understand the existing flow, then use showscript_write_flow to write ShowScript.',
           }, null, 2));
         }
 
@@ -1206,7 +1229,7 @@ export async function executeAgentTool(
         const result = await taskPackEditor.createPack(id, name, description);
         return wrap(JSON.stringify({
           ...result,
-          message: `Pack "${id}" created successfully. Use editor_apply_flow_patch to add steps, and conversation_link_pack to associate it with this conversation.`,
+          message: `Pack "${id}" created successfully. Use showscript_write_flow to write the flow, and conversation_link_pack to associate it with this conversation.`,
         }, null, 2));
       }
       case 'run_pack': {
@@ -1233,6 +1256,73 @@ export async function executeAgentTool(
         }
 
         return wrap(truncateToolOutput(fullJson, 'run_pack result'));
+      }
+      // ── ShowScript tools ──
+      case 'showscript_write_flow': {
+        const packId = (args.packId as string) || ctx.packId;
+        if (!packId) throw new Error('No pack linked to this conversation');
+        const source = args.source as string;
+        if (typeof source !== 'string') throw new Error('source required');
+
+        // Validate ShowScript before writing
+        try {
+          parseShowScript(source);
+        } catch (err) {
+          if (err instanceof ShowScriptSyntaxError) {
+            return wrap(JSON.stringify({
+              ok: false,
+              errors: [{
+                message: err.message,
+                line: err.location?.start?.line,
+                column: err.location?.start?.column,
+              }],
+            }, null, 2));
+          }
+          return wrap(JSON.stringify({
+            ok: false,
+            errors: [{ message: err instanceof Error ? err.message : String(err) }],
+          }, null, 2));
+        }
+
+        // Get pack path
+        const packs = await taskPackEditor.listPacks();
+        const pack = packs.find((p: { id: string; path?: string }) => p.id === packId);
+        if (!pack?.path) throw new Error(`Pack ${packId} not found or path not available`);
+
+        // Write flow.showscript
+        const flowPath = join(pack.path, 'flow.showscript');
+        writeFileSync(flowPath, source, 'utf-8');
+
+        // Update taskpack.json kind to "showscript"
+        const manifestPath = join(pack.path, 'taskpack.json');
+        try {
+          const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+          manifest.kind = 'showscript';
+          writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n', 'utf-8');
+        } catch (e) {
+          // If we can't update the manifest, warn but don't fail
+          console.warn(`[showscript_write_flow] Could not update taskpack.json kind:`, e);
+        }
+
+        // Notify that pack files were updated
+        ctx.onPackFilesUpdated?.();
+
+        return wrap(JSON.stringify({ ok: true, success: true, path: flowPath }));
+      }
+      case 'showscript_read_flow': {
+        const packId = (args.packId as string) || ctx.packId;
+        if (!packId) throw new Error('No pack linked to this conversation');
+
+        const packs = await taskPackEditor.listPacks();
+        const pack = packs.find((p: { id: string; path?: string }) => p.id === packId);
+        if (!pack?.path) throw new Error(`Pack ${packId} not found or path not available`);
+
+        const flowPath = join(pack.path, 'flow.showscript');
+        if (!existsSync(flowPath)) {
+          return wrap(JSON.stringify({ error: 'No flow.showscript file found in pack directory', path: flowPath }));
+        }
+        const source = readFileSync(flowPath, 'utf-8');
+        return wrap(JSON.stringify({ source }));
       }
       // Browser tools - sessionId is auto-injected via effectiveArgs
       case 'set_proxy': {
@@ -1490,24 +1580,12 @@ export async function executeAgentTool(
           return wrap(JSON.stringify({ warning: 'No conversation context, status not saved but noted' }));
         }
 
-        // Guard: "ready" requires a pack with actual flow steps and collectibles
+        // Guard: "ready" requires a linked pack
         if (status === 'ready') {
           if (!ctx.packId) {
             return wrap(JSON.stringify({
-              error: 'Cannot set status to "ready" without a linked pack. Create a pack and implement flow steps first.',
+              error: 'Cannot set status to "ready" without a linked pack. Create a pack and implement a flow first.',
             }));
-          }
-          try {
-            const { flowJson } = await ctx.taskPackEditor.readPack(ctx.packId);
-            const stepCount = flowJson?.flow?.length ?? 0;
-            if (stepCount === 0) {
-              return wrap(JSON.stringify({
-                error: `Cannot set status to "ready": the pack "${ctx.packId}" has 0 flow steps. You must implement DSL steps in the flow using editor_apply_flow_patch before marking as ready. Exploration alone is not enough — the goal is a reusable, deterministic flow.`,
-              }));
-            }
-          } catch (readErr) {
-            console.warn(`[Agent] Could not verify pack "${ctx.packId}" for ready guard:`, readErr);
-            // If we can't read the pack, allow the status change (don't block on read errors)
           }
         }
 

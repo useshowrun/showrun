@@ -4,7 +4,6 @@ import { createTokenChecker } from '../helpers/auth.js';
 import {
   discoverPacks,
   createMCPServerOverHTTP,
-  packIdToToolName,
   type MCPRunStartInfo,
   type MCPRunCompleteInfo,
 } from '@showrun/mcp-server';

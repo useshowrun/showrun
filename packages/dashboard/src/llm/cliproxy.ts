@@ -1,7 +1,13 @@
 /**
- * Anthropic LLM Provider Implementation
- * Uses ANTHROPIC_API_KEY from environment
- * Supports extended thinking and streaming
+ * CLI Proxy LLM Provider Implementation
+ * Based on AnthropicProvider but prepends system prompt to first user message
+ * instead of using the `system` parameter.
+ *
+ * This is a workaround for CLI Proxy API which replaces system prompts
+ * when it detects certain user agents (like Claude Code).
+ *
+ * The User-Agent header fix is kept as a belt-and-suspenders approach,
+ * but the primary mechanism is now system-in-message.
  */
 
 import type {
@@ -93,6 +99,61 @@ function convertToolDef(tool: ToolDef): AnthropicTool {
   };
 }
 
+/**
+ * Prepends system prompt to the first user message content.
+ * Format: <system>{systemPrompt}</system>\n\n{originalContent}
+ */
+function prependSystemToFirstUserMessage(
+  messages: Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }>,
+  systemPrompt: string | undefined
+): Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }> {
+  if (!systemPrompt) return messages;
+
+  const result = [...messages];
+  const firstUserIndex = result.findIndex((m) => m.role === 'user');
+
+  if (firstUserIndex === -1) {
+    // No user message, prepend a user message with system prompt
+    result.unshift({
+      role: 'user',
+      content: `<system>${systemPrompt}</system>`,
+    });
+  } else {
+    const firstUserMsg = result[firstUserIndex];
+    if (typeof firstUserMsg.content === 'string') {
+      result[firstUserIndex] = {
+        ...firstUserMsg,
+        content: `<system>${systemPrompt}</system>\n\n${firstUserMsg.content}`,
+      };
+    } else if (Array.isArray(firstUserMsg.content)) {
+      // Find the first text block and prepend to it
+      const contentBlocks = [...firstUserMsg.content];
+      const firstTextIndex = contentBlocks.findIndex((b) => b.type === 'text');
+
+      if (firstTextIndex !== -1) {
+        const textBlock = contentBlocks[firstTextIndex] as { type: 'text'; text?: string };
+        contentBlocks[firstTextIndex] = {
+          ...textBlock,
+          text: `<system>${systemPrompt}</system>\n\n${textBlock.text || ''}`,
+        };
+      } else {
+        // No text block, prepend a new text block
+        contentBlocks.unshift({
+          type: 'text',
+          text: `<system>${systemPrompt}</system>`,
+        } as AnthropicContentBlock);
+      }
+
+      result[firstUserIndex] = {
+        ...firstUserMsg,
+        content: contentBlocks,
+      };
+    }
+  }
+
+  return result;
+}
+
 function convertMessages(
   messages: Array<ChatMessage | { role: 'tool'; content: string; tool_call_id: string } | { role: 'assistant'; content: string | null; tool_calls: ToolCall[] }>
 ): Array<{ role: 'user' | 'assistant'; content: string | AnthropicContentBlock[] }> {
@@ -171,8 +232,8 @@ function convertMessages(
   return result;
 }
 
-export class AnthropicProvider implements LlmProvider {
-  name = 'anthropic';
+export class CliProxyProvider implements LlmProvider {
+  name = 'cliproxy';
   private apiKey: string;
   private baseUrl: string;
   private model: string;
@@ -195,9 +256,7 @@ export class AnthropicProvider implements LlmProvider {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'x-api-key': this.apiKey,
-      // 'anthropic-version': '2023-06-01',
-      // User-Agent prevents CLI Proxy from replacing our system prompt with Claude Code's prompt.
-      // The proxy only injects its own prompt for recognized Claude CLI user agents.
+      // User-Agent kept as belt-and-suspenders, though primary fix is system-in-message
       'User-Agent': 'ShowRun/1.0 (Anthropic SDK)',
     };
 
@@ -229,32 +288,32 @@ export class AnthropicProvider implements LlmProvider {
         // Handle rate limits (429) and overloaded (529)
         if ((response.status === 429 || response.status === 529) && attempt < maxRetries - 1) {
           const waitSec = parseRateLimitWaitSeconds(response, bodyText);
-          console.log(`[Anthropic] Rate limited, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`);
+          console.log(`[CliProxy] Rate limited, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`);
           await sleep(waitSec * 1000);
           continue;
         }
 
         // 4xx errors (except 429) are client errors - don't retry, they won't succeed
         if (response.status >= 400 && response.status < 500) {
-          throw new Error(`Anthropic API error: ${response.status} ${bodyText}`);
+          throw new Error(`CLI Proxy API error: ${response.status} ${bodyText}`);
         }
 
         // 5xx errors (except 529) - retry with backoff
         if (response.status >= 500 && attempt < maxRetries - 1) {
           const waitSec = Math.min(2 ** attempt * 2, 30);
-          console.log(`[Anthropic] Server error ${response.status}, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`);
+          console.log(`[CliProxy] Server error ${response.status}, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`);
           await sleep(waitSec * 1000);
           continue;
         }
 
-        throw new Error(`Anthropic API error: ${response.status} ${bodyText}`);
+        throw new Error(`CLI Proxy API error: ${response.status} ${bodyText}`);
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         // Only retry network errors, not API errors (which are already thrown above)
-        const isNetworkError = !lastError.message.startsWith('Anthropic API error:');
+        const isNetworkError = !lastError.message.startsWith('CLI Proxy API error:');
         if (isNetworkError && attempt < maxRetries - 1) {
           const waitSec = Math.min(2 ** attempt * 2, 30);
-          console.log(`[Anthropic] Network error, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`);
+          console.log(`[CliProxy] Network error, waiting ${waitSec}s before retry ${attempt + 2}/${maxRetries}`);
           await sleep(waitSec * 1000);
           continue;
         }
@@ -272,14 +331,17 @@ export class AnthropicProvider implements LlmProvider {
   }): Promise<T> {
     const { system, prompt } = args;
 
+    // Prepend system to prompt instead of using system parameter
+    const modifiedPrompt = `<system>${system}</system>\n\n${prompt}`;
+
     const response = await this.fetchWithRetry(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
       headers: this.getHeaders(),
       body: JSON.stringify({
         model: this.model,
         max_tokens: DEFAULT_MAX_TOKENS,
-        system,
-        messages: [{ role: 'user', content: prompt }],
+        // No system parameter - it's in the message
+        messages: [{ role: 'user', content: modifiedPrompt }],
       }),
     });
 
@@ -293,7 +355,7 @@ export class AnthropicProvider implements LlmProvider {
     try {
       return JSON.parse(jsonStr) as T;
     } catch (error) {
-      throw new Error(`Failed to parse JSON from Anthropic response: ${error instanceof Error ? error.message : String(error)}`);
+      throw new Error(`Failed to parse JSON from CLI Proxy response: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
@@ -302,7 +364,10 @@ export class AnthropicProvider implements LlmProvider {
     messages: ChatMessage[];
   }): Promise<string> {
     const { systemPrompt, messages } = args;
-    const anthropicMessages = convertMessages(messages);
+    let anthropicMessages = convertMessages(messages);
+
+    // Prepend system prompt to first user message instead of using system parameter
+    anthropicMessages = prependSystemToFirstUserMessage(anthropicMessages, systemPrompt);
 
     const response = await this.fetchWithRetry(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
@@ -310,7 +375,7 @@ export class AnthropicProvider implements LlmProvider {
       body: JSON.stringify({
         model: this.model,
         max_tokens: DEFAULT_MAX_TOKENS,
-        ...(systemPrompt && { system: systemPrompt }),
+        // No system parameter - it's in the first user message
         messages: anthropicMessages,
       }),
     });
@@ -330,8 +395,11 @@ export class AnthropicProvider implements LlmProvider {
     tools: ToolDef[];
   }): Promise<ChatWithToolsResult> {
     const { systemPrompt, messages, tools } = args;
-    const anthropicMessages = convertMessages(messages);
+    let anthropicMessages = convertMessages(messages);
     const anthropicTools = tools.map(convertToolDef);
+
+    // Prepend system prompt to first user message instead of using system parameter
+    anthropicMessages = prependSystemToFirstUserMessage(anthropicMessages, systemPrompt);
 
     const response = await this.fetchWithRetry(`${this.baseUrl}/v1/messages`, {
       method: 'POST',
@@ -339,7 +407,7 @@ export class AnthropicProvider implements LlmProvider {
       body: JSON.stringify({
         model: this.model,
         max_tokens: DEFAULT_MAX_TOKENS,
-        ...(systemPrompt && { system: systemPrompt }),
+        // No system parameter - it's in the first user message
         messages: anthropicMessages,
         ...(anthropicTools.length > 0 && { tools: anthropicTools }),
       }),
@@ -376,15 +444,18 @@ export class AnthropicProvider implements LlmProvider {
     enableThinking?: boolean;
   }): AsyncGenerator<StreamEvent, ChatWithToolsResult, unknown> {
     const { systemPrompt, messages, tools, enableThinking = true } = args;
-    const anthropicMessages = convertMessages(messages);
+    let anthropicMessages = convertMessages(messages);
     const anthropicTools = tools.map(convertToolDef);
+
+    // Prepend system prompt to first user message instead of using system parameter
+    anthropicMessages = prependSystemToFirstUserMessage(anthropicMessages, systemPrompt);
 
     // Build request body
     const body: Record<string, unknown> = {
       model: this.model,
       max_tokens: DEFAULT_MAX_TOKENS,
       stream: true,
-      ...(systemPrompt && { system: systemPrompt }),
+      // No system parameter - it's in the first user message
       messages: anthropicMessages,
       ...(anthropicTools.length > 0 && { tools: anthropicTools }),
     };
@@ -427,32 +498,32 @@ export class AnthropicProvider implements LlmProvider {
         // Handle rate limits (429) and overloaded (529)
         if ((fetchResponse.status === 429 || fetchResponse.status === 529) && attempt < RATE_LIMIT_MAX_RETRIES - 1) {
           const waitSec = parseRateLimitWaitSeconds(fetchResponse, bodyText);
-          console.log(`[Anthropic] Rate limited, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
+          console.log(`[CliProxy] Rate limited, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
           await sleep(waitSec * 1000);
           continue;
         }
 
         // 4xx errors (except 429) are client errors - don't retry, they won't succeed
         if (fetchResponse.status >= 400 && fetchResponse.status < 500) {
-          throw new Error(`Anthropic API error: ${fetchResponse.status} ${bodyText}`);
+          throw new Error(`CLI Proxy API error: ${fetchResponse.status} ${bodyText}`);
         }
 
         // 5xx errors (except 529) - retry with backoff
         if (fetchResponse.status >= 500 && attempt < RATE_LIMIT_MAX_RETRIES - 1) {
           const waitSec = Math.min(2 ** attempt * 2, 30);
-          console.log(`[Anthropic] Server error ${fetchResponse.status}, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
+          console.log(`[CliProxy] Server error ${fetchResponse.status}, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
           await sleep(waitSec * 1000);
           continue;
         }
 
-        throw new Error(`Anthropic API error: ${fetchResponse.status} ${bodyText}`);
+        throw new Error(`CLI Proxy API error: ${fetchResponse.status} ${bodyText}`);
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
         // Only retry network errors, not API errors (which are already thrown above)
-        const isNetworkError = !lastError.message.startsWith('Anthropic API error:');
+        const isNetworkError = !lastError.message.startsWith('CLI Proxy API error:');
         if (isNetworkError && attempt < RATE_LIMIT_MAX_RETRIES - 1) {
           const waitSec = Math.min(2 ** attempt * 2, 30);
-          console.log(`[Anthropic] Network error, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
+          console.log(`[CliProxy] Network error, waiting ${waitSec}s before retry ${attempt + 2}/${RATE_LIMIT_MAX_RETRIES}`);
           await sleep(waitSec * 1000);
           continue;
         }
@@ -465,7 +536,7 @@ export class AnthropicProvider implements LlmProvider {
     }
 
     if (!response.body) {
-      throw new Error('No response body from Anthropic API');
+      throw new Error('No response body from CLI Proxy API');
     }
 
     let reader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -561,7 +632,7 @@ export class AnthropicProvider implements LlmProvider {
               }
 
               case 'error': {
-                throw new Error(`Anthropic stream error: ${JSON.stringify(event.error)}`);
+                throw new Error(`CLI Proxy stream error: ${JSON.stringify(event.error)}`);
               }
             }
           } catch (parseError) {

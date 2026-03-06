@@ -115,3 +115,11 @@ export function writeFlowJson(
   const content = JSON.stringify(flowData, null, 2) + '\n';
   atomicWrite(flowPath, content);
 }
+
+/**
+ * Write flow.showscript
+ */
+export function writeShowScript(packDir: string, source: string): void {
+  const scriptPath = join(packDir, 'flow.showscript');
+  atomicWrite(scriptPath, source);
+}

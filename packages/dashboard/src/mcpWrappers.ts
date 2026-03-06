@@ -19,10 +19,12 @@ import {
 } from '@showrun/core';
 import type { ResultStoreProvider, CollectibleSchemaField } from '@showrun/core';
 import { discoverPacks } from '@showrun/mcp-server';
-import { JSONLLogger } from '@showrun/harness';
+import { JSONLLogger, showscriptExecutor } from '@showrun/harness';
+import { parse as parseShowScript } from '@showrun/showscript';
+import type { InputsBlock, OutputsBlock, TypeSpec } from '@showrun/showscript';
 import { randomBytes } from 'crypto';
 import { resolve } from 'path';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 
 /**
  * Flow patch operation
@@ -54,6 +56,119 @@ export interface RunPackResult {
   _hints?: string[];
   /** Key for retrieving stored result via showrun_query_results */
   _resultKey?: string;
+}
+
+/**
+ * Maps ShowScript TypeSpec to JSON-DSL input type string.
+ */
+function showScriptTypeToJsonDslType(typeSpec: TypeSpec): string {
+  switch (typeSpec) {
+    case 'string':
+    case 'secret':
+      return 'string';
+    case 'number':
+      return 'number';
+    case 'bool':
+      return 'boolean';
+    case 'array':
+      return 'array';
+    case 'object':
+      return 'object';
+    default:
+      return 'string';
+  }
+}
+
+/**
+ * Maps ShowScript TypeSpec to PrimitiveType for collectibles.
+ * Note: array and object types are not supported in collectibles,
+ * so we fall back to 'string' for those.
+ */
+function showScriptTypeToPrimitiveType(typeSpec: TypeSpec): 'string' | 'number' | 'boolean' {
+  switch (typeSpec) {
+    case 'number':
+      return 'number';
+    case 'bool':
+      return 'boolean';
+    case 'string':
+    case 'secret':
+    case 'array':
+    case 'object':
+    default:
+      return 'string';
+  }
+}
+
+/**
+ * Parse inputs from a ShowScript source file and convert to JSON-DSL InputSchema format.
+ */
+function parseShowScriptInputs(source: string): Record<string, { type: string; description?: string; required?: boolean; default?: unknown }> {
+  const ast = parseShowScript(source);
+  const inputsBlock = ast.blocks.find((b): b is InputsBlock => b.type === 'InputsBlock');
+  
+  if (!inputsBlock) {
+    return {};
+  }
+
+  const inputs: Record<string, { type: string; description?: string; required?: boolean; default?: unknown }> = {};
+  
+  for (const decl of inputsBlock.declarations) {
+    const entry: { type: string; description?: string; required?: boolean; default?: unknown } = {
+      type: showScriptTypeToJsonDslType(decl.typeSpec),
+    };
+    
+    // Required if no default value
+    entry.required = !decl.defaultValue;
+    
+    // Extract default value if present
+    if (decl.defaultValue) {
+      switch (decl.defaultValue.type) {
+        case 'StringLiteral':
+          entry.default = decl.defaultValue.value;
+          break;
+        case 'NumberLiteral':
+          entry.default = decl.defaultValue.value;
+          break;
+        case 'BooleanLiteral':
+          entry.default = decl.defaultValue.value;
+          break;
+        case 'NullLiteral':
+          entry.default = null;
+          break;
+        case 'ArrayLiteral':
+          // For array literals, we'd need to recursively evaluate — for now just mark as having a default
+          entry.default = [];
+          break;
+        case 'ObjectLiteral':
+          // Same for object literals
+          entry.default = {};
+          break;
+        // For other expression types, we can't easily extract the default value
+        // but we know it has one, so it's not required
+      }
+    }
+    
+    inputs[decl.name] = entry;
+  }
+  
+  return inputs;
+}
+
+/**
+ * Parse outputs from a ShowScript source file and convert to CollectibleDefinition format.
+ */
+function parseShowScriptOutputs(source: string): CollectibleDefinition[] {
+  const ast = parseShowScript(source);
+  const outputsBlock = ast.blocks.find((b): b is OutputsBlock => b.type === 'OutputsBlock');
+  
+  if (!outputsBlock) {
+    return [];
+  }
+
+  return outputsBlock.declarations.map(decl => ({
+    name: decl.name,
+    type: showScriptTypeToPrimitiveType(decl.typeSpec),
+  }));
 }
 
 /**
@@ -175,8 +290,32 @@ export class TaskPackEditorWrapper {
     }
 
     const manifest = TaskPackLoader.loadManifest(packInfo.path);
+    
+    // Handle ShowScript packs
+    if (manifest.kind === 'showscript') {
+      const flowPath = resolve(packInfo.path, 'flow.showscript');
+      if (!existsSync(flowPath)) {
+        throw new Error(`ShowScript pack ${packId} is missing flow.showscript file`);
+      }
+      
+      const source = readFileSync(flowPath, 'utf-8');
+      const inputs = parseShowScriptInputs(source);
+      const collectibles = parseShowScriptOutputs(source);
+      
+      return {
+        taskpackJson: manifest,
+        flowJson: {
+          inputs,
+          collectibles,
+          flow: [], // ShowScript packs don't have DSL steps
+        },
+        showscriptSource: source,
+      };
+    }
+    
+    // Handle JSON-DSL packs
     if (manifest.kind !== 'json-dsl') {
-      throw new Error(`Pack ${packId} is not a JSON-DSL pack`);
+      throw new Error(`Pack ${packId} has unknown kind: ${manifest.kind}`);
     }
 
     const flowPath = resolve(packInfo.path, 'flow.json');
@@ -432,6 +571,7 @@ export class TaskPackEditorWrapper {
         profileId: packId,
         packPath: packInfo.path,
         skipHttpReplay: true,
+        showscriptExecutor,
       });
 
       // Auto-store result if a store exists for this pack

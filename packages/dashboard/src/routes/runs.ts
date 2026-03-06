@@ -4,6 +4,7 @@ import type { DashboardContext } from '../types/context.js';
 import { createTokenChecker } from '../helpers/auth.js';
 import { runTaskPack, TaskPackLoader } from '@showrun/core';
 import { SocketLogger } from '../logger.js';
+import { showscriptExecutor } from '@showrun/harness';
 
 export function createRunsRouter(ctx: DashboardContext): Router {
   const router = Router();
@@ -67,6 +68,7 @@ export function createRunsRouter(ctx: DashboardContext): Router {
           headless: !ctx.headful,
           profileId: packId,
           packPath: packInfo.path,
+          showscriptExecutor,
         });
 
         ctx.runManager.updateRun(runId, {

@@ -7,8 +7,9 @@ import { runShowScript } from './showscript-runner.js';
 /**
  * ShowScript executor that bridges core → harness.
  * Passed as a callback to core's runTaskPack to avoid circular deps.
+ * Exported for use by dashboard and other consumers.
  */
-const showscriptExecutor: ShowScriptExecutor = async (opts) => {
+export const showscriptExecutor: ShowScriptExecutor = async (opts) => {
   return runShowScript({
     scriptPath: 'flow.showscript',
     source: opts.source,

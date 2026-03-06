@@ -3,6 +3,8 @@ import { join } from 'path';
 import type { TaskPack, TaskPackManifest, InputSchema, CollectibleDefinition, SecretDefinition } from './types.js';
 import type { DslStep } from './dsl/types.js';
 import { loadSnapshots } from './requestSnapshot.js';
+import { parse as parseShowScript } from '@showrun/showscript';
+import type { TypeSpec, InputsBlock, OutputsBlock } from '@showrun/showscript';
 
 /**
  * Structure of the .secrets.json file
@@ -126,6 +128,10 @@ export class TaskPackLoader {
       throw new Error(`Failed to read flow.showscript: ${error instanceof Error ? error.message : String(error)}`);
     }
 
+    // Parse ShowScript to extract inputs and outputs
+    const inputs = this.parseShowScriptInputs(source);
+    const collectibles = this.parseShowScriptOutputs(source);
+
     return {
       metadata: {
         id: manifest.id,
@@ -134,13 +140,117 @@ export class TaskPackLoader {
         description: manifest.description,
       },
       kind: 'showscript',
-      inputs: {},
-      collectibles: [],
+      inputs,
+      collectibles,
       flow: [], // empty — showscript packs don't use DSL steps
       showscriptSource: source,
       auth: manifest.auth,
       browser: manifest.browser,
     };
+  }
+
+  /**
+   * Convert ShowScript TypeSpec to JSON-DSL PrimitiveType
+   */
+  private static showScriptTypeToJsonDslType(typeSpec: TypeSpec): 'string' | 'number' | 'boolean' {
+    switch (typeSpec) {
+      case 'number':
+        return 'number';
+      case 'bool':
+        return 'boolean';
+      case 'string':
+      case 'secret':
+      case 'array':
+      case 'object':
+      default:
+        return 'string';
+    }
+  }
+
+  /**
+   * Convert ShowScript TypeSpec to CollectibleDefinition type
+   */
+  private static showScriptTypeToPrimitiveType(typeSpec: TypeSpec): 'string' | 'number' | 'boolean' {
+    switch (typeSpec) {
+      case 'number':
+        return 'number';
+      case 'bool':
+        return 'boolean';
+      case 'string':
+      case 'secret':
+      case 'array':
+      case 'object':
+      default:
+        return 'string';
+    }
+  }
+
+  /**
+   * Parse inputs from ShowScript source and convert to InputSchema format
+   */
+  private static parseShowScriptInputs(source: string): InputSchema {
+    const ast = parseShowScript(source);
+    const inputsBlock = ast.blocks.find((b): b is InputsBlock => b.type === 'InputsBlock');
+
+    if (!inputsBlock) {
+      return {};
+    }
+
+    const inputs: InputSchema = {};
+
+    for (const decl of inputsBlock.declarations) {
+      const entry: InputSchema[string] = {
+        type: this.showScriptTypeToJsonDslType(decl.typeSpec),
+      };
+
+      // Required if no default value
+      entry.required = !decl.defaultValue;
+
+      // Extract default value if present
+      if (decl.defaultValue) {
+        switch (decl.defaultValue.type) {
+          case 'StringLiteral':
+            entry.default = decl.defaultValue.value;
+            break;
+          case 'NumberLiteral':
+            entry.default = decl.defaultValue.value;
+            break;
+          case 'BooleanLiteral':
+            entry.default = decl.defaultValue.value;
+            break;
+          case 'NullLiteral':
+            entry.default = null;
+            break;
+          case 'ArrayLiteral':
+            entry.default = [];
+            break;
+          case 'ObjectLiteral':
+            entry.default = {};
+            break;
+        }
+      }
+
+      inputs[decl.name] = entry;
+    }
+
+    return inputs;
+  }
+
+  /**
+   * Parse outputs from ShowScript source and convert to CollectibleDefinition[] format
+   */
+  private static parseShowScriptOutputs(source: string): CollectibleDefinition[] {
+    const ast = parseShowScript(source);
+    const outputsBlock = ast.blocks.find((b): b is OutputsBlock => b.type === 'OutputsBlock');
+
+    if (!outputsBlock) {
+      return [];
+    }
+
+    return outputsBlock.declarations.map(decl => ({
+      name: decl.name,
+      type: this.showScriptTypeToPrimitiveType(decl.typeSpec),
+    }));
   }
 
   /**
