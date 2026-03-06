@@ -3,6 +3,7 @@ import type { DslStep } from './dsl/types.js';
 import type { NetworkCaptureApi } from './networkCapture.js';
 import type { SnapshotFile } from './requestSnapshot.js';
 import type { ProxyConfig } from './proxy/types.js';
+import type { ReplayTransportConfig } from './transport/types.js';
 
 /**
  * Primitive types supported in input/collectible schemas
@@ -51,6 +52,12 @@ export interface BrowserSettings {
    * Set by the agent's `set_proxy` tool or manually in taskpack.json.
    */
   proxy?: ProxyConfig;
+  /**
+   * Replay transport for network_replay steps.
+   * Controls which HTTP client sends replayed requests.
+   * Default: 'playwright' (uses page.request.fetch)
+   */
+  replayTransport?: ReplayTransportConfig;
 }
 
 /**

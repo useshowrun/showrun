@@ -17,6 +17,7 @@ function createMockScope(overrides?: Partial<PlaywrightJsScope>): PlaywrightJsSc
     frame: {} as any,
     inputs: { query: 'hello' },
     secrets: { apiKey: 'secret123' },
+    replay: vi.fn().mockResolvedValue({ status: 200, contentType: 'application/json', body: '{}', bodySize: 2 }),
     ...overrides,
   };
 }
@@ -126,6 +127,17 @@ describe('executePlaywrightJs', () => {
     const scope = createMockScope();
     const result = await executePlaywrightJs(code, scope);
     expect(result).toEqual({});
+  });
+
+  it('can access replay function', async () => {
+    const code = `module.exports = async function({ replay }) {
+      const res = await replay('req-1');
+      return { status: res.status };
+    };`;
+    const scope = createMockScope();
+    const result = await executePlaywrightJs(code, scope);
+    expect(result).toEqual({ status: 200 });
+    expect(scope.replay).toHaveBeenCalledWith('req-1');
   });
 
   it('times out on long-running code', async () => {
