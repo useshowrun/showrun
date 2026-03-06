@@ -10,10 +10,10 @@ describe('createReplayTransport', () => {
   const mockPage = {} as any;
   const mockContext = {} as any;
 
-  it('returns PlaywrightTransport by default (no config)', () => {
+  it('returns ImpitTransport by default (no config)', () => {
     const transport = createReplayTransport(undefined, mockPage, mockContext);
-    expect(transport).toBeInstanceOf(PlaywrightTransport);
-    expect(transport.name).toBe('playwright');
+    expect(transport).toBeInstanceOf(ImpitTransport);
+    expect(transport.name).toBe('impit');
   });
 
   it('returns PlaywrightTransport when explicitly configured', () => {
