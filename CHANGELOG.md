@@ -12,6 +12,14 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 - [fixed] Result store not initialized for task packs created at runtime (e.g. via teach mode); now lazily created on first run
 - [added] Swappable replay transport: configure `impit` as alternative to Playwright for `network_replay` steps — browser-grade TLS fingerprint impersonation bypasses Cloudflare bot detection without depending on the browser's networking stack
+- [changed] Task Packs page uses a master-detail split layout — list on the left, PackEditor inline on the right (no more full-page navigation)
+- [fixed] SecretsEditor and TeachMode components now use dark theme CSS variables — previously had unreadable light-colored backgrounds
+- [changed] Dashboard nav rail is now expandable — click collapse/expand to toggle icon-only vs icon+label mode
+- [changed] Runs page uses a master-detail split layout — list on the left, detail on the right (no more scrolling past the list to see results)
+- [changed] PackEditor buttons and styling updated to match dashboard dark theme
+- [fixed] Sidebar no longer shows a duplicate logo; shows "Conversations" label instead
+- [added] Dashboard favicon and theme-color meta tag, matching the landing page
+- [changed] Dashboard redesign: left icon nav rail (Chat/Runs/MCP/Packs) replaces bottom nav, logo moved to upper-left, color palette aligned with landing page, conversations sidebar and chat right panel are now resizable via drag handles
 - [fixed] Release script rollback now uses in-memory snapshots instead of `git checkout`, preventing multi-version revert when git working tree has prior uncommitted changes
 - [changed] Registry client, CLI, and dashboard now use scoped `@username/slug` pack identifiers — install and report commands require the full ref; search results display the scoped format; publish keeps using the short slug (server infers username)
 - [changed] `resolveDefaultPacksDir()` extracted to `@showrun/core` — shared fallback chain (env → local `./taskpacks` → system data dir) used by dashboard, registry install, and serve commands

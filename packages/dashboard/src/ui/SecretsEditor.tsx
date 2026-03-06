@@ -125,7 +125,6 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
     setSaving(true);
     setError(null);
     try {
-      // Get current secrets and add new one
       const newDefinitions = [
         ...secrets.map((s) => ({ name: s.name, description: s.description, required: s.required })),
         { name: newSecretName.trim(), description: newSecretDescription.trim() || undefined, required: newSecretRequired },
@@ -145,7 +144,6 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
         throw new Error(data.error || 'Failed to add secret definition');
       }
 
-      // If a value was provided, set it immediately
       if (newSecretValue.trim()) {
         const valueRes = await fetch(`/api/packs/${packId}/secrets/${encodeURIComponent(newSecretName.trim())}`, {
           method: 'PUT',
@@ -183,7 +181,6 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
     setSaving(true);
     setError(null);
     try {
-      // Remove from definitions
       const newDefinitions = secrets
         .filter((s) => s.name !== name)
         .map((s) => ({ name: s.name, description: s.description, required: s.required }));
@@ -202,7 +199,6 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
         throw new Error(data.error || 'Failed to remove secret definition');
       }
 
-      // Also remove the value if it exists
       const secret = secrets.find((s) => s.name === name);
       if (secret?.hasValue) {
         await fetch(`/api/packs/${packId}/secrets/${encodeURIComponent(name)}`, {
@@ -220,42 +216,42 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
   };
 
   if (loading) {
-    return <div style={{ padding: '12px', color: '#666' }}>Loading secrets...</div>;
+    return <div style={{ padding: '12px', color: 'var(--text-muted)' }}>Loading secrets...</div>;
   }
 
   return (
     <div>
       {error && (
-        <div style={{ background: '#f8d7da', padding: '8px 12px', borderRadius: '4px', marginBottom: '12px', color: '#721c24' }}>
+        <div style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', padding: '8px 12px', borderRadius: '6px', marginBottom: '12px', color: '#f87171' }}>
           {error}
         </div>
       )}
 
       {secrets.length === 0 ? (
-        <div style={{ padding: '12px', color: '#666', fontStyle: 'italic' }}>
+        <div style={{ padding: '12px', color: 'var(--text-muted)', fontStyle: 'italic' }}>
           No secrets defined. Add secrets to store credentials securely.
         </div>
       ) : (
         <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '12px' }}>
           <thead>
-            <tr style={{ borderBottom: '2px solid #ddd' }}>
-              <th style={{ textAlign: 'left', padding: '8px' }}>Name</th>
-              <th style={{ textAlign: 'left', padding: '8px' }}>Description</th>
-              <th style={{ textAlign: 'center', padding: '8px' }}>Required</th>
-              <th style={{ textAlign: 'left', padding: '8px' }}>Value</th>
-              <th style={{ textAlign: 'center', padding: '8px' }}>Actions</th>
+            <tr style={{ borderBottom: '2px solid var(--border-subtle)' }}>
+              <th style={{ textAlign: 'left', padding: '8px', color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600 }}>Name</th>
+              <th style={{ textAlign: 'left', padding: '8px', color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600 }}>Description</th>
+              <th style={{ textAlign: 'center', padding: '8px', color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600 }}>Required</th>
+              <th style={{ textAlign: 'left', padding: '8px', color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600 }}>Value</th>
+              <th style={{ textAlign: 'center', padding: '8px', color: 'var(--text-secondary)', fontSize: '12px', fontWeight: 600 }}>Actions</th>
             </tr>
           </thead>
           <tbody>
             {secrets.map((secret) => (
-              <tr key={secret.name} style={{ borderBottom: '1px solid #eee' }}>
-                <td style={{ padding: '8px', fontFamily: 'monospace' }}>
+              <tr key={secret.name} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                <td style={{ padding: '8px', fontFamily: 'var(--font-mono)', fontSize: '13px', color: 'var(--text-primary)' }}>
                   {secret.name}
                 </td>
-                <td style={{ padding: '8px', color: '#666', fontSize: '13px' }}>
-                  {secret.description || '-'}
+                <td style={{ padding: '8px', color: 'var(--text-muted)', fontSize: '13px' }}>
+                  {secret.description || '—'}
                 </td>
-                <td style={{ padding: '8px', textAlign: 'center' }}>
+                <td style={{ padding: '8px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '13px' }}>
                   {secret.required ? 'Yes' : 'No'}
                 </td>
                 <td style={{ padding: '8px' }}>
@@ -266,29 +262,28 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
                         value={secretValue}
                         onChange={(e) => setSecretValue(e.target.value)}
                         placeholder="Enter secret value"
-                        style={{ flex: 1, padding: '4px 8px', fontFamily: 'monospace' }}
+                        style={{ flex: 1, padding: '4px 8px', fontFamily: 'var(--font-mono)' }}
                         autoFocus
                       />
                       <button
+                        className="btn-primary"
                         onClick={() => handleSetSecret(secret.name)}
                         disabled={saving || !secretValue}
-                        style={{ padding: '4px 8px' }}
+                        style={{ padding: '4px 10px', fontSize: '12px' }}
                       >
                         Save
                       </button>
                       <button
-                        onClick={() => {
-                          setEditingSecret(null);
-                          setSecretValue('');
-                        }}
-                        style={{ padding: '4px 8px' }}
+                        className="btn-secondary"
+                        onClick={() => { setEditingSecret(null); setSecretValue(''); }}
+                        style={{ padding: '4px 10px', fontSize: '12px' }}
                       >
                         Cancel
                       </button>
                     </div>
                   ) : (
-                    <span style={{ fontFamily: 'monospace', color: secret.hasValue ? '#28a745' : '#dc3545' }}>
-                      {secret.hasValue ? secret.preview || '********' : '(not set)'}
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', color: secret.hasValue ? 'var(--status-ready)' : 'var(--status-error)' }}>
+                      {secret.hasValue ? secret.preview || '••••••••' : '(not set)'}
                     </span>
                   )}
                 </td>
@@ -296,10 +291,8 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
                   {editingSecret !== secret.name && (
                     <div style={{ display: 'flex', gap: '4px', justifyContent: 'center' }}>
                       <button
-                        onClick={() => {
-                          setEditingSecret(secret.name);
-                          setSecretValue('');
-                        }}
+                        className="btn-secondary"
+                        onClick={() => { setEditingSecret(secret.name); setSecretValue(''); }}
                         disabled={saving}
                         style={{ padding: '4px 8px', fontSize: '12px' }}
                       >
@@ -307,17 +300,19 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
                       </button>
                       {secret.hasValue && (
                         <button
+                          className="btn-secondary"
                           onClick={() => handleDeleteSecret(secret.name)}
                           disabled={saving}
-                          style={{ padding: '4px 8px', fontSize: '12px', color: '#dc3545' }}
+                          style={{ padding: '4px 8px', fontSize: '12px', color: 'var(--error)', borderColor: 'var(--error)' }}
                         >
                           Clear
                         </button>
                       )}
                       <button
+                        className="btn-secondary"
                         onClick={() => handleRemoveSecretDefinition(secret.name)}
                         disabled={saving}
-                        style={{ padding: '4px 8px', fontSize: '12px', color: '#dc3545' }}
+                        style={{ padding: '4px 8px', fontSize: '12px', color: 'var(--error)', borderColor: 'var(--error)' }}
                         title="Remove secret definition"
                       >
                         Remove
@@ -332,11 +327,11 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
       )}
 
       {showAddForm ? (
-        <div style={{ background: '#f8f9fa', padding: '12px', borderRadius: '4px', marginTop: '12px' }}>
-          <h4 style={{ margin: '0 0 12px 0' }}>Add Secret</h4>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-subtle)', padding: '16px', borderRadius: '8px', marginTop: '12px' }}>
+          <h4 style={{ margin: '0 0 12px 0', fontSize: '14px', color: 'var(--text-primary)' }}>Add Secret</h4>
           <div style={{ display: 'grid', gap: '12px' }}>
             <div>
-              <label style={{ display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>
+              <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
                 Name (UPPER_SNAKE_CASE)
               </label>
               <input
@@ -344,11 +339,11 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
                 value={newSecretName}
                 onChange={(e) => setNewSecretName(e.target.value.toUpperCase())}
                 placeholder="API_KEY, PASSWORD, etc."
-                style={{ width: '100%', padding: '8px', fontFamily: 'monospace' }}
+                style={{ width: '100%', fontFamily: 'var(--font-mono)' }}
               />
             </div>
             <div>
-              <label style={{ display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>
+              <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
                 Value
               </label>
               <input
@@ -356,11 +351,11 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
                 value={newSecretValue}
                 onChange={(e) => setNewSecretValue(e.target.value)}
                 placeholder="Enter the secret value"
-                style={{ width: '100%', padding: '8px', fontFamily: 'monospace' }}
+                style={{ width: '100%', fontFamily: 'var(--font-mono)' }}
               />
             </div>
             <div>
-              <label style={{ display: 'block', marginBottom: '4px', fontWeight: 'bold' }}>
+              <label style={{ display: 'block', marginBottom: '4px', fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
                 Description (optional)
               </label>
               <input
@@ -368,11 +363,11 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
                 value={newSecretDescription}
                 onChange={(e) => setNewSecretDescription(e.target.value)}
                 placeholder="What is this secret used for?"
-                style={{ width: '100%', padding: '8px' }}
+                style={{ width: '100%' }}
               />
             </div>
             <div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-secondary)', fontSize: '13px' }}>
                 <input
                   type="checkbox"
                   checked={newSecretRequired}
@@ -382,10 +377,11 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
               </label>
             </div>
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={handleAddSecretDefinition} disabled={saving || !newSecretName}>
+              <button className="btn-primary" onClick={handleAddSecretDefinition} disabled={saving || !newSecretName}>
                 Add Secret
               </button>
               <button
+                className="btn-secondary"
                 onClick={() => {
                   setShowAddForm(false);
                   setNewSecretName('');
@@ -400,19 +396,19 @@ function SecretsEditor({ packId, token }: SecretsEditorProps) {
           </div>
         </div>
       ) : (
-        <button onClick={() => setShowAddForm(true)} disabled={saving}>
+        <button className="btn-secondary" onClick={() => setShowAddForm(true)} disabled={saving}>
           + Add Secret
         </button>
       )}
 
-      <div style={{ marginTop: '16px', padding: '12px', background: '#e7f3ff', borderRadius: '4px', fontSize: '13px' }}>
-        <strong>Usage:</strong> Reference secrets in your flow using{' '}
-        <code style={{ background: '#f0f0f0', padding: '2px 4px', borderRadius: '2px' }}>
+      <div style={{ marginTop: '16px', padding: '12px 14px', background: 'rgba(99,102,241,0.08)', border: '1px solid rgba(99,102,241,0.2)', borderRadius: '8px', fontSize: '13px', color: 'var(--text-secondary)' }}>
+        <strong style={{ color: 'var(--text-primary)' }}>Usage:</strong> Reference secrets in your flow using{' '}
+        <code style={{ background: 'var(--bg-card-active)', padding: '2px 5px', borderRadius: '3px', fontFamily: 'var(--font-mono)', fontSize: '12px' }}>
           {'{{secret.SECRET_NAME}}'}
         </code>
         <br />
-        <span style={{ color: '#666' }}>
-          Secrets are stored in <code>.secrets.json</code> (gitignored) and never exposed to AI agents.
+        <span style={{ color: 'var(--text-muted)' }}>
+          Secrets are stored in <code style={{ fontFamily: 'var(--font-mono)', fontSize: '12px' }}>.secrets.json</code> (gitignored) and never exposed to AI agents.
         </span>
       </div>
     </div>
