@@ -20,6 +20,9 @@ export * from './registry/index.js';
 // Proxy exports
 export * from './proxy/index.js';
 
+// Transport exports
+export * from './transport/index.js';
+
 // Storage exports
 export * from './storage/index.js';
 

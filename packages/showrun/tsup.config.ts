@@ -39,6 +39,7 @@ export default defineConfig({
     'tiktoken',
     '@modelcontextprotocol/sdk',
     '@showrun/techniques',
+    'impit',
   ],
   esbuildOptions(options) {
     options.banner = {

@@ -8,6 +8,7 @@ import { launchBrowser, type BrowserSession } from './browserLauncher.js';
 import { isFlowHttpCompatible } from './httpReplay.js';
 import { resolveProxy } from './proxy/proxyService.js';
 import type { ResolvedProxy } from './proxy/types.js';
+import { createReplayTransport } from './transport/index.js';
 import type { SnapshotFile, RequestSnapshot } from './requestSnapshot.js';
 import {
   writeSnapshots,
@@ -189,8 +190,15 @@ export async function runTaskPack(
     });
     page = browserSession.page;
 
+    // Create replay transport (swappable HTTP client for network_replay steps)
+    const replayTransport = createReplayTransport(
+      taskPack.browser?.replayTransport,
+      page,
+      browserSession.context,
+    );
+
     // Attach network capture (rolling buffer, redacted for logs; full headers in-memory for replay only)
-    const networkCapture = attachNetworkCapture(page);
+    const networkCapture = attachNetworkCapture(page, replayTransport);
 
     // Create run context
     // Note: browserSession.browser may be null for persistent contexts or Camoufox
