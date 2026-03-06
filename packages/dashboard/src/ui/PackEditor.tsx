@@ -213,28 +213,21 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
           onClose={() => setShowPublishModal(false)}
         />
       )}
-      <div style={{ marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <h2>Edit Pack: {pack.name}</h2>
+      <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
-          <button onClick={onBack} style={{ marginRight: '10px' }}>Back to Packs</button>
+          <div style={{ fontSize: '11px', color: 'var(--text-muted)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Task Pack</div>
+          <h2 style={{ margin: 0, fontSize: '20px' }}>{pack.name}</h2>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <button className="btn-secondary" onClick={onBack}>← Back</button>
+          <button className="btn-secondary" onClick={() => setShowPublishModal(true)}>Publish</button>
           <button
-            onClick={() => setShowPublishModal(true)}
-            style={{ marginRight: '10px' }}
-          >
-            Publish to Registry
-          </button>
-          <button
-            onClick={handleRun} 
+            className="btn-primary"
+            onClick={handleRun}
             disabled={saving || loading || !isJsonValid}
-            title={
-              loading 
-                ? 'Loading pack files...' 
-                : !isJsonValid 
-                ? 'Invalid JSON in flow editor' 
-                : 'Run this pack'
-            }
+            title={loading ? 'Loading...' : !isJsonValid ? 'Invalid JSON' : 'Run this pack'}
           >
-            Run Pack
+            ▶ Run Pack
           </button>
         </div>
       </div>
@@ -251,19 +244,17 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
       )}
 
       {warnings.length > 0 && (
-        <div style={{ background: '#fff3cd', padding: '12px', borderRadius: '4px', marginBottom: '20px' }}>
+        <div style={{ background: 'rgba(234, 179, 8, 0.1)', border: '1px solid rgba(234, 179, 8, 0.3)', color: '#eab308', padding: '12px 16px', borderRadius: '8px', marginBottom: '16px' }}>
           <strong>Warnings:</strong>
-          <ul>
-            {warnings.map((warn, i) => (
-              <li key={i}>{warn}</li>
-            ))}
+          <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>
+            {warnings.map((warn, i) => <li key={i}>{warn}</li>)}
           </ul>
         </div>
       )}
 
       {lastSaved && (
-        <div style={{ background: '#d1e7dd', padding: '8px', borderRadius: '4px', marginBottom: '20px' }}>
-          Last saved: {lastSaved.toLocaleTimeString()}
+        <div style={{ background: 'rgba(34, 197, 94, 0.1)', border: '1px solid rgba(34, 197, 94, 0.2)', color: '#22c55e', padding: '8px 14px', borderRadius: '8px', marginBottom: '16px', fontSize: '13px' }}>
+          ✓ Saved at {lastSaved.toLocaleTimeString()}
         </div>
       )}
 
@@ -271,103 +262,81 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
         {/* Metadata Form */}
         <div className="card">
           <h3>Metadata</h3>
-          <div style={{ marginBottom: '12px' }}>
-            <label>
-              <strong>ID:</strong> (read-only)
-            </label>
-            <input type="text" value={pack.id} disabled style={{ width: '100%', padding: '8px' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>ID (read-only)</label>
+              <input type="text" value={pack.id} disabled style={{ width: '100%', opacity: 0.5 }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Name</label>
+              <input type="text" value={metaForm.name} onChange={(e) => setMetaForm({ ...metaForm, name: e.target.value })} style={{ width: '100%' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Version</label>
+              <input type="text" value={metaForm.version} onChange={(e) => setMetaForm({ ...metaForm, version: e.target.value })} style={{ width: '100%' }} />
+            </div>
+            <div>
+              <label style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)', display: 'block', marginBottom: '4px' }}>Description</label>
+              <textarea value={metaForm.description} onChange={(e) => setMetaForm({ ...metaForm, description: e.target.value })} style={{ width: '100%', minHeight: '80px' }} />
+            </div>
+            <button className="btn-primary" onClick={handleSaveMeta} disabled={saving} style={{ alignSelf: 'flex-start' }}>
+              {saving ? 'Saving...' : 'Save Metadata'}
+            </button>
           </div>
-          <div style={{ marginBottom: '12px' }}>
-            <label>
-              <strong>Name:</strong>
-            </label>
-            <input
-              type="text"
-              value={metaForm.name}
-              onChange={(e) => setMetaForm({ ...metaForm, name: e.target.value })}
-              style={{ width: '100%', padding: '8px' }}
-            />
-          </div>
-          <div style={{ marginBottom: '12px' }}>
-            <label>
-              <strong>Version:</strong>
-            </label>
-            <input
-              type="text"
-              value={metaForm.version}
-              onChange={(e) => setMetaForm({ ...metaForm, version: e.target.value })}
-              style={{ width: '100%', padding: '8px' }}
-            />
-          </div>
-          <div style={{ marginBottom: '12px' }}>
-            <label>
-              <strong>Description:</strong>
-            </label>
-            <textarea
-              value={metaForm.description}
-              onChange={(e) => setMetaForm({ ...metaForm, description: e.target.value })}
-              style={{ width: '100%', padding: '8px', minHeight: '80px' }}
-            />
-          </div>
-          <button onClick={handleSaveMeta} disabled={saving}>
-            {saving ? 'Saving...' : 'Save Metadata'}
-          </button>
         </div>
 
         {/* Flow Editor */}
         <div className="card">
           <h3>Flow JSON</h3>
-          <div style={{ marginBottom: '12px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
             <textarea
               value={flowJsonText}
-              onChange={(e) => {
-                setFlowJsonText(e.target.value);
-                setErrors([]);
-                setValidationResult(null);
-              }}
+              onChange={(e) => { setFlowJsonText(e.target.value); setErrors([]); setValidationResult(null); }}
               style={{
                 width: '100%',
-                minHeight: '400px',
-                fontFamily: 'monospace',
+                minHeight: '380px',
+                fontFamily: 'var(--font-mono)',
                 fontSize: '12px',
-                padding: '8px',
-                border: isJsonValid ? '1px solid #ddd' : '1px solid #dc3545',
+                lineHeight: 1.6,
+                border: isJsonValid ? '1px solid var(--border-subtle)' : '1px solid var(--status-error)',
+                resize: 'vertical',
               }}
               placeholder='{"inputs": {}, "collectibles": [], "flow": []}'
             />
-          </div>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <button onClick={handleValidate} disabled={!isJsonValid}>
-              Validate
-            </button>
-            <button onClick={handleSaveFlow} disabled={!isJsonValid || saving}>
-              {saving ? 'Saving...' : 'Save Flow'}
-            </button>
-            <button onClick={loadPackFiles} disabled={saving}>
-              Revert
-            </button>
-          </div>
-          {validationResult && (
-            <div style={{ marginTop: '12px', padding: '8px', background: validationResult.ok ? '#d1e7dd' : '#f8d7da', borderRadius: '4px' }}>
-              {validationResult.ok ? '✓ Validation passed' : '✗ Validation failed'}
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button className="btn-secondary" onClick={handleValidate} disabled={!isJsonValid}>Validate</button>
+              <button className="btn-primary" onClick={handleSaveFlow} disabled={!isJsonValid || saving}>{saving ? 'Saving...' : 'Save Flow'}</button>
+              <button className="btn-secondary" onClick={loadPackFiles} disabled={saving}>Revert</button>
             </div>
-          )}
+            {validationResult && (
+              <div style={{
+                padding: '8px 12px',
+                borderRadius: '6px',
+                fontSize: '13px',
+                background: validationResult.ok ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                border: `1px solid ${validationResult.ok ? 'rgba(34,197,94,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                color: validationResult.ok ? '#22c55e' : '#f87171',
+              }}>
+                {validationResult.ok ? '✓ Validation passed' : '✗ Validation failed'}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
       {/* Secrets Management */}
       <div className="card" style={{ marginTop: '24px' }}>
         <h3>Secrets</h3>
-        <p style={{ color: '#666', fontSize: '14px', marginBottom: '12px' }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginBottom: '12px' }}>
           Manage credentials and API keys securely. Values are stored locally and never exposed to AI.
         </p>
         <SecretsEditor packId={packId} token={token} />
       </div>
 
-      {/* Teach Mode: AI + browser; flow updates reflected in editor above in real time */}
+      {/* Teach Mode */}
       <div className="card" style={{ marginTop: '24px' }}>
         <h3>Teach Mode</h3>
-        <p style={{ color: '#666', fontSize: '14px', marginBottom: '12px' }}>
+        <p style={{ color: 'var(--text-muted)', fontSize: '13px', marginBottom: '12px' }}>
           Use the browser and chat to build the flow. When the agent applies a step, the Flow JSON above updates in real time.
         </p>
         <TeachMode
