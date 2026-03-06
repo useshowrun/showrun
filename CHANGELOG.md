@@ -10,6 +10,7 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [fixed] Result store not initialized for task packs created at runtime (e.g. via teach mode); now lazily created on first run
 - [changed] Techniques DB: split 10 monolithic seed entries into 25 granular, single-concept entries for better vector retrieval
 - [changed] Knowledge techniques moved from P2 to P3 — no longer pre-loaded into system prompt, retrieved dynamically by research agent
 - [fixed] Research agent no longer loads domain-specific techniques (e.g. LinkedIn) for unrelated tasks — filters by `type: 'generic'` when no domain matches
