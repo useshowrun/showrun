@@ -10,6 +10,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+## 0.1.10 - 2026-03-06
+
 - [fixed] Result store not initialized for task packs created at runtime (e.g. via teach mode); now lazily created on first run
 - [added] Swappable replay transport: configure `impit` as alternative to Playwright for `network_replay` steps — browser-grade TLS fingerprint impersonation bypasses Cloudflare bot detection without depending on the browser's networking stack
 - [changed] Task Packs page uses a master-detail split layout — list on the left, PackEditor inline on the right (no more full-page navigation)
