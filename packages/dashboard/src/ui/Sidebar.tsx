@@ -87,7 +87,7 @@ export default function Sidebar({
   };
 
   return (
-    <div className="sidebar">
+    <div className="sidebar" style={{ height: '100%' }}>
       <div className="sidebar-header">
         <div className="sidebar-title">Conversations</div>
       </div>

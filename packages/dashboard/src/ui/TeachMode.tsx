@@ -285,7 +285,7 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
             } else if (obj.type === 'done') {
               // Clear active tool on completion (safety)
               setActiveToolExecution(null);
-              result = obj;
+              result = obj as typeof result;
             }
           } catch {
             // ignore parse errors for partial lines
@@ -301,7 +301,7 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
         }
         for (const line of buffer.split('\n')) processLine(line);
         setChatMessages((prev) => [...prev, { role: 'assistant', content: result.assistantMessage?.content ?? result.error ?? '' }]);
-        if (result.toolTrace?.length) setToolTrace(result.toolTrace);
+        if (result.toolTrace?.length) setToolTrace(result.toolTrace as ToolTraceEntry[]);
         if (result.updatedFlow !== undefined) {
           setCurrentFlow(result.updatedFlow);
           onFlowUpdated?.(result.updatedFlow);
@@ -423,24 +423,24 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
       {!embedInEditor && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
           <h2>Teach Mode</h2>
-          {onClose && <button onClick={onClose}>Close</button>}
+          {onClose && <button className="btn-secondary" onClick={onClose}>Close</button>}
         </div>
       )}
 
       {error && (
-        <div style={{ padding: '10px', backgroundColor: '#fee', color: '#c00', marginBottom: '20px', borderRadius: '4px' }}>
+        <div style={{ padding: '10px 14px', background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#f87171', marginBottom: '20px', borderRadius: '6px' }}>
           Error: {error}
         </div>
       )}
 
       {!embedInEditor && (
         <div style={{ marginBottom: '20px' }}>
-          <label>
+          <label style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
             Select Pack:
             <select
               value={selectedPackId}
               onChange={(e) => setSelectedPackId(e.target.value)}
-              style={{ marginLeft: '10px', padding: '5px' }}
+              style={{ marginLeft: '10px' }}
             >
               <option value="">-- Select --</option>
               {packs.map((pack) => (
@@ -455,93 +455,88 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
 
       <div style={{ marginBottom: '20px', display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
         {!sessionId ? (
-          <button onClick={handleStartSession} disabled={loading}>
+          <button className="btn-secondary" onClick={handleStartSession} disabled={loading}>
             Start Browser Session
           </button>
         ) : (
           <>
-            <button onClick={handleGoto} disabled={loading}>
-              Goto URL
-            </button>
-            <button onClick={handleScreenshot} disabled={loading}>
-              Screenshot
-            </button>
-            <button onClick={handleRunPack} disabled={loading || !effectivePackId}>
-              Run Pack
-            </button>
+            <button className="btn-secondary" onClick={handleGoto} disabled={loading}>Goto URL</button>
+            <button className="btn-secondary" onClick={handleScreenshot} disabled={loading}>Screenshot</button>
+            <button className="btn-secondary" onClick={handleRunPack} disabled={loading || !effectivePackId}>Run Pack</button>
           </>
         )}
       </div>
 
       {screenshot && (
         <div style={{ marginBottom: '20px' }}>
-          <img src={screenshot} alt="Screenshot" style={{ maxWidth: '100%', border: '1px solid #ccc' }} />
+          <img src={screenshot} alt="Screenshot" style={{ maxWidth: '100%', border: '1px solid var(--border-subtle)', borderRadius: '6px' }} />
         </div>
       )}
 
       {/* Network: request history – select one and provide id to AI */}
       {sessionId && (
-        <div style={{ marginBottom: '20px', border: '1px solid #ccc', borderRadius: '8px', overflow: 'hidden' }}>
-          <div style={{ padding: '10px 12px', backgroundColor: '#f8f9fa', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ marginBottom: '20px', border: '1px solid var(--border-subtle)', borderRadius: '8px', overflow: 'hidden' }}>
+          <div style={{ padding: '10px 12px', backgroundColor: 'var(--bg-card)', fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)' }}>
             <span>Network</span>
-            <button type="button" onClick={loadNetworkList} disabled={networkLoading} style={{ fontSize: '12px', padding: '4px 8px' }}>
+            <button type="button" className="btn-secondary" onClick={loadNetworkList} disabled={networkLoading} style={{ fontSize: '12px', padding: '3px 8px' }}>
               {networkLoading ? '…' : 'Refresh'}
             </button>
           </div>
           <div style={{ maxHeight: '180px', overflow: 'auto' }}>
             {networkRequests.length === 0 && !networkLoading && (
-              <div style={{ padding: '12px', color: '#666', fontSize: '14px' }}>No requests yet. Navigate or interact in the browser, then Refresh.</div>
+              <div style={{ padding: '12px', color: 'var(--text-muted)', fontSize: '13px' }}>No requests yet. Navigate or interact in the browser, then Refresh.</div>
             )}
             {networkRequests.map((req) => (
               <div
                 key={req.id}
                 style={{
                   padding: '8px 12px',
-                  borderBottom: '1px solid #eee',
+                  borderBottom: '1px solid var(--border-subtle)',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '10px',
                   flexWrap: 'wrap',
                 }}
               >
-                <span style={{ fontFamily: 'monospace', fontSize: '12px', color: '#666' }}>{req.method}</span>
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: 'var(--text-muted)' }}>{req.method}</span>
                 {req.status != null && (
-                  <span style={{ fontFamily: 'monospace', fontSize: '12px', color: req.status >= 400 ? '#c00' : '#0a0' }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '11px', color: req.status >= 400 ? 'var(--status-error)' : 'var(--status-ready)' }}>
                     {req.status}
                   </span>
                 )}
-                <span style={{ flex: 1, minWidth: 0, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={req.url}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: '12px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-secondary)' }} title={req.url}>
                   {req.url}
                 </span>
                 <button
                   type="button"
+                  className="btn-secondary"
                   onClick={() => useRequestId(req.id)}
-                  style={{ fontSize: '12px', padding: '4px 8px', flexShrink: 0 }}
+                  style={{ fontSize: '11px', padding: '3px 8px', flexShrink: 0 }}
                 >
-                  Use this request
+                  Use
                 </button>
               </div>
             ))}
           </div>
-          <div style={{ padding: '8px 12px', backgroundColor: '#f0f4f8', fontSize: '12px', color: '#555' }}>
-            Click &quot;Use this request&quot; to send its ID to the AI; it will call network_get with that id.
+          <div style={{ padding: '8px 12px', backgroundColor: 'var(--bg-card)', fontSize: '12px', color: 'var(--text-muted)', borderTop: '1px solid var(--border-subtle)' }}>
+            Click &quot;Use&quot; to send the request ID to the AI; it will call network_get with that id.
           </div>
         </div>
       )}
 
       {/* Tool call history – inputs and responses from the last agent turn */}
       {(toolTrace.length > 0 || activeToolExecution) && (
-        <div style={{ marginBottom: '20px', border: '1px solid #ccc', borderRadius: '8px', overflow: 'hidden' }}>
-          <div style={{ padding: '10px 12px', backgroundColor: '#f8f9fa', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ marginBottom: '20px', border: '1px solid var(--border-subtle)', borderRadius: '8px', overflow: 'hidden' }}>
+          <div style={{ padding: '10px 12px', backgroundColor: 'var(--bg-card)', fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)' }}>
             <span>Tool call history</span>
             {activeToolExecution && (
-              <span style={{ fontSize: '12px', color: '#666', display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span style={{ fontSize: '12px', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '6px' }}>
                 <span style={{
                   display: 'inline-block',
                   width: '10px',
                   height: '10px',
-                  border: '2px solid #ccc',
-                  borderTopColor: '#666',
+                  border: '2px solid var(--border-accent)',
+                  borderTopColor: 'var(--text-secondary)',
                   borderRadius: '50%',
                   animation: 'spin 1s linear infinite'
                 }} />
@@ -554,7 +549,7 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
               <div
                 key={i}
                 style={{
-                  borderBottom: i < toolTrace.length - 1 ? '1px solid #eee' : 'none',
+                  borderBottom: i < toolTrace.length - 1 ? '1px solid var(--border-subtle)' : 'none',
                   padding: '10px 12px',
                 }}
               >
@@ -571,43 +566,48 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
                     border: 'none',
                     cursor: 'pointer',
                     textAlign: 'left',
-                    fontSize: '14px',
+                    fontSize: '13px',
+                    color: 'var(--text-primary)',
                   }}
                 >
-                  <span style={{ color: t.success ? '#0a0' : '#c00', flexShrink: 0 }}>{t.success ? '✓' : '✗'}</span>
-                  <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{t.tool}</span>
-                  <span style={{ color: '#666', fontSize: '12px' }}>{toolHistoryExpanded.has(i) ? '▼' : '▶'}</span>
+                  <span style={{ color: t.success ? 'var(--status-ready)' : 'var(--status-error)', flexShrink: 0 }}>{t.success ? '✓' : '✗'}</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500 }}>{t.tool}</span>
+                  <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{toolHistoryExpanded.has(i) ? '▼' : '▶'}</span>
                 </button>
                 {toolHistoryExpanded.has(i) && (
-                  <div style={{ marginTop: '10px', paddingLeft: '8px', borderLeft: '3px solid #ddd' }}>
-                    <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: '#555' }}>Inputs</div>
+                  <div style={{ marginTop: '10px', paddingLeft: '8px', borderLeft: '3px solid var(--border-accent)' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-secondary)' }}>Inputs</div>
                     <pre
                       style={{
                         margin: '0 0 12px 0',
                         padding: '10px',
-                        backgroundColor: '#f5f5f5',
+                        backgroundColor: 'var(--bg-card)',
                         borderRadius: '4px',
                         fontSize: '12px',
                         overflow: 'auto',
                         maxHeight: '160px',
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-word',
+                        color: 'var(--text-secondary)',
+                        border: '1px solid var(--border-subtle)',
                       }}
                     >
                       {formatToolPayload(t.args)}
                     </pre>
-                    <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: '#555' }}>Response</div>
+                    <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-secondary)' }}>Response</div>
                     <pre
                       style={{
                         margin: 0,
                         padding: '10px',
-                        backgroundColor: '#f0f4f8',
+                        backgroundColor: 'var(--bg-card-active)',
                         borderRadius: '4px',
                         fontSize: '12px',
                         overflow: 'auto',
                         maxHeight: '200px',
                         whiteSpace: 'pre-wrap',
                         wordBreak: 'break-word',
+                        color: 'var(--text-secondary)',
+                        border: '1px solid var(--border-subtle)',
                       }}
                     >
                       {formatToolPayload(t.result)}
@@ -620,44 +620,46 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
             {activeToolExecution && (
               <div
                 style={{
-                  borderTop: toolTrace.length > 0 ? '1px solid #eee' : 'none',
+                  borderTop: toolTrace.length > 0 ? '1px solid var(--border-subtle)' : 'none',
                   padding: '10px 12px',
-                  backgroundColor: '#fffbeb',
+                  backgroundColor: 'rgba(234,179,8,0.06)',
                 }}
               >
                 <div style={{
                   display: 'flex',
                   alignItems: 'center',
                   gap: '10px',
-                  fontSize: '14px',
+                  fontSize: '13px',
                 }}>
                   <span style={{
                     display: 'inline-block',
                     width: '14px',
                     height: '14px',
-                    border: '2px solid #d4a574',
-                    borderTopColor: '#b8860b',
+                    border: '2px solid rgba(234,179,8,0.3)',
+                    borderTopColor: '#d4a017',
                     borderRadius: '50%',
                     animation: 'spin 1s linear infinite',
                     flexShrink: 0
                   }} />
-                  <span style={{ fontFamily: 'monospace', fontWeight: 500 }}>{activeToolExecution.tool}</span>
-                  <span style={{ color: '#b8860b', fontSize: '12px' }}>executing...</span>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 500, color: 'var(--text-primary)' }}>{activeToolExecution.tool}</span>
+                  <span style={{ color: '#d4a017', fontSize: '12px' }}>executing...</span>
                 </div>
                 {/* Show arguments while executing */}
-                <div style={{ marginTop: '10px', paddingLeft: '8px', borderLeft: '3px solid #f0d080' }}>
-                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: '#555' }}>Inputs</div>
+                <div style={{ marginTop: '10px', paddingLeft: '8px', borderLeft: '3px solid rgba(234,179,8,0.3)' }}>
+                  <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '4px', color: 'var(--text-secondary)' }}>Inputs</div>
                   <pre
                     style={{
                       margin: 0,
                       padding: '10px',
-                      backgroundColor: '#fef9e7',
+                      backgroundColor: 'rgba(234,179,8,0.04)',
+                      border: '1px solid rgba(234,179,8,0.15)',
                       borderRadius: '4px',
                       fontSize: '12px',
                       overflow: 'auto',
                       maxHeight: '120px',
                       whiteSpace: 'pre-wrap',
                       wordBreak: 'break-word',
+                      color: 'var(--text-secondary)',
                     }}
                   >
                     {formatToolPayload(activeToolExecution.args)}
@@ -669,13 +671,13 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
         </div>
       )}
 
-      {loading && <div style={{ marginTop: '20px' }}>Loading...</div>}
+      {loading && <div style={{ marginTop: '20px', color: 'var(--text-muted)', fontSize: '13px' }}>Loading...</div>}
 
       {/* AI Chat box for flow writing */}
       <div
         style={{
           marginTop: '24px',
-          border: '1px solid #ccc',
+          border: '1px solid var(--border-subtle)',
           borderRadius: '8px',
           display: 'flex',
           flexDirection: 'column',
@@ -685,7 +687,7 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
           overflow: 'hidden',
         }}
       >
-        <div style={{ padding: '10px 12px', borderBottom: '1px solid #eee', backgroundColor: '#f8f9fa', fontWeight: 600 }}>
+        <div style={{ padding: '10px 12px', borderBottom: '1px solid var(--border-subtle)', backgroundColor: 'var(--bg-card)', fontWeight: 600, fontSize: '13px', color: 'var(--text-primary)' }}>
           AI – Write flow (Editor + Browser MCPs always on)
         </div>
         <div
@@ -696,10 +698,11 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
             display: 'flex',
             flexDirection: 'column',
             gap: '12px',
+            backgroundColor: 'var(--bg-main)',
           }}
         >
           {chatMessages.length === 0 && (
-            <div style={{ color: '#666', fontSize: '14px' }}>
+            <div style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
               Describe what you want (e.g. &quot;Create a flow that goes to example.com and extracts the title&quot;). The agent will use Editor and Browser MCPs to read packs, apply steps, and control the browser.
             </div>
           )}
@@ -711,10 +714,12 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
                 maxWidth: '85%',
                 padding: '10px 14px',
                 borderRadius: '8px',
-                backgroundColor: msg.role === 'user' ? '#e3f2fd' : '#f5f5f5',
+                backgroundColor: msg.role === 'user' ? 'rgba(99,102,241,0.15)' : 'var(--bg-card)',
+                border: msg.role === 'user' ? '1px solid rgba(99,102,241,0.25)' : '1px solid var(--border-subtle)',
                 whiteSpace: 'pre-wrap',
                 wordBreak: 'break-word',
-                fontSize: '14px',
+                fontSize: '13px',
+                color: 'var(--text-primary)',
               }}
             >
               {msg.content}
@@ -726,9 +731,9 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
               {(streamingThinking || isThinking) && (
                 <div style={{
                   padding: '10px 14px',
-                  backgroundColor: '#f0f0ff',
+                  backgroundColor: 'rgba(99,102,241,0.08)',
                   borderRadius: '8px',
-                  border: '1px solid #d0d0ff',
+                  border: '1px solid rgba(99,102,241,0.2)',
                 }}>
                   <div
                     onClick={() => setThinkingExpanded(!thinkingExpanded)}
@@ -745,16 +750,16 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
                         display: 'inline-block',
                         width: '12px',
                         height: '12px',
-                        border: '2px solid #a0a0ff',
-                        borderTopColor: '#6060ff',
+                        border: '2px solid rgba(99,102,241,0.4)',
+                        borderTopColor: '#818cf8',
                         borderRadius: '50%',
                         animation: 'spin 1s linear infinite'
                       }} />
                     )}
-                    <span style={{ color: '#6060ff', fontWeight: 500, fontSize: '13px' }}>
+                    <span style={{ color: '#818cf8', fontWeight: 500, fontSize: '13px' }}>
                       {isThinking ? 'Thinking...' : 'Thought'}
                     </span>
-                    <span style={{ color: '#888', fontSize: '12px' }}>{thinkingExpanded ? '▼' : '▶'}</span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{thinkingExpanded ? '▼' : '▶'}</span>
                   </div>
                   {streamingThinking && thinkingExpanded && (
                     <pre style={{
@@ -762,7 +767,7 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
                       fontSize: '12px',
                       whiteSpace: 'pre-wrap',
                       wordBreak: 'break-word',
-                      color: '#555',
+                      color: 'var(--text-secondary)',
                       maxHeight: '200px',
                       overflow: 'auto',
                     }}>
@@ -775,52 +780,54 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
               {streamingContent && (
                 <div style={{
                   padding: '10px 14px',
-                  backgroundColor: '#f5f5f5',
+                  backgroundColor: 'var(--bg-card)',
+                  border: '1px solid var(--border-subtle)',
                   borderRadius: '8px',
                   whiteSpace: 'pre-wrap',
                   wordBreak: 'break-word',
-                  fontSize: '14px',
+                  fontSize: '13px',
+                  color: 'var(--text-primary)',
                 }}>
                   {streamingContent}
                 </div>
               )}
               {/* Tool execution indicator */}
               {activeToolExecution && (
-                <div style={{ padding: '10px 14px', backgroundColor: '#fff8e8', borderRadius: '8px', color: '#666' }}>
+                <div style={{ padding: '10px 14px', backgroundColor: 'rgba(234,179,8,0.06)', border: '1px solid rgba(234,179,8,0.2)', borderRadius: '8px', color: 'var(--text-secondary)' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{
                       display: 'inline-block',
                       width: '14px',
                       height: '14px',
-                      border: '2px solid #f0c060',
-                      borderTopColor: '#d09020',
+                      border: '2px solid rgba(234,179,8,0.3)',
+                      borderTopColor: '#d4a017',
                       borderRadius: '50%',
                       animation: 'spin 1s linear infinite'
                     }} />
-                    <span>Executing: <code style={{ backgroundColor: '#e8e8e8', padding: '2px 6px', borderRadius: '4px', fontFamily: 'monospace', fontSize: '13px' }}>{activeToolExecution.tool}</code></span>
+                    <span style={{ fontSize: '13px' }}>Executing: <code style={{ backgroundColor: 'var(--bg-card-active)', padding: '2px 6px', borderRadius: '4px', fontFamily: 'var(--font-mono)', fontSize: '12px', color: 'var(--text-primary)' }}>{activeToolExecution.tool}</code></span>
                   </div>
                 </div>
               )}
               {/* Summarization indicator */}
               {isSummarizing && (
-                <div style={{ padding: '10px 14px', backgroundColor: '#fff3cd', borderRadius: '8px', color: '#856404', border: '1px solid #ffc107' }}>
+                <div style={{ padding: '10px 14px', backgroundColor: 'rgba(234,179,8,0.08)', border: '1px solid rgba(234,179,8,0.25)', borderRadius: '8px', color: '#d4a017' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <span style={{
                       display: 'inline-block',
                       width: '14px',
                       height: '14px',
-                      border: '2px solid #ffc107',
-                      borderTopColor: '#856404',
+                      border: '2px solid rgba(234,179,8,0.3)',
+                      borderTopColor: '#d4a017',
                       borderRadius: '50%',
                       animation: 'spin 1s linear infinite'
                     }} />
-                    <span>Summarizing conversation to reduce context size...</span>
+                    <span style={{ fontSize: '13px' }}>Summarizing conversation to reduce context size...</span>
                   </div>
                 </div>
               )}
               {/* Generic loading indicator when nothing else is showing */}
               {!streamingThinking && !isThinking && !streamingContent && !activeToolExecution && !isSummarizing && (
-                <div style={{ padding: '10px 14px', backgroundColor: '#f5f5f5', borderRadius: '8px', color: '#666' }}>
+                <div style={{ padding: '10px 14px', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-subtle)', borderRadius: '8px', color: 'var(--text-muted)', fontSize: '13px' }}>
                   …
                 </div>
               )}
@@ -829,25 +836,25 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
           <div ref={chatEndRef} />
         </div>
         {currentFlow != null && !embedInEditor && (
-          <div style={{ padding: '10px 12px', borderTop: '1px solid #eee', backgroundColor: '#f8fff8', maxHeight: '140px', overflow: 'auto' }}>
-            <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px' }}>Updated flow</div>
+          <div style={{ padding: '10px 12px', borderTop: '1px solid var(--border-subtle)', backgroundColor: 'rgba(34,197,94,0.04)', maxHeight: '140px', overflow: 'auto' }}>
+            <div style={{ fontSize: '12px', fontWeight: 600, marginBottom: '6px', color: 'var(--text-secondary)' }}>Updated flow</div>
             {lastValidation && (
-              <div style={{ fontSize: '12px', marginBottom: '4px', color: lastValidation.ok ? '#0a0' : '#c00' }}>
+              <div style={{ fontSize: '12px', marginBottom: '4px', color: lastValidation.ok ? 'var(--status-ready)' : 'var(--status-error)' }}>
                 {lastValidation.ok ? '✓ Valid' : `✗ ${lastValidation.errors.join('; ')}`}
               </div>
             )}
-            <pre style={{ margin: 0, fontSize: '11px', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+            <pre style={{ margin: 0, fontSize: '11px', whiteSpace: 'pre-wrap', wordBreak: 'break-all', color: 'var(--text-secondary)' }}>
               {JSON.stringify(currentFlow, null, 2).slice(0, 800)}
               {(JSON.stringify(currentFlow).length > 800) ? '…' : ''}
             </pre>
           </div>
         )}
         {currentFlow != null && embedInEditor && lastValidation && (
-          <div style={{ padding: '8px 12px', borderTop: '1px solid #eee', backgroundColor: lastValidation.ok ? '#f0fff0' : '#fff0f0', fontSize: '12px', color: lastValidation.ok ? '#0a0' : '#c00' }}>
+          <div style={{ padding: '8px 12px', borderTop: '1px solid var(--border-subtle)', backgroundColor: lastValidation.ok ? 'rgba(34,197,94,0.06)' : 'rgba(239,68,68,0.06)', fontSize: '12px', color: lastValidation.ok ? 'var(--status-ready)' : 'var(--status-error)' }}>
             {lastValidation.ok ? '✓ Flow updated in editor above' : `✗ ${lastValidation.errors.join('; ')}`}
           </div>
         )}
-        <div style={{ padding: '10px', borderTop: '1px solid #eee', display: 'flex', gap: '8px' }}>
+        <div style={{ padding: '10px', borderTop: '1px solid var(--border-subtle)', display: 'flex', gap: '8px', backgroundColor: 'var(--bg-card)' }}>
           <input
             type="text"
             value={chatInput}
@@ -859,35 +866,22 @@ export default function TeachMode({ token, packs, onClose, packId: fixedPackId, 
               }
             }}
             placeholder="Describe a step or ask how to write the flow..."
-            style={{
-              flex: 1,
-              padding: '10px 12px',
-              border: '1px solid #ccc',
-              borderRadius: '6px',
-              fontSize: '14px',
-            }}
+            style={{ flex: 1 }}
             disabled={chatLoading}
           />
           {chatLoading ? (
             <button
+              className="btn-primary"
               onClick={handleStopChat}
-              style={{
-                padding: '10px 16px',
-                borderRadius: '6px',
-                fontWeight: 500,
-                backgroundColor: '#dc3545',
-                color: 'white',
-                border: 'none',
-                cursor: 'pointer',
-              }}
+              style={{ backgroundColor: 'var(--error)', borderColor: 'var(--error)' }}
             >
               Stop
             </button>
           ) : (
             <button
+              className="btn-primary"
               onClick={handleSendChat}
               disabled={!chatInput.trim()}
-              style={{ padding: '10px 16px', borderRadius: '6px', fontWeight: 500 }}
             >
               Send
             </button>

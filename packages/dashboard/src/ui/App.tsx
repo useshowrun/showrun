@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import Sidebar, { type Conversation } from './Sidebar.js';
 import ChatView, { type Message } from './ChatView.js';
@@ -6,7 +6,6 @@ import BottomNav, { type NavView } from './BottomNav.js';
 import RunsView from './RunsView.js';
 import MCPServerView from './MCPServerView.js';
 import PacksView from './PacksView.js';
-import { ShowRunLogo } from './ShowRunLogo.js';
 
 interface Pack {
   id: string;
@@ -60,6 +59,7 @@ function App() {
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const [selectedConversation, setSelectedConversation] = useState<ConversationWithMessages | null>(null);
   const [activeView, setActiveView] = useState<NavView>('chat');
+  const [navExpanded, setNavExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -313,6 +313,42 @@ function App() {
     );
   };
 
+  // Resizable sidebar
+  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const sidebarIsResizing = useRef(false);
+  const sidebarStartX = useRef(0);
+  const sidebarStartWidth = useRef(0);
+
+  const handleSidebarResizeStart = (e: React.MouseEvent) => {
+    sidebarIsResizing.current = true;
+    sidebarStartX.current = e.clientX;
+    sidebarStartWidth.current = sidebarWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!sidebarIsResizing.current) return;
+      const delta = e.clientX - sidebarStartX.current;
+      const newWidth = Math.min(480, Math.max(180, sidebarStartWidth.current + delta));
+      setSidebarWidth(newWidth);
+    };
+    const onMouseUp = () => {
+      if (sidebarIsResizing.current) {
+        sidebarIsResizing.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []);
+
   if (error) {
     return (
       <div className="app-container" style={{ justifyContent: 'center', alignItems: 'center' }}>
@@ -350,7 +386,7 @@ function App() {
         );
       case 'runs':
         return (
-          <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
+          <div style={{ flex: 1, overflow: 'hidden', display: 'flex' }}>
             <RunsView runs={runs} socket={socket} />
           </div>
         );
@@ -382,54 +418,39 @@ function App() {
 
   return (
     <div className="app-container">
-      {/* Sidebar - only show in chat view */}
+      {/* Left icon navigation rail — always visible */}
+      <BottomNav
+        activeView={activeView}
+        onViewChange={setActiveView}
+        runsCount={runs.filter((r) => r.status === 'running').length}
+        isExpanded={navExpanded}
+        onToggleExpand={() => setNavExpanded((v) => !v)}
+      />
+
+      {/* Conversations sidebar — only in chat view, resizable */}
       {activeView === 'chat' && (
-        <Sidebar
-          conversations={conversations}
-          selectedId={selectedConversationId}
-          onSelect={(id) => setSelectedConversationId(id)}
-          onNewChat={handleNewChat}
-          onEditTitle={handleEditTitle}
-          onDelete={handleDeleteConversation}
-        />
+        <>
+          <div className="sidebar" style={{ width: sidebarWidth }}>
+            <Sidebar
+              conversations={conversations}
+              selectedId={selectedConversationId}
+              onSelect={(id) => setSelectedConversationId(id)}
+              onNewChat={handleNewChat}
+              onEditTitle={handleEditTitle}
+              onDelete={handleDeleteConversation}
+            />
+          </div>
+          <div
+            className="resize-handle"
+            onMouseDown={handleSidebarResizeStart}
+            title=""
+          />
+        </>
       )}
 
       {/* Main content area */}
       <div className="main-content">
-        {/* Header */}
-        <div className="header">
-          {activeView !== 'chat' && (
-            <button
-              className="header-back"
-              onClick={() => setActiveView('chat')}
-              title="Back to Chat"
-            >
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="15 18 9 12 15 6" />
-              </svg>
-            </button>
-          )}
-          <div className="header-logo"><ShowRunLogo size="md" /></div>
-        </div>
-
-        {/* Main content */}
         {renderMainContent()}
-
-        {/* Bottom navigation */}
-        <BottomNav
-          activeView={activeView}
-          onViewChange={setActiveView}
-          runsCount={runs.filter((r) => r.status === 'running').length}
-        />
       </div>
     </div>
   );
