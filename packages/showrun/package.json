@@ -31,10 +31,8 @@
     "socket.io": "^4.8.1",
     "socket.io-client": "^4.8.1",
     "uuid": "^11.0.0",
+    "impit": "^0.10.1",
     "winston": "^3.19.0"
-  },
-  "optionalDependencies": {
-    "impit": "^0.10.1"
   },
   "devDependencies": {
     "@showrun/browser-inspector-mcp": "workspace:*",

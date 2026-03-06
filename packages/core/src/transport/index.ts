@@ -10,14 +10,14 @@ import { ImpitTransport } from './impitTransport.js';
 
 /**
  * Create a replay transport based on configuration.
- * Default: PlaywrightTransport (page.request.fetch).
+ * Default: ImpitTransport (browser-grade TLS fingerprinting).
  */
 export function createReplayTransport(
   config: ReplayTransportConfig | undefined,
   page: Page,
   browserContext: BrowserContext,
 ): ReplayTransport {
-  const transportName = config?.transport ?? 'playwright';
+  const transportName = config?.transport ?? 'impit';
 
   switch (transportName) {
     case 'impit':
