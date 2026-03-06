@@ -10,6 +10,11 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [changed] Techniques DB: split 10 monolithic seed entries into 25 granular, single-concept entries for better vector retrieval
+- [changed] Knowledge techniques moved from P2 to P3 — no longer pre-loaded into system prompt, retrieved dynamically by research agent
+- [fixed] Research agent no longer loads domain-specific techniques (e.g. LinkedIn) for unrelated tasks — filters by `type: 'generic'` when no domain matches
+- [changed] Prompt assembler no longer pre-loads knowledge techniques; system prompt is now composed only from system_prompt-category entries
+- [added] Research agent: auto-searches Weaviate techniques DB on each agent call, compiles a task-specific prompt streamed to the new "Research" right panel tab; user can edit/override the prompt before it's sent as the system prompt; "Inject into Message" button for manual prompt injection
 - [changed] Task Packs page uses a master-detail split layout — list on the left, PackEditor inline on the right (no more full-page navigation)
 - [fixed] SecretsEditor and TeachMode components now use dark theme CSS variables — previously had unreadable light-colored backgrounds
 - [changed] Dashboard nav rail is now expandable — click collapse/expand to toggle icon-only vs icon+label mode

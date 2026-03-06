@@ -86,7 +86,7 @@ export default function ChatView({
 
   // UI state
   const [showNetwork, setShowNetwork] = useState(true);
-  const [rightPanelTab, setRightPanelTab] = useState<'network' | 'secrets' | 'versions' | 'run'>('network');
+  const [rightPanelTab, setRightPanelTab] = useState<'network' | 'secrets' | 'versions' | 'run' | 'research'>('network');
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [panelAutoCollapsed, setPanelAutoCollapsed] = useState(false);
 
@@ -103,6 +103,15 @@ export default function ChatView({
 
   // MCP Usage modal
   const [showMcpUsage, setShowMcpUsage] = useState(false);
+
+  // Research agent state
+  const [researchPrompt, setResearchPrompt] = useState('');
+  const [researchLoading, setResearchLoading] = useState(false);
+  const [researchResult, setResearchResult] = useState<{
+    totalTechniquesFound: number;
+    searchQueries: string[];
+    techniqueGroups: Array<{ category: string; techniques: Array<{ title: string; priority: number }> }>;
+  } | null>(null);
 
   // Network requests
   const [networkRequests, setNetworkRequests] = useState<NetworkEntry[]>([]);
@@ -414,6 +423,7 @@ export default function ChatView({
           browserSessionId: sessionId || null,
           conversationId: conversation.id,
           stream: true,
+          systemPromptOverride: researchPrompt || null,
         }),
         signal: abortController.signal,
       });
@@ -502,6 +512,19 @@ export default function ChatView({
           } else if (obj.type === 'tool_call_stop') {
             // LLM finished preparing tool call, server will execute it
             // Don't clear activeToolExecution here - wait for tool_result
+          } else if (obj.type === 'research_loaded') {
+            // Research agent loaded techniques — populate the Research panel
+            setResearchPrompt(obj.compiledPrompt || '');
+            setResearchResult({
+              totalTechniquesFound: obj.totalTechniquesFound || 0,
+              searchQueries: [],
+              techniqueGroups: obj.techniqueGroups || [],
+            });
+            // Auto-open Research tab on first load
+            if (!researchPrompt) {
+              setRightPanelTab('research');
+              setRightPanelOpen(true);
+            }
           } else if (obj.type === 'summarizing') {
             setIsSummarizing(true);
           } else if (obj.type === 'summarized') {
@@ -645,6 +668,42 @@ export default function ChatView({
     } catch (err) {
       console.error('Export failed:', err);
       setError(err instanceof Error ? err.message : 'Export failed');
+    }
+  };
+
+  const handleRunResearch = async () => {
+    if (!conversation) return;
+    // Use the last user message or conversation title as the task description
+    const lastUserMsg = [...messages].reverse().find(m => m.role === 'user');
+    const taskDescription = lastUserMsg?.content || conversation.title || '';
+    if (!taskDescription) return;
+
+    setResearchLoading(true);
+    setResearchResult(null);
+    try {
+      const result = await apiCall('/api/teach/research', {
+        method: 'POST',
+        body: JSON.stringify({
+          taskDescription,
+          domain: undefined,
+          maxTechniques: 20,
+        }),
+      });
+      if (result.success) {
+        setResearchPrompt(result.compiledPrompt);
+        setResearchResult({
+          totalTechniquesFound: result.totalTechniquesFound,
+          searchQueries: result.searchQueries,
+          techniqueGroups: result.techniqueGroups,
+        });
+      } else {
+        setResearchPrompt('');
+        setError(result.error || 'Research failed');
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setResearchLoading(false);
     }
   };
 
@@ -1062,6 +1121,73 @@ export default function ChatView({
             </div>
           )}
 
+          {/* Research panel */}
+          {rightPanelTab === 'research' && (
+            <div style={{ margin: '12px', flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ fontWeight: 600, fontSize: '14px' }}>Research</div>
+                <button
+                  className="btn-primary"
+                  onClick={handleRunResearch}
+                  disabled={researchLoading}
+                  style={{ padding: '4px 12px', fontSize: '12px' }}
+                >
+                  {researchLoading ? 'Searching...' : 'Search Techniques'}
+                </button>
+              </div>
+              {researchResult && (
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  <span>{researchResult.totalTechniquesFound} techniques found</span>
+                  <span>{researchResult.techniqueGroups.length} categories</span>
+                </div>
+              )}
+              {researchResult && researchResult.techniqueGroups.length > 0 && (
+                <div style={{ fontSize: '11px', color: 'var(--text-muted)', display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                  {researchResult.techniqueGroups.map(g => (
+                    <span key={g.category} style={{
+                      padding: '1px 6px',
+                      borderRadius: '3px',
+                      backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                      color: 'var(--accent-blue)',
+                    }}>
+                      {g.category} ({g.techniques.length})
+                    </span>
+                  ))}
+                </div>
+              )}
+              <textarea
+                value={researchPrompt}
+                onChange={(e) => setResearchPrompt(e.target.value)}
+                placeholder="Click 'Search Techniques' to find relevant techniques from the knowledge base. The compiled prompt will appear here and you can edit it before injecting into the conversation."
+                style={{
+                  flex: 1,
+                  padding: '10px',
+                  fontSize: '12px',
+                  fontFamily: 'monospace',
+                  lineHeight: '1.5',
+                  borderRadius: '6px',
+                  border: '1px solid var(--border-subtle)',
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  resize: 'none',
+                  outline: 'none',
+                }}
+              />
+              <button
+                className="btn-secondary"
+                onClick={() => {
+                  if (researchPrompt.trim()) {
+                    setInputValue(prev => prev ? `${prev}\n\n---\n\n${researchPrompt}` : researchPrompt);
+                  }
+                }}
+                disabled={!researchPrompt.trim()}
+                style={{ padding: '6px 12px', fontSize: '12px' }}
+              >
+                Inject into Message
+              </button>
+            </div>
+          )}
+
           {/* Tab buttons */}
           <div style={{
             display: 'flex',
@@ -1072,6 +1198,7 @@ export default function ChatView({
           }}>
             {([
               { key: 'network' as const, label: 'Network', show: true },
+              { key: 'research' as const, label: 'Research', show: true },
               { key: 'secrets' as const, label: 'Secrets', show: !!conversation?.packId },
               { key: 'versions' as const, label: 'Versions', show: !!conversation?.packId },
               { key: 'run' as const, label: 'Run', show: !!conversation?.packId && conversation.status === 'ready' },

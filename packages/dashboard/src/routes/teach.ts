@@ -20,6 +20,7 @@ import { summarizeIfNeeded, estimateTotalTokens, forceSummarize, type AgentMessa
 import { createLlmProvider } from '../llm/index.js';
 import { runEditorAgent } from '../agents/editorAgent.js';
 import { runValidatorAgent } from '../agents/validatorAgent.js';
+import { runResearchAgent } from '../agents/researchAgent.js';
 import type { EditorAgentResult, ValidatorAgentResult } from '../agents/types.js';
 import { appendFileSync, mkdirSync } from 'fs';
 import { assembleSystemPrompt } from '../promptAssembler.js';
@@ -372,12 +373,14 @@ export function createTeachRouter(ctx: DashboardContext): Router {
       return res.status(503).json({ error: 'LLM provider with tool support not configured' });
     }
 
-    const { messages, packId: requestPackId, conversationId, stream: streamFlowUpdates } = req.body as {
+    const { messages, packId: requestPackId, conversationId, stream: streamFlowUpdates, systemPromptOverride } = req.body as {
       messages: Array<{ role: 'user' | 'assistant' | 'tool'; content: string; name?: string }>;
       packId?: string | null;
       conversationId?: string | null;
       /** If true, stream flow_updated after each editor_apply_flow_patch so the UI can update in real time */
       stream?: boolean;
+      /** User-edited system prompt override from the Research panel */
+      systemPromptOverride?: string | null;
     };
 
     if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -440,9 +443,15 @@ export function createTeachRouter(ctx: DashboardContext): Router {
       }
     }
 
-    // Build system prompt: use Techniques DB if available, otherwise fallback
+    // Build system prompt: use override from Research panel, Techniques DB, or fallback
     let systemPrompt: string;
-    if (ctx.techniqueManager) {
+    let researchResult: { compiledPrompt: string; totalTechniquesFound: number; techniqueGroups: unknown[] } | null = null;
+
+    if (systemPromptOverride) {
+      // User edited the prompt in the Research panel — use their version
+      systemPrompt = systemPromptOverride;
+      console.log('[Agent] Using user-provided system prompt override from Research panel');
+    } else if (ctx.techniqueManager) {
       try {
         // Extract domain from user's first message for domain-specific techniques
         const firstUserMsg = messages.find((m) => m.role === 'user')?.content || '';
@@ -450,6 +459,28 @@ export function createTeachRouter(ctx: DashboardContext): Router {
         const domain = urlMatch ? urlMatch[1] : undefined;
 
         systemPrompt = await assembleSystemPrompt(ctx.techniqueManager, domain, 2, ctx.llmProvider!.countTokens.bind(ctx.llmProvider));
+
+        // Also run the research agent to compile a task-specific prompt for the UI
+        const taskDescription = firstUserMsg || '';
+        if (taskDescription) {
+          try {
+            const research = await runResearchAgent({
+              taskDescription,
+              domain: domain || undefined,
+              techniqueManager: ctx.techniqueManager,
+              maxTechniques: 20,
+            });
+            if (research.success) {
+              researchResult = {
+                compiledPrompt: research.compiledPrompt,
+                totalTechniquesFound: research.totalTechniquesFound,
+                techniqueGroups: research.techniqueGroups,
+              };
+            }
+          } catch (err) {
+            console.warn('[Agent] Research agent failed (non-fatal):', err);
+          }
+        }
       } catch (err) {
         console.warn('[Agent] Failed to assemble system prompt from DB, using fallback:', err);
         systemPrompt = ctx.systemPrompt;
@@ -500,6 +531,18 @@ export function createTeachRouter(ctx: DashboardContext): Router {
       res.setHeader('Content-Type', 'application/x-ndjson');
       res.setHeader('Transfer-Encoding', 'chunked');
       res.flushHeaders?.();
+    }
+
+    // Stream the research result (compiled prompt) to the frontend Research panel
+    if (streamFlow && researchResult) {
+      try {
+        res.write(JSON.stringify({
+          type: 'research_loaded',
+          compiledPrompt: researchResult.compiledPrompt,
+          totalTechniquesFound: researchResult.totalTechniquesFound,
+          techniqueGroups: researchResult.techniqueGroups,
+        }) + '\n');
+      } catch { /* ignore */ }
     }
 
     // Track if request was aborted by client (stop button pressed)
@@ -1250,6 +1293,43 @@ export function createTeachRouter(ctx: DashboardContext): Router {
 
     try {
       const result = await ctx.taskPackEditor.applyFlowPatch(packId, patch);
+      res.json(result);
+    } catch (error) {
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  // REST API: Research Agent — search techniques DB and compile prompt
+  router.post('/api/teach/research', async (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    if (!ctx.techniqueManager) {
+      return res.status(503).json({
+        error: 'Techniques DB not configured',
+        hint: 'Set WEAVIATE_URL and EMBEDDING_API_KEY environment variables to enable.',
+      });
+    }
+
+    const { taskDescription, domain, categories, maxTechniques } = req.body;
+
+    if (!taskDescription) {
+      return res.status(400).json({ error: 'taskDescription is required' });
+    }
+
+    try {
+      const result = await runResearchAgent({
+        taskDescription,
+        domain: domain || undefined,
+        categories: categories || undefined,
+        techniqueManager: ctx.techniqueManager,
+        llmProvider: ctx.llmProvider || undefined,
+        maxTechniques: maxTechniques || 20,
+      });
+
       res.json(result);
     } catch (error) {
       res.status(500).json({

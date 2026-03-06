@@ -40,19 +40,19 @@ function sortTechniques(techniques: Technique[]): Technique[] {
  * Assemble the full exploration agent system prompt from the Techniques DB.
  *
  * 1. Loads system-prompt techniques (category='system_prompt') → assembles the core prompt
- * 2. Loads knowledge techniques (P1-P2, non-system-prompt) → appends as "Pre-Loaded Techniques"
- * 3. If domain is provided, also loads domain-specific techniques
+ * 2. Knowledge techniques are NOT pre-loaded — they're retrieved dynamically by the
+ *    research agent or the agent's techniques_load/techniques_search tool calls.
  *
  * Falls back to FALLBACK_SYSTEM_PROMPT if the DB has no system-prompt techniques.
  *
  * @param techniqueManager - TechniqueManager instance (must be available/healthy)
- * @param domain - Optional domain for domain-specific technique loading
- * @param maxKnowledgePriority - Max priority for knowledge techniques (default: 2)
+ * @param domain - Optional domain (reserved for future use)
+ * @param maxKnowledgePriority - Unused, kept for API compat
  */
 export async function assembleSystemPrompt(
   techniqueManager: TechniqueManager,
-  domain?: string,
-  maxKnowledgePriority: number = 2,
+  _domain?: string,
+  _maxKnowledgePriority: number = 2,
   countTokensFn?: (text: string) => number,
 ): Promise<string> {
   // 1. Load system-prompt techniques
@@ -73,33 +73,8 @@ export async function assembleSystemPrompt(
 
   console.log(`[PromptAssembler] Assembled system prompt from ${sorted.length} techniques`);
 
-  // 3. Load knowledge techniques (generic P1-P2 + domain-specific)
-  //    Use loadUpTo which also records usage
-  const { generic, specific } = await techniqueManager.loadUpTo(maxKnowledgePriority, domain);
-
-  // Filter out system_prompt category (already rendered above)
-  const knowledgeGeneric = generic.filter(t => t.category !== 'system_prompt');
-  const knowledgeSpecific = specific.filter(t => t.category !== 'system_prompt');
-
-  if (knowledgeGeneric.length > 0 || knowledgeSpecific.length > 0) {
-    prompt += '## Pre-Loaded Techniques\n\n';
-
-    if (knowledgeGeneric.length > 0) {
-      prompt += '### Generic Best Practices\n';
-      for (const t of knowledgeGeneric) {
-        prompt += `- **${t.title}**: ${t.content}\n`;
-      }
-      prompt += '\n';
-    }
-
-    if (knowledgeSpecific.length > 0) {
-      prompt += `### Domain: ${domain}\n`;
-      for (const t of knowledgeSpecific) {
-        prompt += `- **${t.title}**: ${t.content}\n`;
-      }
-      prompt += '\n';
-    }
-  }
+  // 3. Knowledge techniques are loaded dynamically by the research agent
+  //    or via techniques_load/techniques_search tool calls — not pre-loaded here.
 
   // 4. Cap total prompt size — use token-based truncation if tokenizer available
   const counter = countTokensFn ?? ((t: string) => Math.ceil(t.length / 4));
