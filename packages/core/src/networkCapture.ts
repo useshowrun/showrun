@@ -6,6 +6,7 @@
 
 import { gunzipSync } from 'zlib';
 import type { Page } from 'playwright';
+import type { ReplayTransport } from './transport/types.js';
 
 const SENSITIVE_HEADER_NAMES = new Set([
   'authorization',
@@ -179,7 +180,7 @@ function truncatePostData(raw: string | undefined | null): string | undefined {
  * Attach network capture to a Playwright page and return the capture API.
  * Full request headers are kept in-memory only for replay; list/get return redacted summaries.
  */
-export function attachNetworkCapture(page: Page): NetworkCaptureApi {
+export function attachNetworkCapture(page: Page, transport?: ReplayTransport): NetworkCaptureApi {
   const buffer: NetworkEntryInternal[] = [];
   const mapById = new Map<string, NetworkEntryInternal>();
   let totalBytesEstimate = 0;
@@ -382,17 +383,9 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
         }
       }
 
-      // Playwright: page.request is APIRequestContext sharing cookies with the browser context
-      const requestContext = (page as { request?: { fetch: (url: string, options?: object) => Promise<{ status: () => number; headers: () => Record<string, string>; body: () => Promise<Buffer> }> } }).request;
-      if (!requestContext || typeof requestContext.fetch !== 'function') {
-        throw new Error(
-          'Browser context does not support API request (replay). Playwright version may be too old.'
-        );
-      }
-
+      // Build request: apply overrides to captured entry
       let url = entry.url;
       if (overrides?.urlReplace) {
-        // Normalize to array (accepts single object or array)
         const urlReplaces = Array.isArray(overrides.urlReplace) ? overrides.urlReplace : [overrides.urlReplace];
         for (const ur of urlReplaces) {
           try {
@@ -407,7 +400,6 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
 
       let body: string | undefined = entry.postData ?? undefined;
       if (body != null && overrides?.bodyReplace) {
-        // Normalize to array (accepts single object or array)
         const bodyReplaces = Array.isArray(overrides.bodyReplace) ? overrides.bodyReplace : [overrides.bodyReplace];
         for (const br of bodyReplaces) {
           try {
@@ -434,6 +426,19 @@ export function attachNetworkCapture(page: Page): NetworkCaptureApi {
           u.searchParams.set(k, String(v));
         }
         url = u.toString();
+      }
+
+      // Delegate to transport (swappable HTTP client)
+      if (transport) {
+        return transport.execute({ url, method, headers, body });
+      }
+
+      // Fallback: Playwright page.request.fetch (backward compat when no transport injected)
+      const requestContext = (page as { request?: { fetch: (url: string, options?: object) => Promise<{ status: () => number; headers: () => Record<string, string>; body: () => Promise<Buffer> }> } }).request;
+      if (!requestContext || typeof requestContext.fetch !== 'function') {
+        throw new Error(
+          'Browser context does not support API request (replay). Playwright version may be too old.'
+        );
       }
 
       const response = await requestContext.fetch(url, {
