@@ -143,9 +143,54 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
   {
     type: 'function',
     function: {
+      name: 'editor_write_js',
+      description:
+        'Write the full flow.playwright.js source code. Auto-converts json-dsl packs to playwright-js kind on first call. ' +
+        'Pass the complete source (module.exports = async function({ page, context, frame, inputs, secrets, showrun }) { ... }), ' +
+        'plus optional inputs schema and collectibles definitions for taskpack.json.',
+      parameters: {
+        type: 'object',
+        properties: {
+          source: {
+            type: 'string',
+            description: 'Full JavaScript source code for flow.playwright.js',
+          },
+          inputs: {
+            type: 'object',
+            description: 'Optional input schema for taskpack.json. Object of { fieldName: { type, description?, required?, default? } }.',
+            additionalProperties: {
+              type: 'object',
+              properties: {
+                type: { type: 'string', description: 'Field type: string, number, boolean, etc.' },
+                description: { type: 'string' },
+                required: { type: 'boolean' },
+                default: {},
+              },
+            },
+          },
+          collectibles: {
+            type: 'array',
+            description: 'Optional collectible definitions for taskpack.json. Array of { name, type, description }.',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                type: { type: 'string' },
+                description: { type: 'string' },
+              },
+            },
+          },
+        },
+        required: ['source'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'editor_create_pack',
       description:
-        'Create a new JSON Task Pack. Call this FIRST when starting work on a new automation flow. Returns the created pack info including packId. After creating, use editor_apply_flow_patch to add steps to the flow. Also call conversation_link_pack to associate the pack with the current conversation.',
+        'Create a new Task Pack. Call this FIRST when starting work on a new automation flow. Returns the created pack info including packId. After creating, use editor_write_js to write the flow. Also call conversation_link_pack to associate the pack with the current conversation.',
       parameters: {
         type: 'object',
         properties: {
@@ -872,7 +917,7 @@ const AGENT_BUILD_FLOW_TOOL: ToolDef = {
     name: 'agent_build_flow',
     description:
       'Delegate flow building to the Editor Agent. Call this after exploration is complete and roadmap is approved. ' +
-      'The Editor Agent will build the DSL flow, test it with editor_run_pack, and return results. ' +
+      'The Editor Agent will build a Playwright JS flow, test it with editor_run_pack, and return results. ' +
       'You MUST provide comprehensive exploration context (all API endpoints, DOM structure, auth info, pagination). ' +
       'Do not call this more than 3 times per conversation.',
     parameters: {
@@ -907,7 +952,7 @@ const AGENT_BUILD_FLOW_TOOL: ToolDef = {
 const EDITOR_TOOL_NAMES = new Set([
   'editor_read_pack',
   'editor_list_secrets',
-  'editor_apply_flow_patch',
+  'editor_write_js',
   'editor_run_pack',
 ]);
 
@@ -1188,13 +1233,23 @@ export async function executeAgentTool(
         const result = await taskPackEditor.applyFlowPatch(packId, patch as any);
         return wrap(JSON.stringify(result, null, 2));
       }
+      case 'write_js': {
+        const packId = (args.packId as string) || ctx.packId;
+        if (!packId) throw new Error('No pack linked to this conversation');
+        const source = args.source as string;
+        if (!source || typeof source !== 'string') throw new Error('source (string) is required');
+        const jsInputs = args.inputs as Record<string, { type: string; description?: string; required?: boolean; default?: unknown }> | undefined;
+        const jsCollectibles = args.collectibles as Array<{ name: string; type: string; description?: string }> | undefined;
+        const result = await taskPackEditor.writePlaywrightJsSource(packId, source, jsInputs, jsCollectibles);
+        return wrap(JSON.stringify(result, null, 2));
+      }
       case 'create_pack': {
         // Check if conversation already has a linked pack
         if (ctx.packId) {
           return wrap(JSON.stringify({
-            error: `A pack is already linked to this conversation: "${ctx.packId}". Do not create a new pack. Use editor_read_pack() to see the current flow, then use editor_apply_flow_patch to modify it.`,
+            error: `A pack is already linked to this conversation: "${ctx.packId}". Do not create a new pack. Use editor_read_pack() to see the current flow, then use editor_write_js to write the flow.`,
             existingPackId: ctx.packId,
-            suggestion: 'Call editor_read_pack() first to understand the existing flow, then use editor_apply_flow_patch to make changes.',
+            suggestion: 'Call editor_read_pack() first to understand the existing flow, then use editor_write_js to write the Playwright code.',
           }, null, 2));
         }
 
@@ -1498,11 +1553,11 @@ export async function executeAgentTool(
             }));
           }
           try {
-            const { flowJson } = await ctx.taskPackEditor.readPack(ctx.packId);
-            const stepCount = flowJson?.flow?.length ?? 0;
-            if (stepCount === 0) {
+            const packData = await ctx.taskPackEditor.readPack(ctx.packId);
+            const hasFlow = !!(packData as any).playwrightJsSource || ((packData as any).flowJson?.flow?.length ?? 0) > 0;
+            if (!hasFlow) {
               return wrap(JSON.stringify({
-                error: `Cannot set status to "ready": the pack "${ctx.packId}" has 0 flow steps. You must implement DSL steps in the flow using editor_apply_flow_patch before marking as ready. Exploration alone is not enough — the goal is a reusable, deterministic flow.`,
+                error: `Cannot set status to "ready": the pack "${ctx.packId}" has no flow. You must implement a flow using editor_write_js before marking as ready. Exploration alone is not enough — the goal is a reusable, deterministic flow.`,
               }));
             }
           } catch (readErr) {

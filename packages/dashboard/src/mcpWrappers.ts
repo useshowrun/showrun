@@ -4,7 +4,7 @@
  * These can be called directly without MCP protocol overhead
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, unlinkSync } from 'fs';
 import type { DslStep, CollectibleDefinition, TaskPackManifest } from '@showrun/core';
 import {
   TaskPackLoader,
@@ -15,6 +15,7 @@ import {
   validatePathInAllowedDir,
   ensureDir,
   writeTaskPackManifest,
+  writePlaywrightJs,
   sanitizePackId,
   generateResultKey,
   executePlaywrightJs,
@@ -56,6 +57,8 @@ export interface RunPackResult {
   _hints?: string[];
   /** Key for retrieving stored result via showrun_query_results */
   _resultKey?: string;
+  /** Captured console.log output from playwright-js execution */
+  _logs?: string[];
 }
 
 /**
@@ -416,6 +419,88 @@ export class TaskPackEditorWrapper {
     };
   }
 
+  async writePlaywrightJsSource(
+    packId: string,
+    source: string,
+    inputs?: Record<string, { type: string; description?: string; required?: boolean; default?: unknown }>,
+    collectibles?: Array<{ name: string; type: string; description?: string }>,
+  ): Promise<{ success: boolean; converted: boolean }> {
+    const currentPacks = await discoverPacks({ directories: this.packDirs });
+    const packInfo = currentPacks.find(({ pack }) => pack.metadata.id === packId);
+
+    if (!packInfo) {
+      throw new Error(`Pack not found: ${packId}`);
+    }
+
+    const resolvedWorkspaceDir = resolve(this.workspaceDir);
+    try {
+      validatePathInAllowedDir(packInfo.path, resolvedWorkspaceDir);
+    } catch {
+      throw new Error(`Pack ${packId} is not in workspace directory`);
+    }
+
+    // Validate source has module.exports pattern
+    if (!source.includes('module.exports')) {
+      throw new Error('Source must contain a module.exports = async function({ ... }) { ... } pattern');
+    }
+
+    const manifest = TaskPackLoader.loadManifest(packInfo.path);
+    let converted = false;
+
+    if (manifest.kind === 'json-dsl') {
+      // Auto-convert: read existing flow.json for fallback inputs/collectibles
+      let existingInputs: Record<string, unknown> = {};
+      let existingCollectibles: CollectibleDefinition[] = [];
+      try {
+        const flowPath = resolve(packInfo.path, 'flow.json');
+        const flowData = readJsonFile<{
+          inputs?: any;
+          collectibles?: CollectibleDefinition[];
+          flow: DslStep[];
+        }>(flowPath);
+        existingInputs = flowData.inputs || {};
+        existingCollectibles = flowData.collectibles || [];
+      } catch {
+        // No flow.json or unreadable — that's fine
+      }
+
+      // Update manifest to playwright-js
+      const updatedManifest: TaskPackManifest = {
+        ...manifest,
+        kind: 'playwright-js',
+        inputs: inputs ?? existingInputs as any,
+        collectibles: (collectibles as CollectibleDefinition[] | undefined) ?? existingCollectibles,
+      };
+      writeTaskPackManifest(packInfo.path, updatedManifest);
+
+      // Delete old flow.json
+      try {
+        unlinkSync(resolve(packInfo.path, 'flow.json'));
+      } catch {
+        // May not exist
+      }
+
+      converted = true;
+    } else if (manifest.kind === 'playwright-js') {
+      // Update inputs/collectibles if provided
+      if (inputs || collectibles) {
+        const updatedManifest: TaskPackManifest = {
+          ...manifest,
+          ...(inputs && { inputs: inputs as any }),
+          ...(collectibles && { collectibles: collectibles as CollectibleDefinition[] }),
+        };
+        writeTaskPackManifest(packInfo.path, updatedManifest);
+      }
+    } else {
+      throw new Error(`Pack ${packId} has unsupported kind: ${manifest.kind}`);
+    }
+
+    // Write the flow.playwright.js file
+    writePlaywrightJs(packInfo.path, source);
+
+    return { success: true, converted };
+  }
+
   async runPack(packId: string, inputs: Record<string, unknown>): Promise<RunPackResult> {
     const currentPacks = await discoverPacks({ directories: this.packDirs });
     const packInfo = currentPacks.find(({ pack }) => pack.metadata.id === packId);
@@ -487,6 +572,11 @@ export class TaskPackEditorWrapper {
       // Propagate diagnostic hints if present
       if (result._hints && result._hints.length > 0) {
         packResult._hints = result._hints;
+      }
+
+      // Propagate captured console logs from playwright-js flows
+      if (result._logs && result._logs.length > 0) {
+        packResult._logs = result._logs;
       }
 
       // Include result key so the caller knows how to query stored data

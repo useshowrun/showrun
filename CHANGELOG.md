@@ -10,6 +10,9 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [changed] Editor Agent now builds playwright-js flows via `editor_write_js` tool instead of json-dsl step patching; auto-converts existing json-dsl packs on first write
+- [added] `showrun.network` context object exposed to playwright-js flows — access `list()`, `find()`, `get()`, `replay()` for full network capture interaction
+- [added] Console output capture in playwright-js flows — `console.log()` output returned in `_logs` field of `editor_run_pack` results
 - [added] New `playwright-js` pack kind — write raw Playwright JavaScript flows (`flow.playwright.js`) with full API access, best-effort sandboxing, and frozen inputs/secrets
 - [added] `replay` function exposed to playwright-js scope — enables network replay from user code
 - [added] Swappable replay transport: configure `impit` as alternative to Playwright for `network_replay` steps — browser-grade TLS fingerprint impersonation bypasses Cloudflare bot detection without depending on the browser's networking stack

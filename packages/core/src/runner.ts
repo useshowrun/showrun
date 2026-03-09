@@ -74,10 +74,17 @@ export interface RunTaskPackOptions {
       frame: import('playwright').Frame;
       inputs: Record<string, unknown>;
       secrets: Record<string, string>;
-      replay: NetworkCaptureApi['replay'];
+      showrun: {
+        network: {
+          list: NetworkCaptureApi['list'];
+          find: NetworkCaptureApi['find'];
+          get: NetworkCaptureApi['get'];
+          replay: NetworkCaptureApi['replay'];
+        };
+      };
     },
     timeoutMs?: number,
-  ) => Promise<Record<string, unknown>>;
+  ) => Promise<{ collectibles: Record<string, unknown>; logs: string[] }>;
 }
 
 /**
@@ -251,7 +258,7 @@ export async function runTaskPack(
       }
 
       const jsStartTime = Date.now();
-      const returnValue = await options.playwrightJsExecutor(
+      const jsResult = await options.playwrightJsExecutor(
         taskPack.playwrightJsSource,
         {
           page,
@@ -259,9 +266,17 @@ export async function runTaskPack(
           frame: page.mainFrame(),
           inputs: inputsWithDefaults,
           secrets,
-          replay: networkCapture.replay.bind(networkCapture),
+          showrun: {
+            network: {
+              list: networkCapture.list.bind(networkCapture),
+              find: networkCapture.find.bind(networkCapture),
+              get: networkCapture.get.bind(networkCapture),
+              replay: networkCapture.replay.bind(networkCapture),
+            },
+          },
         },
       );
+      const returnValue = jsResult.collectibles;
 
       // Filter collectibles to only include those defined in the pack
       const definedCollectibleNames = new Set(
@@ -282,6 +297,11 @@ export async function runTaskPack(
           notes: 'Executed playwright-js flow',
         },
       };
+
+      // Surface captured console logs
+      if (jsResult.logs && jsResult.logs.length > 0) {
+        result._logs = jsResult.logs;
+      }
     } else {
       // ─── json-dsl execution ─────────────────────────────────────────
       const flowResult = await runFlow(runContext, taskPack.flow, {

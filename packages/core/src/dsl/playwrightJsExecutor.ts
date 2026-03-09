@@ -33,7 +33,22 @@ export interface PlaywrightJsScope {
   frame: Frame;
   inputs: Record<string, unknown>;
   secrets: Record<string, string>;
-  replay: NetworkCaptureApi['replay'];
+  showrun: {
+    network: {
+      list: NetworkCaptureApi['list'];
+      find: NetworkCaptureApi['find'];
+      get: NetworkCaptureApi['get'];
+      replay: NetworkCaptureApi['replay'];
+    };
+  };
+}
+
+/**
+ * Result from executing a playwright-js flow.
+ */
+export interface PlaywrightJsResult {
+  collectibles: Record<string, unknown>;
+  logs: string[];
 }
 
 /**
@@ -89,15 +104,24 @@ export async function executePlaywrightJs(
   code: string,
   scope: PlaywrightJsScope,
   timeoutMs = 5 * 60 * 1000,
-): Promise<Record<string, unknown>> {
+): Promise<PlaywrightJsResult> {
   const functionBody = extractFunctionBody(code);
+
+  // Capture console.log output from user code
+  const logs: string[] = [];
+  const customConsole = {
+    log: (...args: unknown[]) => logs.push(args.map(String).join(' ')),
+    warn: (...args: unknown[]) => logs.push(`[warn] ${args.map(String).join(' ')}`),
+    error: (...args: unknown[]) => logs.push(`[error] ${args.map(String).join(' ')}`),
+    info: (...args: unknown[]) => logs.push(args.map(String).join(' ')),
+  };
 
   // Build the sandboxed function:
   // Blocked globals are function parameters, passed as undefined to shadow them.
   // Scope variables (page, context, etc.) are also parameters.
   const fn = new AsyncFunction(
     ...BLOCKED_GLOBALS,
-    'page', 'context', 'frame', 'inputs', 'secrets', 'replay',
+    'page', 'context', 'frame', 'inputs', 'secrets', 'showrun', 'console',
     functionBody,
   );
 
@@ -114,7 +138,8 @@ export async function executePlaywrightJs(
     scope.frame,
     frozenInputs,
     frozenSecrets,
-    scope.replay,
+    scope.showrun,
+    customConsole,
   ];
 
   // Execute with timeout
@@ -132,11 +157,14 @@ export async function executePlaywrightJs(
   ]);
 
   // Normalize result: if null/undefined, return empty object
+  let collectibles: Record<string, unknown>;
   if (result == null) {
-    return {};
+    collectibles = {};
+  } else if (typeof result !== 'object' || Array.isArray(result)) {
+    collectibles = { _result: result };
+  } else {
+    collectibles = result as Record<string, unknown>;
   }
-  if (typeof result !== 'object' || Array.isArray(result)) {
-    return { _result: result };
-  }
-  return result as Record<string, unknown>;
+
+  return { collectibles, logs };
 }

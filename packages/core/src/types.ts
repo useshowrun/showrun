@@ -156,6 +156,10 @@ export interface RunResult {
    * These help AI agents understand why data extraction may have failed.
    */
   _hints?: string[];
+  /**
+   * Captured console.log output from playwright-js flows.
+   */
+  _logs?: string[];
 }
 
 /**

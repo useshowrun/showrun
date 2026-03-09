@@ -17,7 +17,14 @@ function createMockScope(overrides?: Partial<PlaywrightJsScope>): PlaywrightJsSc
     frame: {} as any,
     inputs: { query: 'hello' },
     secrets: { apiKey: 'secret123' },
-    replay: vi.fn().mockResolvedValue({ status: 200, contentType: 'application/json', body: '{}', bodySize: 2 }),
+    showrun: {
+      network: {
+        list: vi.fn().mockResolvedValue([]),
+        find: vi.fn().mockResolvedValue(null),
+        get: vi.fn().mockResolvedValue(null),
+        replay: vi.fn().mockResolvedValue({ status: 200, contentType: 'application/json', body: '{}', bodySize: 2 }),
+      },
+    },
     ...overrides,
   };
 }
@@ -55,7 +62,8 @@ describe('executePlaywrightJs', () => {
     };`;
     const scope = createMockScope();
     const result = await executePlaywrightJs(code, scope);
-    expect(result).toEqual({ result: 'hello_processed' });
+    expect(result.collectibles).toEqual({ result: 'hello_processed' });
+    expect(result.logs).toEqual([]);
   });
 
   it('can call page methods', async () => {
@@ -65,7 +73,7 @@ describe('executePlaywrightJs', () => {
     };`;
     const scope = createMockScope();
     const result = await executePlaywrightJs(code, scope);
-    expect(result).toEqual({ title: 'Test Title' });
+    expect(result.collectibles).toEqual({ title: 'Test Title' });
     expect(scope.page.title).toHaveBeenCalled();
   });
 
@@ -85,15 +93,15 @@ describe('executePlaywrightJs', () => {
     };`;
     const scope = createMockScope();
     const result = await executePlaywrightJs(code, scope);
-    expect(result.hasProcess).toBe(false);
-    expect(result.hasRequire).toBe(false);
-    expect(result.hasBuffer).toBe(false);
-    expect(result.hasGlobal).toBe(false);
-    expect(result.hasGlobalThis).toBe(false);
-    expect(result.hasFetch).toBe(false);
-    expect(result.hasEval).toBe(false);
-    expect(result.hasFunction).toBe(false);
-    expect(result.hasSetTimeout).toBe(false);
+    expect(result.collectibles.hasProcess).toBe(false);
+    expect(result.collectibles.hasRequire).toBe(false);
+    expect(result.collectibles.hasBuffer).toBe(false);
+    expect(result.collectibles.hasGlobal).toBe(false);
+    expect(result.collectibles.hasGlobalThis).toBe(false);
+    expect(result.collectibles.hasFetch).toBe(false);
+    expect(result.collectibles.hasEval).toBe(false);
+    expect(result.collectibles.hasFunction).toBe(false);
+    expect(result.collectibles.hasSetTimeout).toBe(false);
   });
 
   it('freezes inputs (mutations do not propagate)', async () => {
@@ -104,7 +112,7 @@ describe('executePlaywrightJs', () => {
     const scope = createMockScope();
     const result = await executePlaywrightJs(code, scope);
     // Frozen object silently ignores assignment in sloppy mode
-    expect(result.value).toBe('hello');
+    expect(result.collectibles.value).toBe('hello');
     // Original scope inputs are also unmodified
     expect(scope.inputs.query).toBe('hello');
   });
@@ -116,7 +124,7 @@ describe('executePlaywrightJs', () => {
     };`;
     const scope = createMockScope();
     const result = await executePlaywrightJs(code, scope);
-    expect(result.value).toBe('secret123');
+    expect(result.collectibles.value).toBe('secret123');
     expect(scope.secrets.apiKey).toBe('secret123');
   });
 
@@ -126,18 +134,59 @@ describe('executePlaywrightJs', () => {
     };`;
     const scope = createMockScope();
     const result = await executePlaywrightJs(code, scope);
-    expect(result).toEqual({});
+    expect(result.collectibles).toEqual({});
   });
 
-  it('can access replay function', async () => {
-    const code = `module.exports = async function({ replay }) {
-      const res = await replay('req-1');
+  it('can access showrun.network.replay', async () => {
+    const code = `module.exports = async function({ showrun }) {
+      const res = await showrun.network.replay('req-1');
       return { status: res.status };
     };`;
     const scope = createMockScope();
     const result = await executePlaywrightJs(code, scope);
-    expect(result).toEqual({ status: 200 });
-    expect(scope.replay).toHaveBeenCalledWith('req-1');
+    expect(result.collectibles).toEqual({ status: 200 });
+    expect(scope.showrun.network.replay).toHaveBeenCalledWith('req-1');
+  });
+
+  it('can access showrun.network.list', async () => {
+    const code = `module.exports = async function({ showrun }) {
+      const entries = await showrun.network.list();
+      return { count: entries.length };
+    };`;
+    const scope = createMockScope();
+    const result = await executePlaywrightJs(code, scope);
+    expect(result.collectibles).toEqual({ count: 0 });
+    expect(scope.showrun.network.list).toHaveBeenCalled();
+  });
+
+  it('can access showrun.network.find', async () => {
+    const code = `module.exports = async function({ showrun }) {
+      const entry = await showrun.network.find({ urlIncludes: '/api' });
+      return { found: entry !== null };
+    };`;
+    const scope = createMockScope();
+    const result = await executePlaywrightJs(code, scope);
+    expect(result.collectibles).toEqual({ found: false });
+    expect(scope.showrun.network.find).toHaveBeenCalledWith({ urlIncludes: '/api' });
+  });
+
+  it('captures console.log output', async () => {
+    const code = `module.exports = async function({ page }) {
+      console.log('hello', 'world');
+      console.warn('a warning');
+      console.error('an error');
+      console.info('info message');
+      return { done: true };
+    };`;
+    const scope = createMockScope();
+    const result = await executePlaywrightJs(code, scope);
+    expect(result.collectibles).toEqual({ done: true });
+    expect(result.logs).toEqual([
+      'hello world',
+      '[warn] a warning',
+      '[error] an error',
+      'info message',
+    ]);
   });
 
   it('times out on long-running code', async () => {
