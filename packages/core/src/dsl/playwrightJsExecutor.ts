@@ -49,6 +49,7 @@ export interface PlaywrightJsScope {
 export interface PlaywrightJsResult {
   collectibles: Record<string, unknown>;
   logs: string[];
+  error?: string;
 }
 
 /**
@@ -142,19 +143,31 @@ export async function executePlaywrightJs(
     customConsole,
   ];
 
-  // Execute with timeout
-  const result = await Promise.race([
-    fn(...args),
-    new Promise<never>((_, reject) => {
-      const timer = globalThis.setTimeout(() => {
-        reject(new Error(`playwright-js execution timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-      // Allow Node.js to exit even if timer is pending
-      if (typeof timer === 'object' && 'unref' in timer) {
-        timer.unref();
-      }
-    }),
-  ]);
+  // Execute with timeout, wrapped in try-catch to handle browser/page closure errors
+  let result: unknown;
+  try {
+    result = await Promise.race([
+      fn(...args),
+      new Promise<never>((_, reject) => {
+        const timer = globalThis.setTimeout(() => {
+          reject(new Error(`playwright-js execution timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        // Allow Node.js to exit even if timer is pending
+        if (typeof timer === 'object' && 'unref' in timer) {
+          timer.unref();
+        }
+      }),
+    ]);
+  } catch (error) {
+    // Handle flow execution errors gracefully instead of crashing
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    logs.push(`[error] Flow execution failed: ${errorMessage}`);
+    return {
+      collectibles: {},
+      logs,
+      error: errorMessage,
+    } as PlaywrightJsResult;
+  }
 
   // Normalize result: if null/undefined, return empty object
   let collectibles: Record<string, unknown>;
