@@ -141,6 +141,8 @@ Include: API endpoints, body format, extraction paths, auth patterns.
 | \`browser_get_links()\` | Get all page links |
 | \`browser_get_dom_snapshot()\` | Get DOM structure |
 | \`browser_get_element_bounds(selector)\` | Get element position |
+| \`browser_solve_turnstile()\` | Detect and click Cloudflare Turnstile checkbox |
+| \`browser_detect_turnstile()\` | Detect Turnstile position (x, y) without clicking |
 | \`browser_last_actions()\` | Recent browser actions |
 | \`browser_close_session()\` | Close browser |
 | \`set_proxy(enabled, mode?, country?)\` | Enable/disable proxy for flow (restarts browser) |
@@ -196,11 +198,15 @@ Include: API endpoints, body format, extraction paths, auth patterns.
 - Proxy also applies to HTTP-only request replays
 
 ## CLOUDFLARE TURNSTILE HANDLING
-When a site has Cloudflare Turnstile CAPTCHA, include this in your \`explorationContext\` for the Editor Agent:
+When you encounter Cloudflare Turnstile CAPTCHA during exploration:
+1. Use \`browser_solve_turnstile()\` to automatically detect and click the checkbox
+2. Or use \`browser_detect_turnstile()\` to check if Turnstile is present before deciding
+
+When passing to the Editor Agent, include in \`explorationContext\`:
 - "Site has Cloudflare Turnstile CAPTCHA on the form page"
 - "Use \`util.solveCloudflareTurnstile()\` after navigation to solve it"
-- The Editor Agent has access to \`util.detectCloudflareTurnstile()\` and \`util.solveCloudflareTurnstile()\`
-- These utilities use image-based detection (shadow-DOM blocks direct inspection)
+
+These utilities use image-based detection (shadow-DOM blocks direct DOM inspection).
 
 ## CRITICAL REMINDERS
 

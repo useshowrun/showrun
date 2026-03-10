@@ -13,6 +13,10 @@ import {
   type TurnstileSolveResult,
 } from './turnstile.js';
 
+// Re-export for direct usage
+export { detectCloudflareTurnstile, solveCloudflareTurnstile };
+export type { TurnstileDetectionResult, TurnstileSolveResult };
+
 /**
  * Utility object available in playwright-js flows as `util`
  */
@@ -75,5 +79,3 @@ export function createPlaywrightJsUtil(page: Page): PlaywrightJsUtil {
     solveCloudflareTurnstile: (options) => solveCloudflareTurnstile(page, options),
   };
 }
-
-export type { TurnstileDetectionResult, TurnstileSolveResult };

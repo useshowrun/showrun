@@ -5,7 +5,7 @@
 import type { ToolDef } from './llm/provider.js';
 import type { TaskPackEditorWrapper } from './mcpWrappers.js';
 import * as browserInspector from './browserInspector.js';
-import { isSessionAlive, startBrowserSession, closeSession } from './browserInspector.js';
+import { isSessionAlive, startBrowserSession, closeSession, getSessionPage } from './browserInspector.js';
 import { getSecretNamesWithValues } from './secretsUtils.js';
 import { resolveTemplates, TaskPackLoader, saveVersion, resolveProxy } from '@showrun/core';
 import type { ProxyConfig } from '@showrun/core';
@@ -441,6 +441,36 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
           clickCount: { type: 'number', description: '1 for single click, 2 for double click (default 1)' },
         },
         required: ['x', 'y'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_solve_turnstile',
+      description: 'Detect and solve Cloudflare Turnstile CAPTCHA. Uses image-based detection to find the checkbox (works even with shadow-DOM). Takes a screenshot, detects the widget, and clicks the checkbox. Supports both light and dark themes. Use this when you encounter a Cloudflare Turnstile challenge on a page.',
+      parameters: {
+        type: 'object',
+        properties: {
+          scale: { type: 'number', description: 'Scale factor for HiDPI/retina displays (default 1). Use 2 if detection fails on high-resolution screens.' },
+          retries: { type: 'number', description: 'Number of retry attempts (default 3)' },
+          waitAfterClick: { type: 'number', description: 'Milliseconds to wait after clicking (default 2000)' },
+        },
+        required: [],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_detect_turnstile',
+      description: 'Detect Cloudflare Turnstile checkbox position without clicking. Returns found (boolean), x, y coordinates, widget bounds, and detected theme. Use this to check if a page has Turnstile before deciding to solve it.',
+      parameters: {
+        type: 'object',
+        properties: {
+          scale: { type: 'number', description: 'Scale factor for HiDPI/retina displays (default 1)' },
+        },
+        required: [],
       },
     },
   },
@@ -1023,6 +1053,7 @@ const EXPLORATION_ONLY_TOOL_NAMES = new Set([
   'browser_goto', 'browser_go_back', 'browser_type', 'browser_screenshot',
   'browser_get_links', 'browser_get_dom_snapshot', 'browser_click',
   'browser_click_coordinates', 'browser_get_element_bounds',
+  'browser_solve_turnstile', 'browser_detect_turnstile',
   'browser_last_actions', 'browser_close_session',
   // Network tools
   'browser_network_list', 'browser_network_search', 'browser_network_get',
@@ -1407,6 +1438,30 @@ export async function executeAgentTool(
         const button = (args.button as 'left' | 'right' | 'middle') ?? 'left';
         const clickCount = (args.clickCount as number) ?? 1;
         const result = await browserInspector.clickAtCoordinates(sessionId, x, y, { button, clickCount });
+        return wrap(JSON.stringify(result, null, 2));
+      }
+      case 'solve_turnstile': {
+        const sessionId = effectiveArgs.sessionId as string;
+        const page = getSessionPage(sessionId);
+        if (!page) throw new Error('No active browser session');
+        
+        const { solveCloudflareTurnstile } = await import('@showrun/core');
+        const scale = (args.scale as number) ?? 1;
+        const retries = (args.retries as number) ?? 3;
+        const waitAfterClick = (args.waitAfterClick as number) ?? 2000;
+        
+        const result = await solveCloudflareTurnstile(page, { scale, retries, waitAfterClick });
+        return wrap(JSON.stringify(result, null, 2));
+      }
+      case 'detect_turnstile': {
+        const sessionId = effectiveArgs.sessionId as string;
+        const page = getSessionPage(sessionId);
+        if (!page) throw new Error('No active browser session');
+        
+        const { detectCloudflareTurnstile } = await import('@showrun/core');
+        const scale = (args.scale as number) ?? 1;
+        
+        const result = await detectCloudflareTurnstile(page, { scale });
         return wrap(JSON.stringify(result, null, 2));
       }
       case 'get_element_bounds': {
