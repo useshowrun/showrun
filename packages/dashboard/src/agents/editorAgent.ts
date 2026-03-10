@@ -64,6 +64,8 @@ module.exports = async function({ page, context, frame, inputs, secrets, showrun
 | \`showrun.network.find(where, pick?)\` | Find a request by URL/method/status |
 | \`showrun.network.get(requestId)\` | Get request details |
 | \`showrun.network.replay(requestId, overrides?)\` | Replay a captured request with modifications |
+| \`util.detectCloudflareTurnstile(options?)\` | Detect Turnstile checkbox position (returns {found, x, y}) |
+| \`util.solveCloudflareTurnstile(options?)\` | Detect and click Turnstile checkbox (returns {success, error}) |
 | \`console.log()\` | Captured — appears in \`editor_run_pack\` results under \`_logs\` |
 
 ## API-First Rule
@@ -128,6 +130,31 @@ await page.getByLabel('Email').fill(secrets.EMAIL);
 await page.getByLabel('Password').fill(secrets.PASSWORD);
 await page.getByRole('button', { name: 'Sign in' }).click();
 await page.waitForURL('**/dashboard**');
+\`\`\`
+
+### Cloudflare Turnstile CAPTCHA
+\`\`\`javascript
+// When a page has Cloudflare Turnstile protection:
+await page.goto('https://protected-site.com/form');
+
+// Option 1: Just solve it (recommended)
+const result = await util.solveCloudflareTurnstile();
+if (!result.success) {
+  console.log('Turnstile solve failed:', result.error);
+}
+
+// Option 2: Detect first, then decide
+const detection = await util.detectCloudflareTurnstile();
+if (detection.found) {
+  console.log('Turnstile at', detection.x, detection.y);
+  await page.mouse.click(detection.x, detection.y);
+  await page.waitForTimeout(2000);
+}
+
+// Options for both functions:
+// - scale: number (default 1, use 2 for HiDPI/retina displays)
+// - retries: number (default 3, for solveCloudflareTurnstile)
+// - waitAfterClick: number (default 2000ms, for solveCloudflareTurnstile)
 \`\`\`
 
 ## Returning Collectibles

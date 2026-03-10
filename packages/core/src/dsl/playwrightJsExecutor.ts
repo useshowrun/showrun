@@ -12,6 +12,7 @@
 
 import type { Page, BrowserContext, Frame } from 'playwright';
 import type { NetworkCaptureApi } from '../networkCapture.js';
+import { createPlaywrightJsUtil, type PlaywrightJsUtil } from '../util/index.js';
 
 /**
  * Globals shadowed inside user code (passed as undefined).
@@ -41,6 +42,7 @@ export interface PlaywrightJsScope {
       replay: NetworkCaptureApi['replay'];
     };
   };
+  util: PlaywrightJsUtil;
 }
 
 /**
@@ -122,7 +124,7 @@ export async function executePlaywrightJs(
   // Scope variables (page, context, etc.) are also parameters.
   const fn = new AsyncFunction(
     ...BLOCKED_GLOBALS,
-    'page', 'context', 'frame', 'inputs', 'secrets', 'showrun', 'console',
+    'page', 'context', 'frame', 'inputs', 'secrets', 'showrun', 'util', 'console',
     functionBody,
   );
 
@@ -140,6 +142,7 @@ export async function executePlaywrightJs(
     frozenInputs,
     frozenSecrets,
     scope.showrun,
+    scope.util,
     customConsole,
   ];
 

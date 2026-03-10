@@ -4,15 +4,20 @@ import type { PlaywrightJsScope } from '../dsl/playwrightJsExecutor.js';
 
 // Minimal mock page/context/frame for testing
 function createMockScope(overrides?: Partial<PlaywrightJsScope>): PlaywrightJsScope {
+  const mockPage = {
+    goto: vi.fn().mockResolvedValue(undefined),
+    title: vi.fn().mockResolvedValue('Test Title'),
+    url: vi.fn().mockReturnValue('https://example.com'),
+    locator: vi.fn().mockReturnValue({
+      evaluateAll: vi.fn().mockResolvedValue([]),
+    }),
+    screenshot: vi.fn().mockResolvedValue(Buffer.from('')),
+    mouse: { click: vi.fn().mockResolvedValue(undefined) },
+    waitForTimeout: vi.fn().mockResolvedValue(undefined),
+  } as any;
+
   return {
-    page: {
-      goto: vi.fn().mockResolvedValue(undefined),
-      title: vi.fn().mockResolvedValue('Test Title'),
-      url: vi.fn().mockReturnValue('https://example.com'),
-      locator: vi.fn().mockReturnValue({
-        evaluateAll: vi.fn().mockResolvedValue([]),
-      }),
-    } as any,
+    page: mockPage,
     context: {} as any,
     frame: {} as any,
     inputs: { query: 'hello' },
@@ -24,6 +29,10 @@ function createMockScope(overrides?: Partial<PlaywrightJsScope>): PlaywrightJsSc
         get: vi.fn().mockResolvedValue(null),
         replay: vi.fn().mockResolvedValue({ status: 200, contentType: 'application/json', body: '{}', bodySize: 2 }),
       },
+    },
+    util: {
+      detectCloudflareTurnstile: vi.fn().mockResolvedValue({ found: false }),
+      solveCloudflareTurnstile: vi.fn().mockResolvedValue({ success: false, detected: false }),
     },
     ...overrides,
   };

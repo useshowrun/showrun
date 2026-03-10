@@ -16,6 +16,7 @@ import {
   detectSensitiveHeaders,
 } from './requestSnapshot.js';
 import type { NetworkCaptureApi } from './networkCapture.js';
+import { createPlaywrightJsUtil } from './util/index.js';
 
 /**
  * Options for running a task pack
@@ -82,6 +83,7 @@ export interface RunTaskPackOptions {
           replay: NetworkCaptureApi['replay'];
         };
       };
+      util: import('./util/index.js').PlaywrightJsUtil;
     },
     timeoutMs?: number,
   ) => Promise<{ collectibles: Record<string, unknown>; logs: string[] }>;
@@ -274,6 +276,7 @@ export async function runTaskPack(
               replay: networkCapture.replay.bind(networkCapture),
             },
           },
+          util: createPlaywrightJsUtil(page),
         },
       );
       const returnValue = jsResult.collectibles;
