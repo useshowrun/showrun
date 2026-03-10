@@ -463,20 +463,6 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
   {
     type: 'function',
     function: {
-      name: 'browser_detect_turnstile',
-      description: 'Detect Cloudflare Turnstile checkbox position without clicking. Returns found (boolean), x, y coordinates, widget bounds, and detected theme. Use this to check if a page has Turnstile before deciding to solve it.',
-      parameters: {
-        type: 'object',
-        properties: {
-          scale: { type: 'number', description: 'Scale factor for HiDPI/retina displays (default 1)' },
-        },
-        required: [],
-      },
-    },
-  },
-  {
-    type: 'function',
-    function: {
       name: 'browser_get_element_bounds',
       description: 'Get the bounding box of an element by CSS selector. Returns position (x, y), dimensions (width, height), and center point (centerX, centerY) for clicking. Use this to find coordinates for elements that are difficult to target with normal selectors, such as iframe contents or positioned elements.',
       parameters: {
@@ -1053,7 +1039,7 @@ const EXPLORATION_ONLY_TOOL_NAMES = new Set([
   'browser_goto', 'browser_go_back', 'browser_type', 'browser_screenshot',
   'browser_get_links', 'browser_get_dom_snapshot', 'browser_click',
   'browser_click_coordinates', 'browser_get_element_bounds',
-  'browser_solve_turnstile', 'browser_detect_turnstile',
+  'browser_solve_turnstile',
   'browser_last_actions', 'browser_close_session',
   // Network tools
   'browser_network_list', 'browser_network_search', 'browser_network_get',
@@ -1392,6 +1378,24 @@ export async function executeAgentTool(
         const resolvedUrl = await resolveTemplateValue(url, ctx);
         const result = await browserInspector.gotoUrl(sessionId, resolvedUrl);
         const { resultJson, snapshot } = await actionWithScreenshot(sessionId, result);
+        
+        // Check for Cloudflare Turnstile and add hint if detected
+        const page = getSessionPage(sessionId);
+        if (page) {
+          try {
+            const { detectCloudflareTurnstile } = await import('@showrun/core');
+            const turnstileResult = await detectCloudflareTurnstile(page, { scale: 1 });
+            if (turnstileResult.found) {
+              const parsed = JSON.parse(resultJson);
+              parsed._turnstileDetected = true;
+              parsed._hint = 'Cloudflare Turnstile CAPTCHA detected on this page. Use browser_solve_turnstile() to solve it before continuing.';
+              return wrap(JSON.stringify(parsed, null, 2), snapshot);
+            }
+          } catch {
+            // Ignore detection errors, continue normally
+          }
+        }
+        
         return wrap(resultJson, snapshot);
       }
       case 'go_back': {
@@ -1451,17 +1455,6 @@ export async function executeAgentTool(
         const waitAfterClick = (args.waitAfterClick as number) ?? 2000;
         
         const result = await solveCloudflareTurnstile(page, { scale, retries, waitAfterClick });
-        return wrap(JSON.stringify(result, null, 2));
-      }
-      case 'detect_turnstile': {
-        const sessionId = effectiveArgs.sessionId as string;
-        const page = getSessionPage(sessionId);
-        if (!page) throw new Error('No active browser session');
-        
-        const { detectCloudflareTurnstile } = await import('@showrun/core');
-        const scale = (args.scale as number) ?? 1;
-        
-        const result = await detectCloudflareTurnstile(page, { scale });
         return wrap(JSON.stringify(result, null, 2));
       }
       case 'get_element_bounds': {

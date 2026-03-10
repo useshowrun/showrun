@@ -142,7 +142,6 @@ Include: API endpoints, body format, extraction paths, auth patterns.
 | \`browser_get_dom_snapshot()\` | Get DOM structure |
 | \`browser_get_element_bounds(selector)\` | Get element position |
 | \`browser_solve_turnstile()\` | Detect and click Cloudflare Turnstile checkbox |
-| \`browser_detect_turnstile()\` | Detect Turnstile position (x, y) without clicking |
 | \`browser_last_actions()\` | Recent browser actions |
 | \`browser_close_session()\` | Close browser |
 | \`set_proxy(enabled, mode?, country?)\` | Enable/disable proxy for flow (restarts browser) |
