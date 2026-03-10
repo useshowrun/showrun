@@ -9,18 +9,18 @@
 }
 
 :root {
-  /* Background colors — based on brand dark #1F2937 */
-  --bg-main: #1e2530;
-  --bg-sidebar: #1F2937;
-  --bg-card: #2c3544;
-  --bg-card-active: #374151;
-  --bg-input: #252e3b;
-  --bg-hover: #333d4d;
+  /* Background colors — aligned with landing page dark theme */
+  --bg-main: #0a0a0f;
+  --bg-sidebar: #12121a;
+  --bg-card: #1a1a24;
+  --bg-card-active: #22222f;
+  --bg-input: #16161f;
+  --bg-hover: #1e1e2e;
 
   /* Text colors */
-  --text-primary: #f0f0f0;
-  --text-secondary: #9ca3af;
-  --text-muted: #6b7280;
+  --text-primary: #e2e8f0;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
 
   /* Brand accent colors — from brand guidelines */
   --brand-base: #FF671A;
@@ -43,8 +43,8 @@
   --status-running: #3b82f6;
 
   /* Border colors */
-  --border-subtle: #374151;
-  --border-accent: #4B5563;
+  --border-subtle: #1e1e2e;
+  --border-accent: #2a2a3a;
 
   /* Shadows */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -52,7 +52,8 @@
   --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.4);
 
   /* Spacing */
-  --sidebar-width: 320px;
+  --sidebar-width: 280px;
+  --nav-rail-width: 52px;
 
   /* Typography — Host Grotesk (brand) + Inter (body) */
   --font-family: 'Host Grotesk', 'Inter', -apple-system, BlinkMacSystemFont,
@@ -99,13 +100,113 @@ code, pre {
   overflow: hidden;
 }
 
+/* Nav Rail — vertical icon sidebar */
+.nav-rail {
+  width: var(--nav-rail-width);
+  background-color: var(--bg-sidebar);
+  border-right: 1px solid var(--border-subtle);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  padding: 8px 0 12px;
+  gap: 2px;
+  z-index: 10;
+}
+
+.nav-rail-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  margin-bottom: 10px;
+}
+
+.nav-rail-divider {
+  width: 28px;
+  height: 1px;
+  background-color: var(--border-subtle);
+  margin: 4px 0 6px;
+}
+
+.nav-rail-item {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  background: none;
+  border: none;
+  border-radius: 10px;
+  color: var(--text-muted);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.nav-rail-item:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.nav-rail-item.active {
+  background-color: rgba(255, 103, 26, 0.12);
+  color: var(--accent-orange);
+}
+
+.nav-rail-item.active::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 3px;
+  height: 20px;
+  background: var(--accent-orange);
+  border-radius: 0 2px 2px 0;
+}
+
+.nav-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  min-width: 15px;
+  height: 15px;
+  background-color: var(--accent-orange);
+  color: white;
+  font-size: 9px;
+  font-weight: 700;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 3px;
+}
+
+/* Resize handle */
+.resize-handle {
+  width: 4px;
+  background: transparent;
+  cursor: col-resize;
+  flex-shrink: 0;
+  transition: background 0.15s;
+  position: relative;
+}
+
+.resize-handle:hover,
+.resize-handle.resizing {
+  background: var(--accent-orange);
+  opacity: 0.5;
+}
+
 .sidebar {
-  width: var(--sidebar-width);
   background-color: var(--bg-sidebar);
   border-right: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  overflow: hidden;
 }
 
 .main-content {
@@ -116,36 +217,23 @@ code, pre {
   background-color: var(--bg-main);
 }
 
-/* Header */
-.header {
-  display: flex;
-  align-items: center;
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-subtle);
-  background-color: var(--bg-sidebar);
-}
-
-.header-back {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  padding: 8px;
-  margin-right: 12px;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.header-back:hover {
-  background-color: var(--bg-hover);
+/* Nav rail tooltip */
+.nav-rail-item[title]:hover::after {
+  content: attr(title);
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--bg-card-active);
   color: var(--text-primary);
-}
-
-.header-logo {
-  display: flex;
-  align-items: center;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 4px 8px;
+  border-radius: 6px;
+  white-space: nowrap;
+  border: 1px solid var(--border-accent);
+  pointer-events: none;
+  z-index: 100;
 }
 
 /* Sidebar Header */
@@ -471,38 +559,7 @@ code, pre {
   background-color: #dc2626;
 }
 
-/* Bottom Navigation */
-.bottom-nav {
-  display: flex;
-  border-top: 1px solid var(--border-subtle);
-  background-color: var(--bg-sidebar);
-}
-
-.bottom-nav-item {
-  flex: 1;
-  padding: 12px 16px;
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  transition: all 0.15s ease;
-}
-
-.bottom-nav-item:hover {
-  color: var(--text-primary);
-  background-color: var(--bg-hover);
-}
-
-.bottom-nav-item.active {
-  color: var(--accent-orange);
-  background-color: var(--bg-hover);
-}
+/* Bottom Navigation — kept for legacy reference */
 
 /* Cards */
 .card {

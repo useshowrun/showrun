@@ -22,7 +22,7 @@ import {
 } from '@showrun/core';
 import type { ResultStoreProvider, CollectibleSchemaField } from '@showrun/core';
 import { discoverPacks } from '@showrun/mcp-server';
-import { JSONLLogger } from '@showrun/harness';
+import { JSONLLogger, SQLiteResultStore } from '@showrun/harness';
 import { randomBytes } from 'crypto';
 import { resolve } from 'path';
 import { existsSync } from 'fs';
@@ -528,8 +528,16 @@ export class TaskPackEditorWrapper {
         playwrightJsExecutor: executePlaywrightJs,
       });
 
-      // Auto-store result if a store exists for this pack
-      const store = this.resultStores?.get(packId);
+      // Auto-store result: lazily create a result store if one doesn't exist yet
+      let store = this.resultStores?.get(packId);
+      if (!store && this.resultStores) {
+        try {
+          store = new SQLiteResultStore(resolve(packInfo.path, 'results.db'));
+          this.resultStores.set(packId, store);
+        } catch (err) {
+          console.warn(`[Dashboard] Failed to init result store for ${packId}: ${err}`);
+        }
+      }
       const resultKey = store ? generateResultKey(packId, inputs) : undefined;
       if (store && resultKey) {
         const schema: CollectibleSchemaField[] = pack.collectibles.map((c) => ({

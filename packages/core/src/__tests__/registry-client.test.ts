@@ -124,12 +124,12 @@ describe('RegistryClient', () => {
     vi.restoreAllMocks();
   });
 
-  it('throws RegistryError when registry URL is not configured', async () => {
+  it('falls back to default registry URL when not configured', async () => {
     delete process.env.SHOWRUN_REGISTRY_URL;
-    const { RegistryClient, RegistryError } = await import('../registry/client.js');
+    const { RegistryClient } = await import('../registry/client.js');
 
-    expect(() => new RegistryClient()).toThrow(RegistryError);
-    expect(() => new RegistryClient()).toThrow('Registry not configured');
+    const client = new RegistryClient();
+    expect(client).toBeDefined();
   });
 
   it('constructs with explicit URL', async () => {

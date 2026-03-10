@@ -108,6 +108,42 @@ export default function ChatView({
   const [networkRequests, setNetworkRequests] = useState<NetworkEntry[]>([]);
   const [networkLoading, setNetworkLoading] = useState(false);
 
+  // Resizable right panel
+  const [rightPanelWidth, setRightPanelWidth] = useState(380);
+  const rightPanelIsResizing = useRef(false);
+  const rightPanelStartX = useRef(0);
+  const rightPanelStartWidth = useRef(0);
+
+  const handleRightPanelResizeStart = (e: React.MouseEvent) => {
+    rightPanelIsResizing.current = true;
+    rightPanelStartX.current = e.clientX;
+    rightPanelStartWidth.current = rightPanelWidth;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  useEffect(() => {
+    const onMouseMove = (e: MouseEvent) => {
+      if (!rightPanelIsResizing.current) return;
+      const delta = rightPanelStartX.current - e.clientX;
+      const newWidth = Math.min(600, Math.max(240, rightPanelStartWidth.current + delta));
+      setRightPanelWidth(newWidth);
+    };
+    const onMouseUp = () => {
+      if (rightPanelIsResizing.current) {
+        rightPanelIsResizing.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+    document.addEventListener('mousemove', onMouseMove);
+    document.addEventListener('mouseup', onMouseUp);
+    return () => {
+      document.removeEventListener('mousemove', onMouseMove);
+      document.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []);
+
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -828,9 +864,15 @@ export default function ChatView({
 
         {/* Right side panel (network / secrets / versions / run) */}
         {rightPanelOpen && (
+        <>
+        <div
+          className="resize-handle"
+          onMouseDown={handleRightPanelResizeStart}
+          title=""
+        />
         <div style={{
-          width: '400px',
-          minWidth: '400px',
+          width: rightPanelWidth,
+          minWidth: rightPanelWidth,
           borderLeft: '1px solid var(--border-subtle)',
           display: 'flex',
           flexDirection: 'column',
@@ -1057,6 +1099,7 @@ export default function ChatView({
             ))}
           </div>
         </div>
+        </>
         )}
       </div>
 
