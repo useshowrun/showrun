@@ -1081,6 +1081,7 @@ const BROWSER_TOOLS = new Set([
   'click',
   'click_coordinates',
   'get_element_bounds',
+  'solve_turnstile',
   'network_list',
   'network_search',
   'network_get',
