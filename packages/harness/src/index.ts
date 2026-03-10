@@ -55,7 +55,7 @@ export async function runPack(options: RunPackOptions): Promise<RunPackResult> {
   // Run task pack
   // CLI timeout overrides flow timeout, which overrides default (5 min)
   const effectiveTimeout = timeoutMs ?? taskPack.metadata.timeoutMs;
-  const runner = new TaskPackRunner(runsDir);
+  const runner = new TaskPackRunner(runsDir, resolvedPackPath);
   const result = await runner.run(taskPack, inputs, { headful, cdpUrl, timeoutMs: effectiveTimeout });
 
   return {

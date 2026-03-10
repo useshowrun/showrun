@@ -10,9 +10,11 @@ import { JSONLLogger } from './logger.js';
 export class TaskPackRunner {
   private logger: JSONLLogger;
   private runsDir: string;
+  private packPath?: string;
 
-  constructor(runsDir: string) {
+  constructor(runsDir: string, packPath?: string) {
     this.runsDir = runsDir;
+    this.packPath = packPath;
     this.logger = new JSONLLogger(runsDir);
   }
 
@@ -26,6 +28,7 @@ export class TaskPackRunner {
       logger: this.logger,
       headless: options?.headful !== true,
       cdpUrl: options?.cdpUrl,
+      packPath: this.packPath,
       playwrightJsExecutor: (code, scope) => executePlaywrightJs(code, scope, options?.timeoutMs),
     });
 
