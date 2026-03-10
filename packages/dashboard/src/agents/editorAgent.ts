@@ -157,6 +157,23 @@ if (detection.found) {
 // - waitAfterClick: number (default 2000ms, for solveCloudflareTurnstile)
 \`\`\`
 
+## Execution Timeout
+
+Default timeout is 5 minutes (300000ms). For flows that scrape many pages, set a higher timeout in taskpack.json:
+\`\`\`json
+{
+  "id": "my-scraper",
+  "name": "My Scraper",
+  "kind": "playwright-js",
+  "timeoutMs": 1200000
+}
+\`\`\`
+Common values:
+- 5 min = 300000 (default)
+- 10 min = 600000
+- 20 min = 1200000
+- 30 min = 1800000
+
 ## Returning Collectibles
 
 The returned object keys MUST match the declared collectible names:

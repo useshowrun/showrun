@@ -19,14 +19,14 @@ export class TaskPackRunner {
   async run(
     taskPack: TaskPack,
     inputs: Record<string, unknown>,
-    options?: { headful?: boolean; cdpUrl?: string }
+    options?: { headful?: boolean; cdpUrl?: string; timeoutMs?: number }
   ): Promise<RunResult> {
     const result = await runTaskPack(taskPack, inputs, {
       runDir: this.runsDir,
       logger: this.logger,
       headless: options?.headful !== true,
       cdpUrl: options?.cdpUrl,
-      playwrightJsExecutor: executePlaywrightJs,
+      playwrightJsExecutor: (code, scope) => executePlaywrightJs(code, scope, options?.timeoutMs),
     });
 
     // Return just the RunResult part (without paths)

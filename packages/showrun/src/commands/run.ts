@@ -22,6 +22,7 @@ export interface RunCommandOptions {
   baseRunDir: string;
   cdpUrl?: string;
   noResultStore: boolean;
+  timeoutMs?: number;
 }
 
 export function parseRunArgs(args: string[]): RunCommandOptions {
@@ -31,6 +32,7 @@ export function parseRunArgs(args: string[]): RunCommandOptions {
   let baseRunDir = './runs';
   let cdpUrl: string | undefined;
   let noResultStore = false;
+  let timeoutMs: number | undefined;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -49,6 +51,9 @@ export function parseRunArgs(args: string[]): RunCommandOptions {
       i++;
     } else if (arg === '--no-result-store') {
       noResultStore = true;
+    } else if (arg === '--timeout' && next) {
+      timeoutMs = parseInt(next, 10) * 1000; // Convert seconds to ms
+      i++;
     } else if (!arg.startsWith('-') && !packPath) {
       packPath = arg;
     }
@@ -70,11 +75,11 @@ export function parseRunArgs(args: string[]): RunCommandOptions {
     }
   }
 
-  return { packPath, inputs, headful, baseRunDir, cdpUrl, noResultStore };
+  return { packPath, inputs, headful, baseRunDir, cdpUrl, noResultStore, timeoutMs };
 }
 
 export async function cmdRun(args: string[]): Promise<void> {
-  const { packPath, inputs, headful, baseRunDir, cdpUrl, noResultStore } = parseRunArgs(args);
+  const { packPath, inputs, headful, baseRunDir, cdpUrl, noResultStore, timeoutMs } = parseRunArgs(args);
   const resolvedPackPath = resolve(packPath);
 
   if (!existsSync(resolvedPackPath)) {
@@ -120,6 +125,7 @@ export async function cmdRun(args: string[]): Promise<void> {
       headful,
       baseRunDir,
       cdpUrl,
+      timeoutMs,
     });
 
     // ─── Result storage ───────────────────────────────────────────
@@ -220,6 +226,7 @@ Options:
   --inputs <json>        Input values as JSON string (default: {})
   --headful              Run browser in headful mode
   --cdp-url <url>        Connect to an existing Chrome browser via CDP
+  --timeout <seconds>    Execution timeout in seconds (default: 300)
   --no-result-store      Disable auto-storing results to SQLite
   --baseRunDir <dir>     Directory for run outputs (default: ./runs)
 
@@ -227,6 +234,7 @@ Examples:
   showrun run ./taskpacks/example
   showrun run ./taskpacks/example --inputs '{"query": "test"}'
   showrun run ./taskpacks/example --headful
+  showrun run ./taskpacks/example --timeout 600
   showrun run ./taskpacks/example --cdp-url http://localhost:9222
   showrun run ./taskpacks/example --no-result-store
 `);

@@ -93,6 +93,11 @@ export interface TaskPackMetadata {
   name: string;
   version: string;
   description?: string;
+  /**
+   * Execution timeout in milliseconds (default: 300000 = 5 minutes)
+   * Can be overridden by CLI --timeout flag
+   */
+  timeoutMs?: number;
 }
 
 /**

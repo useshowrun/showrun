@@ -24,6 +24,8 @@ export interface RunPackOptions {
   baseRunDir?: string;
   /** Chrome DevTools Protocol URL to connect to an existing browser */
   cdpUrl?: string;
+  /** Timeout in milliseconds (default: 5 minutes) */
+  timeoutMs?: number;
 }
 
 export interface RunPackResult extends RunResult {
@@ -35,7 +37,7 @@ export interface RunPackResult extends RunResult {
  * Run a task pack programmatically
  */
 export async function runPack(options: RunPackOptions): Promise<RunPackResult> {
-  const { packPath, inputs = {}, headful = false, baseRunDir = './runs', cdpUrl } = options;
+  const { packPath, inputs = {}, headful = false, baseRunDir = './runs', cdpUrl, timeoutMs } = options;
 
   const resolvedPackPath = resolve(packPath);
   if (!existsSync(resolvedPackPath)) {
@@ -51,8 +53,10 @@ export async function runPack(options: RunPackOptions): Promise<RunPackResult> {
   mkdirSync(runsDir, { recursive: true });
 
   // Run task pack
+  // CLI timeout overrides flow timeout, which overrides default (5 min)
+  const effectiveTimeout = timeoutMs ?? taskPack.metadata.timeoutMs;
   const runner = new TaskPackRunner(runsDir);
-  const result = await runner.run(taskPack, inputs, { headful, cdpUrl });
+  const result = await runner.run(taskPack, inputs, { headful, cdpUrl, timeoutMs: effectiveTimeout });
 
   return {
     ...result,
