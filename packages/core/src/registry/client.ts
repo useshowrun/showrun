@@ -7,6 +7,7 @@
  */
 
 import { join } from 'path';
+import { readFileSync } from 'fs';
 import { TaskPackLoader } from '../loader.js';
 import { readJsonFile, ensureDir, writeTaskPackManifest, writeFlowJson } from '../packUtils.js';
 import { loadTokens, saveTokens, clearTokens } from './tokenStore.js';
@@ -169,12 +170,27 @@ export class RegistryClient implements IRegistryClient {
 
     // Load local pack
     const manifest = TaskPackLoader.loadManifest(packPath);
-    const flowPath = join(packPath, 'flow.json');
-    const flowData = readJsonFile<{
-      inputs?: InputSchema;
-      collectibles?: CollectibleDefinition[];
-      flow: DslStep[];
-    }>(flowPath);
+
+    // Load flow data based on pack kind
+    let flowData: unknown;
+    if (manifest.kind === 'playwright-js') {
+      // playwright-js packs use flow.playwright.js (raw source code)
+      const flowPath = join(packPath, 'flow.playwright.js');
+      const source = readFileSync(flowPath, 'utf-8');
+      flowData = {
+        source,
+        inputs: manifest.inputs || {},
+        collectibles: manifest.collectibles || [],
+      };
+    } else {
+      // json-dsl packs use flow.json
+      const flowPath = join(packPath, 'flow.json');
+      flowData = readJsonFile<{
+        inputs?: InputSchema;
+        collectibles?: CollectibleDefinition[];
+        flow: DslStep[];
+      }>(flowPath);
+    }
 
     const slug = userSlug || manifest.id;
 
