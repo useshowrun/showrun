@@ -10,6 +10,12 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [fixed] Dashboard chat now preserves per-conversation live state when switching conversations — returning to a conversation restores its messages, thinking output, and in-flight stream instead of reusing the currently visible chat view
+- [changed] Packs and conversations are no longer treated as 1:1 — multiple conversations can link to the same pack, deleting a conversation no longer deletes its pack, and deleting a pack now unlinks dependent conversations instead of removing them
+- [added] Packs view can start a new chat conversation for an existing pack, including downloaded registry packs
+- [changed] Editor Agent now selects tools and prompts by pack kind — `json-dsl` packs use patch/validate editing, while `playwright-js` packs use JS source editing
+- [added] Explicit `Convert to Playwright JS` action in the dashboard for `json-dsl` packs — preserves inputs/collectibles, replaces `flow.json` with a generated `flow.playwright.js` scaffold, and switches the pack to `playwright-js`
+- [fixed] Converted packs now refresh immediately in the dashboard packs list and detail view without requiring a full page reload
 - [added] `browser_solve_turnstile` tool for exploration agent — detect and click Cloudflare Turnstile checkbox using image-based detection
 - [added] Auto-detection of Cloudflare Turnstile after `browser_goto` — adds `_turnstileDetected` and `_hint` to response when found
 - [added] `util.solveCloudflareTurnstile()` and `util.detectCloudflareTurnstile()` exposed to playwright-js flows for CAPTCHA solving
