@@ -58,6 +58,16 @@ function App() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  const refreshPacks = async (): Promise<Pack[]> => {
+    const packsRes = await fetch('/api/packs');
+    if (!packsRes.ok) {
+      throw new Error('Failed to fetch packs');
+    }
+    const packsData: Pack[] = await packsRes.json();
+    setPacks(packsData);
+    return packsData;
+  };
+
   // Fetch config and initialize
   useEffect(() => {
     async function init() {
@@ -93,10 +103,7 @@ function App() {
         });
 
         newSocket.on('packs:updated', () => {
-          fetch('/api/packs')
-            .then((res) => res.json())
-            .then((data) => setPacks(data as Pack[]))
-            .catch(console.error);
+          refreshPacks().catch(console.error);
         });
 
         setSocket(newSocket);
@@ -358,6 +365,7 @@ function App() {
               token={config.token}
               onRun={() => setActiveView('runs')}
               onEditInChat={handleNewChatWithPack}
+              onRefreshPacks={refreshPacks}
             />
           </div>
         );

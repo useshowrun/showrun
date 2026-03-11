@@ -29,9 +29,10 @@ interface PacksViewProps {
   conversations: ConversationSummary[];
   onRun: (packId: string) => void;
   onEditInChat: (packId: string) => Promise<void>;
+  onRefreshPacks: () => Promise<Pack[]>;
 }
 
-function PacksView({ packs, socket, token, conversations, onRun, onEditInChat }: PacksViewProps) {
+function PacksView({ packs, socket, token, conversations, onRun, onEditInChat, onRefreshPacks }: PacksViewProps) {
   const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
   const [packsList, setPacksList] = useState(packs);
@@ -52,15 +53,21 @@ function PacksView({ packs, socket, token, conversations, onRun, onEditInChat }:
     setPacksList(packs);
   }, [packs]);
 
+  const refreshPacksList = async () => {
+    const nextPacks = await onRefreshPacks();
+    setPacksList(nextPacks);
+    return nextPacks;
+  };
+
   React.useEffect(() => {
-    socket.on('packs:updated', () => {
-      fetch('/api/packs')
-        .then((res) => res.json())
-        .then((data) => setPacksList(data as Pack[]))
+    const handlePacksUpdated = () => {
+      onRefreshPacks()
+        .then((nextPacks) => setPacksList(nextPacks))
         .catch(console.error);
-    });
-    return () => { socket.off('packs:updated'); };
-  }, [socket]);
+    };
+    socket.on('packs:updated', handlePacksUpdated);
+    return () => { socket.off('packs:updated', handlePacksUpdated); };
+  }, [socket, onRefreshPacks]);
 
   const selectedPack = packsList.find((p) => p.id === selectedPackId) ?? null;
 
@@ -353,6 +360,7 @@ function PacksView({ packs, socket, token, conversations, onRun, onEditInChat }:
               packs={packsList}
               socket={socket}
               token={token}
+              onConverted={refreshPacksList}
               onBack={() => setSelectedPackId(null)}
               onRun={(packId) => onRun(packId)}
             />

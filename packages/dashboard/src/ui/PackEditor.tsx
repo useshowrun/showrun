@@ -19,11 +19,12 @@ interface PackEditorProps {
   packs: Pack[];
   socket: Socket;
   token: string;
+  onConverted?: () => Promise<unknown>;
   onBack: () => void;
   onRun: (packId: string) => void;
 }
 
-function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorProps) {
+function PackEditor({ packId, packs, socket, token, onConverted, onBack, onRun }: PackEditorProps) {
   const pack = packs.find((p) => p.id === packId);
   const [taskpackJson, setTaskpackJson] = useState<any>(null);
   const [flowJson, setFlowJson] = useState<any>(null);
@@ -207,6 +208,11 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
         throw new Error(data.error || 'Failed to convert pack');
       }
       setLastSaved(new Date());
+      if (onConverted) {
+        await onConverted();
+      } else {
+        await loadPackFiles();
+      }
     } catch (err) {
       setErrors([err instanceof Error ? err.message : String(err)]);
     } finally {
