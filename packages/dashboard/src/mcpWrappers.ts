@@ -27,6 +27,30 @@ import { randomBytes } from 'crypto';
 import { resolve } from 'path';
 import { existsSync } from 'fs';
 
+function buildConvertedPlaywrightJsScaffold(params: {
+  packId: string;
+  name: string;
+  flowJson: {
+    inputs?: Record<string, unknown>;
+    collectibles?: CollectibleDefinition[];
+    flow?: DslStep[];
+  };
+}): string {
+  const originalFlowJson = JSON.stringify(params.flowJson, null, 2);
+  return `module.exports = async function({ page, context, frame, inputs, secrets, showrun }) {
+  // This pack was converted from a JSON-DSL flow.
+  // Re-implement the original behavior below using Playwright JS.
+  // Original flow definition preserved for reference:
+  /*
+${originalFlowJson.split('\n').map((line) => `  ${line}`).join('\n')}
+  */
+
+  // TODO: implement converted flow logic for ${params.packId} (${params.name})
+  return {};
+};
+`;
+}
+
 /**
  * Flow patch operation
  */
@@ -499,6 +523,30 @@ export class TaskPackEditorWrapper {
     writePlaywrightJs(packInfo.path, source);
 
     return { success: true, converted };
+  }
+
+  async convertJsonDslToPlaywrightJs(
+    packId: string
+  ): Promise<{ success: boolean; converted: boolean }> {
+    const packData = await this.readPack(packId);
+    const manifest = packData.taskpackJson as TaskPackManifest;
+    if (manifest.kind !== 'json-dsl') {
+      throw new Error(`Pack ${packId} is not a JSON-DSL pack`);
+    }
+
+    const flowJson = (packData as { flowJson: { inputs?: Record<string, unknown>; collectibles?: CollectibleDefinition[]; flow?: DslStep[] } }).flowJson;
+    const scaffold = buildConvertedPlaywrightJsScaffold({
+      packId,
+      name: manifest.name,
+      flowJson,
+    });
+
+    return this.writePlaywrightJsSource(
+      packId,
+      scaffold,
+      flowJson.inputs as Record<string, { type: string; description?: string; required?: boolean; default?: unknown }> | undefined,
+      flowJson.collectibles,
+    );
   }
 
   async runPack(packId: string, inputs: Record<string, unknown>): Promise<RunPackResult> {

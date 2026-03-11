@@ -47,18 +47,12 @@ interface NetworkEntry {
 interface ChatViewProps {
   conversation: Conversation | null;
   token: string;
-  packs?: Array<{ id: string; path: string; name: string }>;
-  onConversationUpdate?: (updates: Partial<Conversation>) => void;
-  onNewMessage?: (message: Message) => void;
   onCreateConversationWithPack?: (packId: string) => Promise<void>;
 }
 
 export default function ChatView({
   conversation,
   token,
-  packs,
-  onConversationUpdate,
-  onNewMessage,
   onCreateConversationWithPack,
 }: ChatViewProps) {
   const [messages, setMessages] = useState<Message[]>([]);

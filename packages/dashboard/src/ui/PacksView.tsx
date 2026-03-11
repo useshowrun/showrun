@@ -15,20 +15,34 @@ interface Pack {
   kind?: string;
 }
 
+interface ConversationSummary {
+  id: string;
+  title: string;
+  status: 'active' | 'ready' | 'needs_input' | 'error';
+  updatedAt: number;
+}
+
 interface PacksViewProps {
   packs: Pack[];
   socket: Socket;
   token: string;
+  conversations: ConversationSummary[];
   onRun: (packId: string) => void;
+  onEditInChat: (packId: string) => Promise<void>;
 }
 
-function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
+function PacksView({ packs, socket, token, conversations, onRun, onEditInChat }: PacksViewProps) {
   const [selectedPackId, setSelectedPackId] = useState<string | null>(null);
   const [showNewModal, setShowNewModal] = useState(false);
   const [packsList, setPacksList] = useState(packs);
-  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
+  const [deleteConfirm, setDeleteConfirm] = useState<{
+    packId: string;
+    conversations: ConversationSummary[];
+    loading: boolean;
+  } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [isStartingChat, setIsStartingChat] = useState(false);
   const [publishPackId, setPublishPackId] = useState<string | null>(null);
   const [inputsJson, setInputsJson] = useState('{}');
   const [isRunning, setIsRunning] = useState(false);
@@ -93,6 +107,37 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
     }
   };
 
+  const openDeleteConfirm = async (packId: string) => {
+    setDeleteError(null);
+    setDeleteConfirm({
+      packId,
+      conversations: [],
+      loading: true,
+    });
+    try {
+      const res = await fetch(`/api/packs/${encodeURIComponent(packId)}/usage`, {
+        headers: { 'X-SHOWRUN-TOKEN': token },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to load pack usage');
+      }
+      const data = await res.json() as { conversations?: ConversationSummary[] };
+      setDeleteConfirm({
+        packId,
+        conversations: data.conversations || [],
+        loading: false,
+      });
+    } catch (err) {
+      setDeleteConfirm({
+        packId,
+        conversations: [],
+        loading: false,
+      });
+      setDeleteError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const handleDeletePack = async (packId: string) => {
     setIsDeleting(true);
     setDeleteError(null);
@@ -115,6 +160,15 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
     }
   };
 
+  const handleEditInChat = async (packId: string) => {
+    setIsStartingChat(true);
+    try {
+      await onEditInChat(packId);
+    } finally {
+      setIsStartingChat(false);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
       {/* Modals */}
@@ -129,18 +183,39 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
           <div className="card" style={{ width: '400px', maxWidth: '90vw' }} onClick={(e) => e.stopPropagation()}>
             <h3 style={{ marginTop: 0, color: 'var(--error)' }}>Delete Pack</h3>
             <p style={{ color: 'var(--text-secondary)' }}>
-              Are you sure you want to delete <strong>{deleteConfirm}</strong>?
+              Are you sure you want to delete <strong>{deleteConfirm.packId}</strong>?
             </p>
             <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
               This will permanently delete the pack directory and all its files. This action cannot be undone.
             </p>
+            {deleteConfirm.loading ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>Checking linked conversations...</p>
+            ) : deleteConfirm.conversations.length > 0 ? (
+              <div style={{ marginBottom: '16px', fontSize: '13px' }}>
+                <div style={{ marginBottom: '8px', color: 'var(--text-secondary)' }}>
+                  The following conversations will be kept, but unlinked from this pack:
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', maxHeight: '180px', overflowY: 'auto' }}>
+                  {deleteConfirm.conversations.map((conversation) => (
+                    <div key={conversation.id} style={{ padding: '8px 10px', borderRadius: '6px', backgroundColor: 'var(--bg-card)' }}>
+                      <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{conversation.title}</div>
+                      <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>{conversation.id}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p style={{ color: 'var(--text-muted)', fontSize: '13px' }}>
+                No conversations currently use this pack.
+              </p>
+            )}
             {deleteError && <div className="error" style={{ marginBottom: '16px' }}>{deleteError}</div>}
             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
               <button className="btn-secondary" onClick={() => setDeleteConfirm(null)} disabled={isDeleting}>Cancel</button>
               <button
                 className="btn-primary"
-                onClick={() => handleDeletePack(deleteConfirm)}
-                disabled={isDeleting}
+                onClick={() => handleDeletePack(deleteConfirm.packId)}
+                disabled={isDeleting || deleteConfirm.loading}
                 style={{ backgroundColor: 'var(--error)', borderColor: 'var(--error)' }}
               >
                 {isDeleting ? 'Deleting...' : 'Delete Pack'}
@@ -241,7 +316,7 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
                   {(pack.kind === 'json-dsl' || pack.kind === 'playwright-js') && (
                     <button
                       className="btn-secondary"
-                      onClick={(e) => { e.stopPropagation(); setDeleteConfirm(pack.id); }}
+                      onClick={(e) => { e.stopPropagation(); void openDeleteConfirm(pack.id); }}
                       style={{ padding: '2px 6px', fontSize: '11px', color: 'var(--error)', borderColor: 'var(--error)', flexShrink: 0 }}
                       title="Delete pack"
                     >
@@ -263,14 +338,25 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
             <div className="empty-state-description">Choose a pack from the list to view or edit it.</div>
           </div>
         ) : selectedPack.kind === 'json-dsl' ? (
-          <PackEditor
-            packId={selectedPack.id}
-            packs={packsList}
-            socket={socket}
-            token={token}
-            onBack={() => setSelectedPackId(null)}
-            onRun={(packId) => onRun(packId)}
-          />
+          <div>
+            <div style={{ marginBottom: '16px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+              <button
+                className="btn-primary"
+                onClick={() => void handleEditInChat(selectedPack.id)}
+                disabled={isStartingChat}
+              >
+                {isStartingChat ? 'Opening Chat...' : 'Edit in Chat'}
+              </button>
+            </div>
+            <PackEditor
+              packId={selectedPack.id}
+              packs={packsList}
+              socket={socket}
+              token={token}
+              onBack={() => setSelectedPackId(null)}
+              onRun={(packId) => onRun(packId)}
+            />
+          </div>
         ) : (
           <div>
             <div style={{ marginBottom: '24px' }}>
@@ -279,6 +365,18 @@ function PacksView({ packs, socket, token, onRun }: PacksViewProps) {
               <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '4px' }}>
                 {selectedPack.id} · v{selectedPack.version}
               </div>
+            </div>
+            <div style={{ marginBottom: '16px', display: 'flex', gap: '8px' }}>
+              <button
+                className="btn-primary"
+                onClick={() => void handleEditInChat(selectedPack.id)}
+                disabled={isStartingChat}
+              >
+                {isStartingChat ? 'Opening Chat...' : 'Edit in Chat'}
+              </button>
+              <button className="btn-secondary" onClick={() => setPublishPackId(selectedPack.id)}>
+                Publish
+              </button>
             </div>
             {selectedPack.description && (
               <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>{selectedPack.description}</p>

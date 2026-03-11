@@ -31,6 +31,7 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
   const [metaForm, setMetaForm] = useState({ name: '', version: '', description: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [converting, setConverting] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [warnings, setWarnings] = useState<string[]>([]);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
@@ -186,6 +187,33 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
     }
   };
 
+  const handleConvertToPlaywrightJs = async () => {
+    const confirmed = window.confirm(
+      'Convert this JSON-DSL pack to Playwright JS?\n\nThis replaces flow.json with a generated flow.playwright.js scaffold. Inputs and collectibles are preserved.'
+    );
+    if (!confirmed) return;
+
+    setConverting(true);
+    setErrors([]);
+    try {
+      const res = await fetch(`/api/packs/${packId}/convert-to-playwright-js`, {
+        method: 'POST',
+        headers: {
+          'X-SHOWRUN-TOKEN': token,
+        },
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to convert pack');
+      }
+      setLastSaved(new Date());
+    } catch (err) {
+      setErrors([err instanceof Error ? err.message : String(err)]);
+    } finally {
+      setConverting(false);
+    }
+  };
+
   if (!pack) {
     return <div className="error">Pack not found</div>;
   }
@@ -220,6 +248,11 @@ function PackEditor({ packId, packs, socket, token, onBack, onRun }: PackEditorP
         </div>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
           <button className="btn-secondary" onClick={onBack}>← Back</button>
+          {taskpackJson?.kind === 'json-dsl' && (
+            <button className="btn-secondary" onClick={handleConvertToPlaywrightJs} disabled={converting || saving}>
+              {converting ? 'Converting...' : 'Convert to Playwright JS'}
+            </button>
+          )}
           <button className="btn-secondary" onClick={() => setShowPublishModal(true)}>Publish</button>
           <button
             className="btn-primary"

@@ -16,6 +16,7 @@ import {
 } from './db.js';
 import { join } from 'path';
 import { mkdirSync, readFileSync, writeFileSync } from 'fs';
+import type { TaskPackManifest } from '@showrun/core';
 
 /**
  * Redact common sensitive patterns (tokens, passwords, credentials) from error messages.
@@ -933,7 +934,7 @@ const AGENT_BUILD_FLOW_TOOL: ToolDef = {
     name: 'agent_build_flow',
     description:
       'Delegate flow building to the Editor Agent. Call this after exploration is complete and roadmap is approved. ' +
-      'The Editor Agent will build a Playwright JS flow, test it with editor_run_pack, and return results. ' +
+      'The Editor Agent will use the linked pack kind to choose the correct editing mode, test with editor_run_pack, and return results. ' +
       'You MUST provide comprehensive exploration context (all API endpoints, DOM structure, auth info, pagination). ' +
       'Do not call this more than 3 times per conversation.',
     parameters: {
@@ -964,18 +965,44 @@ const AGENT_BUILD_FLOW_TOOL: ToolDef = {
   },
 };
 
-/** Editor-only tools (for the Editor Agent) */
-const EDITOR_TOOL_NAMES = new Set([
+/** Editor tools shared across pack kinds */
+const EDITOR_COMMON_TOOL_NAMES = new Set([
   'editor_read_pack',
   'editor_list_secrets',
-  'editor_write_js',
   'editor_run_pack',
 ]);
 
-/** Editor Agent tools: editor tools only (no browser, no conversation) */
-export const EDITOR_AGENT_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
-  t => EDITOR_TOOL_NAMES.has(t.function.name)
+/** Editor tools for JSON-DSL packs */
+const EDITOR_JSON_DSL_TOOL_NAMES = new Set([
+  ...EDITOR_COMMON_TOOL_NAMES,
+  'editor_apply_flow_patch',
+  'editor_validate_flow',
+]);
+
+/** Editor tools for Playwright JS packs */
+const EDITOR_PLAYWRIGHT_JS_TOOL_NAMES = new Set([
+  ...EDITOR_COMMON_TOOL_NAMES,
+  'editor_write_js',
+]);
+
+export const EDITOR_COMMON_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
+  t => EDITOR_COMMON_TOOL_NAMES.has(t.function.name)
 );
+
+export const EDITOR_JSON_DSL_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
+  t => EDITOR_JSON_DSL_TOOL_NAMES.has(t.function.name)
+);
+
+export const EDITOR_PLAYWRIGHT_JS_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
+  t => EDITOR_PLAYWRIGHT_JS_TOOL_NAMES.has(t.function.name)
+);
+
+/** Backward-compatible alias: defaults to the Playwright JS editor toolset */
+export const EDITOR_AGENT_TOOLS: ToolDef[] = EDITOR_PLAYWRIGHT_JS_TOOLS;
+
+export function getEditorToolsForPackKind(kind: TaskPackManifest['kind']): ToolDef[] {
+  return kind === 'json-dsl' ? EDITOR_JSON_DSL_TOOLS : EDITOR_PLAYWRIGHT_JS_TOOLS;
+}
 
 /** Validator-only tools (read-only + run — no flow modification) */
 const VALIDATOR_TOOL_NAMES = new Set([
@@ -1265,9 +1292,9 @@ export async function executeAgentTool(
         // Check if conversation already has a linked pack
         if (ctx.packId) {
           return wrap(JSON.stringify({
-            error: `A pack is already linked to this conversation: "${ctx.packId}". Do not create a new pack. Use editor_read_pack() to see the current flow, then use editor_write_js to write the flow.`,
+            error: `A pack is already linked to this conversation: "${ctx.packId}". Do not create a new pack. Use editor_read_pack() to inspect the current flow and continue editing that pack.`,
             existingPackId: ctx.packId,
-            suggestion: 'Call editor_read_pack() first to understand the existing flow, then use editor_write_js to write the Playwright code.',
+            suggestion: 'Call editor_read_pack() first to understand the existing flow, then use the editor tools appropriate for that pack kind.',
           }, null, 2));
         }
 
@@ -1606,7 +1633,7 @@ export async function executeAgentTool(
             const hasFlow = !!(packData as any).playwrightJsSource || ((packData as any).flowJson?.flow?.length ?? 0) > 0;
             if (!hasFlow) {
               return wrap(JSON.stringify({
-                error: `Cannot set status to "ready": the pack "${ctx.packId}" has no flow. You must implement a flow using editor_write_js before marking as ready. Exploration alone is not enough — the goal is a reusable, deterministic flow.`,
+                error: `Cannot set status to "ready": the pack "${ctx.packId}" has no flow. You must implement a real flow before marking as ready. Exploration alone is not enough — the goal is a reusable, deterministic pack.`,
               }));
             }
           } catch (readErr) {

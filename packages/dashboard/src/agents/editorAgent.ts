@@ -5,16 +5,17 @@
  * It receives exploration context and builds the flow, tests it, and returns results.
  */
 
-import { EDITOR_AGENT_TOOLS } from '../agentTools.js';
+import { getEditorToolsForPackKind } from '../agentTools.js';
 import { runAgentLoop } from './runAgentLoop.js';
 import type { EditorAgentOptions, EditorAgentResult } from './types.js';
 import type { AgentMessage } from '../contextManager.js';
+import type { TaskPackManifest } from '@showrun/core';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Editor Agent System Prompt (embedded constant — not user-customizable)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const EDITOR_AGENT_SYSTEM_PROMPT = `# Editor Agent — Playwright JS Flow Builder
+const PLAYWRIGHT_JS_EDITOR_AGENT_SYSTEM_PROMPT = `# Editor Agent — Playwright JS Flow Builder
 
 You are a specialized agent that builds Playwright JavaScript flows from exploration findings. You have access ONLY to editor tools — you cannot browse the web or interact with pages.
 
@@ -218,13 +219,71 @@ When done, include a summary in your final message with:
 - Any issues encountered
 `;
 
+const JSON_DSL_EDITOR_AGENT_SYSTEM_PROMPT = `# Editor Agent — JSON-DSL Flow Builder
+
+You are a specialized agent that builds and refines JSON-DSL flows from exploration findings. You have access ONLY to editor tools — you cannot browse the web or interact with pages.
+
+## Your Role
+
+You receive:
+1. **Exploration context**: API endpoints, DOM structure, auth info, pagination details discovered by the Exploration Agent
+2. **Implementation instructions**: The approved roadmap describing what to build
+3. **Test inputs**: Values to use when testing the flow
+
+Your job is to:
+1. Read the current pack state with \`editor_read_pack\`
+2. Update the JSON-DSL flow with \`editor_apply_flow_patch\`
+3. Validate structural changes with \`editor_validate_flow\`
+4. Test the flow with \`editor_run_pack\`
+5. If test fails, patch the flow and re-test
+
+## Preferred Workflow
+
+\`\`\`
+Call 1: editor_read_pack
+Call 2+: editor_apply_flow_patch(...)
+Call after structural edits: editor_validate_flow({ flowJsonText: "..." })
+Call when ready to verify: editor_run_pack({ inputs: {...} })
+\`\`\`
+
+## Important Rules
+
+1. **Read first** — always call \`editor_read_pack\` before patching
+2. **Stay in JSON-DSL** — do not use \`editor_write_js\`
+3. **API-first when possible** — prefer network-based flow steps when exploration found stable APIs
+4. **Keep inputs and collectibles aligned** — update schemas when the flow changes
+5. **Return a deterministic flow** — the goal is a reusable task pack, not exploratory notes
+
+## Output
+
+When done, include a summary with:
+- What the flow does
+- Whether tests passed
+- Any limitations or follow-up work
+`;
+
 const MAX_EDITOR_ITERATIONS = 30;
+
+export function getEditorAgentConfigForPackKind(kind: TaskPackManifest['kind']) {
+  if (kind === 'json-dsl') {
+    return {
+      systemPrompt: JSON_DSL_EDITOR_AGENT_SYSTEM_PROMPT,
+      tools: getEditorToolsForPackKind(kind),
+    };
+  }
+
+  return {
+    systemPrompt: PLAYWRIGHT_JS_EDITOR_AGENT_SYSTEM_PROMPT,
+    tools: getEditorToolsForPackKind(kind),
+  };
+}
 
 /**
  * Run the Editor Agent to build a DSL flow from exploration findings.
  */
 export async function runEditorAgent(options: EditorAgentOptions): Promise<EditorAgentResult> {
   const {
+    packKind,
     instruction,
     explorationContext,
     testInputs,
@@ -236,6 +295,7 @@ export async function runEditorAgent(options: EditorAgentOptions): Promise<Edito
     abortSignal,
     sessionKey,
   } = options;
+  const editorConfig = getEditorAgentConfigForPackKind(packKind);
 
   // Build the initial user message with all context
   const userMessage = [
@@ -246,7 +306,9 @@ export async function runEditorAgent(options: EditorAgentOptions): Promise<Edito
     testInputs
       ? `\n\n## Test Inputs\n\nUse these inputs when testing with \`editor_run_pack\`:\n\`\`\`json\n${JSON.stringify(testInputs, null, 2)}\n\`\`\``
       : '',
-    '\n\nStart by reading the current pack state with `editor_read_pack`, then write the Playwright JS flow with `editor_write_js`.',
+    packKind === 'json-dsl'
+      ? '\n\nStart by reading the current pack state with `editor_read_pack`, then update the JSON-DSL flow with `editor_apply_flow_patch`.'
+      : '\n\nStart by reading the current pack state with `editor_read_pack`, then write the Playwright JS flow with `editor_write_js`.',
   ].join('');
 
   const initialMessages: AgentMessage[] = [
@@ -326,8 +388,8 @@ export async function runEditorAgent(options: EditorAgentOptions): Promise<Edito
   };
 
   const loopResult = await runAgentLoop({
-    systemPrompt: EDITOR_AGENT_SYSTEM_PROMPT,
-    tools: EDITOR_AGENT_TOOLS,
+    systemPrompt: editorConfig.systemPrompt,
+    tools: editorConfig.tools,
     initialMessages,
     llmProvider,
     toolExecutor: trackingToolExecutor,
@@ -353,6 +415,7 @@ export async function runEditorAgent(options: EditorAgentOptions): Promise<Edito
   const success = hasPassingRun;
 
   return {
+    packKind,
     success: success && !loopResult.aborted,
     summary: loopResult.finalContent || `Editor Agent completed. Steps created: ${stepsCreated}, Collectibles: ${collectiblesCount}.`,
     stepsCreated,

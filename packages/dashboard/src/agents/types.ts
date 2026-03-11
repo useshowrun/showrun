@@ -5,6 +5,7 @@
 import type { ToolDef, ToolCall, StreamEvent, ChatWithToolsResult, LlmProvider } from '../llm/provider.js';
 import type { AgentMessage } from '../contextManager.js';
 import type { ExecuteToolResult, AgentToolContext } from '../agentTools.js';
+import type { TaskPackManifest } from '@showrun/core';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Agent Loop Types
@@ -55,6 +56,8 @@ export interface AgentLoopResult {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export interface EditorAgentOptions {
+  /** Kind of the linked pack being edited */
+  packKind: TaskPackManifest['kind'];
   /** Implementation instructions (approved roadmap + what to build) */
   instruction: string;
   /** All exploration findings: API endpoints, DOM structure, auth info, pagination */
@@ -78,6 +81,8 @@ export interface EditorAgentOptions {
 }
 
 export interface EditorAgentResult {
+  /** Pack kind this editor agent operated on */
+  packKind: TaskPackManifest['kind'];
   /** Whether the editor agent succeeded */
   success: boolean;
   /** Human-readable summary of what was done */

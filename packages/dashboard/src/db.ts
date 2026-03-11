@@ -262,6 +262,14 @@ export function getAllConversations(): Conversation[] {
   return rows.map(mapRowToConversation);
 }
 
+export function getConversationsByPackId(packId: string): Conversation[] {
+  const database = getDatabase();
+  const rows = database
+    .prepare('SELECT * FROM conversations WHERE packId = ? ORDER BY updatedAt DESC')
+    .all(packId) as any[];
+  return rows.map(mapRowToConversation);
+}
+
 export function updateConversation(
   id: string,
   updates: Partial<Pick<Conversation, 'title' | 'description' | 'status' | 'packId'>>
@@ -305,6 +313,14 @@ export function deleteConversation(id: string): boolean {
   const database = getDatabase();
   const result = database.prepare('DELETE FROM conversations WHERE id = ?').run(id);
   return result.changes > 0;
+}
+
+export function unlinkConversationsFromPack(packId: string): number {
+  const database = getDatabase();
+  const result = database
+    .prepare('UPDATE conversations SET packId = NULL, updatedAt = ? WHERE packId = ?')
+    .run(Date.now(), packId);
+  return result.changes;
 }
 
 function mapRowToConversation(row: any): Conversation {

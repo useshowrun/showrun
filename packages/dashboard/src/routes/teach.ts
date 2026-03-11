@@ -758,7 +758,12 @@ export function createTeachRouter(ctx: DashboardContext): Router {
 
               let editorResult: EditorAgentResult;
               try {
+                const editorPackData = effectivePackId
+                  ? await ctx.taskPackEditor.readPack(effectivePackId)
+                  : null;
+                const editorPackKind = (editorPackData?.taskpackJson?.kind ?? 'playwright-js') as 'json-dsl' | 'playwright-js';
                 editorResult = await runEditorAgent({
+                  packKind: editorPackKind,
                   instruction: (toolArgs.instruction as string) || '',
                   explorationContext: (toolArgs.explorationContext as string) || '',
                   testInputs: (toolArgs.testInputs as Record<string, unknown>) || undefined,
@@ -808,6 +813,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
                 });
               } catch (err) {
                 editorResult = {
+                  packKind: 'playwright-js',
                   success: false,
                   summary: '',
                   stepsCreated: 0,
