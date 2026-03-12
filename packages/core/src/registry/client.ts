@@ -10,6 +10,7 @@ import { join } from 'path';
 import { readFileSync } from 'fs';
 import { TaskPackLoader } from '../loader.js';
 import { readJsonFile, ensureDir, writeTaskPackManifest, writeFlowJson, writePlaywrightJs } from '../packUtils.js';
+import { SHOWRUN_VERSION } from '../version.js';
 import { loadTokens, saveTokens, clearTokens } from './tokenStore.js';
 import type {
   IRegistryClient,
@@ -29,6 +30,22 @@ import type {
 } from './types.js';
 import type { TaskPackManifest, InputSchema, CollectibleDefinition } from '../types.js';
 import type { DslStep } from '../dsl/types.js';
+
+function getCurrentShowrunVersion(): string {
+  return SHOWRUN_VERSION;
+}
+
+function withCurrentShowrunVersion(manifest: TaskPackManifest): TaskPackManifest {
+  const currentVersion = getCurrentShowrunVersion();
+  const existingVersions = manifest.showrunVersions ?? [];
+
+  return {
+    ...manifest,
+    showrunVersions: existingVersions.includes(currentVersion)
+      ? existingVersions
+      : [...existingVersions, currentVersion],
+  };
+}
 
 // ── Error class ───────────────────────────────────────────────────────────
 
@@ -169,7 +186,8 @@ export class RegistryClient implements IRegistryClient {
     const warnings: string[] = [];
 
     // Load local pack
-    const manifest = TaskPackLoader.loadManifest(packPath);
+    const manifest = withCurrentShowrunVersion(TaskPackLoader.loadManifest(packPath));
+    writeTaskPackManifest(packPath, manifest);
 
     // Load flow data based on pack kind
     let flowData: unknown;
@@ -227,6 +245,7 @@ export class RegistryClient implements IRegistryClient {
       version: manifest.version,
       description: manifest.description,
       kind: manifest.kind,
+      showrunVersions: manifest.showrunVersions,
     };
 
     // Include inputs and collectibles for playwright-js packs (required by registry)
@@ -310,6 +329,14 @@ export class RegistryClient implements IRegistryClient {
     ensureDir(packDir);
 
     writeTaskPackManifest(packDir, versionData.manifest);
+    const currentVersion = getCurrentShowrunVersion();
+    const declaredVersions = versionData.manifest.showrunVersions ?? [];
+    if (declaredVersions.length > 0 && !declaredVersions.includes(currentVersion)) {
+      console.warn(
+        `[ShowRun] Warning: installed pack ${ref}@${targetVersion} declares compatibility with ShowRun ${declaredVersions.join(', ')}, but current version is ${currentVersion}.`,
+      );
+    }
+
     if (versionData.manifest.kind === 'playwright-js') {
       if (!versionData.playwrightJsSource) {
         throw new RegistryError(

@@ -19,7 +19,7 @@ import { cwd } from 'process';
   }
 })();
 
-import { initConfig } from '@showrun/core';
+import { initConfig, SHOWRUN_VERSION } from '@showrun/core';
 
 // Apply config.json values to process.env (only sets vars not already present)
 initConfig();
@@ -89,6 +89,7 @@ Commands:
 
 Options:
   --help, -h              Show help for a command
+  --version, -v           Show ShowRun version
 
 Examples:
   showrun run ./taskpacks/example --inputs '{}'
@@ -108,6 +109,11 @@ async function main(): Promise<void> {
 
   if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
     printHelp();
+    process.exit(0);
+  }
+
+  if (args[0] === '--version' || args[0] === '-v') {
+    console.log(SHOWRUN_VERSION);
     process.exit(0);
   }
 

@@ -13,6 +13,7 @@ export * from './packVersioning.js';
 export * from './config.js';
 export * from './requestSnapshot.js';
 export * from './httpReplay.js';
+export * from './version.js';
 
 // Registry exports
 export * from './registry/index.js';

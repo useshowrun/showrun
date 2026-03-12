@@ -292,6 +292,73 @@ describe('RegistryClient', () => {
     ).rejects.toThrow(RegistryError);
   });
 
+  it('publishPack updates showrunVersions with the current ShowRun version', async () => {
+    const tempDir = join(tmpdir(), `showrun-registry-publish-${randomBytes(6).toString('hex')}`);
+    mkdirSync(tempDir, { recursive: true });
+
+    const packDir = join(tempDir, 'example-pack');
+    mkdirSync(packDir, { recursive: true });
+    writeFileSync(join(packDir, 'taskpack.json'), JSON.stringify({
+      id: 'example-pack',
+      name: 'Example Pack',
+      version: '1.0.0',
+      kind: 'playwright-js',
+      description: 'Example pack',
+      showrunVersions: ['0.1.0'],
+      inputs: {},
+      collectibles: [],
+    }, null, 2));
+    writeFileSync(join(packDir, 'flow.playwright.js'), 'module.exports = async function() { return {}; };\n');
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ message: 'Not Found' }), {
+          status: 404,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ id: 'pack-1' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ version: '1.0.0' }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+    try {
+      const { RegistryClient } = await import('../registry/client.js');
+      const { saveTokens } = await import('../registry/tokenStore.js');
+      saveTokens({
+        accessToken: 'header.eyJleHAiOjk5OTk5OTk5OTl9.signature',
+        refreshToken: 'rt-mock',
+        user: { id: '1', username: 'alice', email: 'alice@example.com' },
+        registryUrl: 'https://registry.example.com',
+        savedAt: new Date().toISOString(),
+      });
+      const client = new RegistryClient('https://registry.example.com');
+
+      await client.publishPack({ packPath: packDir, slug: 'example-pack' });
+
+      const writtenManifest = JSON.parse(readFileSync(join(packDir, 'taskpack.json'), 'utf-8'));
+      expect(writtenManifest.showrunVersions).toContain('0.2.0-rc.0');
+      expect(writtenManifest.showrunVersions).toContain('0.1.0');
+
+      const publishCall = fetchSpy.mock.calls.at(-1)!;
+      const publishBody = JSON.parse(String((publishCall[1] as RequestInit).body));
+      expect(publishBody.manifest.showrunVersions).toContain('0.2.0-rc.0');
+      expect(warnSpy).not.toHaveBeenCalled();
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('installs playwright-js packs using flow.playwright.js', async () => {
     const tempDir = join(tmpdir(), `showrun-registry-install-${randomBytes(6).toString('hex')}`);
     mkdirSync(tempDir, { recursive: true });
@@ -353,6 +420,63 @@ describe('RegistryClient', () => {
       const installedManifest = JSON.parse(readFileSync(join(packDir, 'taskpack.json'), 'utf-8'));
       expect(installedManifest.kind).toBe('playwright-js');
       expect(readFileSync(join(packDir, 'flow.playwright.js'), 'utf-8')).toContain('return { items: [] }');
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('warns when installed pack showrunVersions do not include the current version', async () => {
+    const tempDir = join(tmpdir(), `showrun-registry-warn-${randomBytes(6).toString('hex')}`);
+    mkdirSync(tempDir, { recursive: true });
+
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          id: 'pack-1',
+          slug: '@alice/example-pack',
+          name: 'Example Pack',
+          description: 'Example playwright-js pack',
+          visibility: 'public',
+          latestVersion: '1.2.3',
+          owner: { id: 'user-1', username: 'alice' },
+          createdAt: '2026-03-12T00:00:00.000Z',
+          updatedAt: '2026-03-12T00:00:00.000Z',
+          versions: [{ version: '1.2.3', createdAt: '2026-03-12T00:00:00.000Z' }],
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          manifest: {
+            id: 'example-pack',
+            name: 'Example Pack',
+            version: '1.2.3',
+            kind: 'playwright-js',
+            description: 'Example playwright-js pack',
+            showrunVersions: ['0.1.0'],
+            inputs: {},
+            collectibles: [],
+          },
+          playwrightJsSource: 'module.exports = async function() { return {}; };\n',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+    try {
+      const { RegistryClient } = await import('../registry/client.js');
+      const client = new RegistryClient('https://registry.example.com');
+
+      await client.installPack('@alice/example-pack', tempDir);
+
+      expect(warnSpy).toHaveBeenCalledOnce();
+      expect(warnSpy.mock.calls[0][0]).toContain('declares compatibility with ShowRun 0.1.0');
+      expect(warnSpy.mock.calls[0][0]).toContain('current version is 0.2.0-rc.0');
     } finally {
       rmSync(tempDir, { recursive: true, force: true });
     }

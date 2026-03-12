@@ -109,6 +109,11 @@ export interface TaskPackMetadata {
  */
 export interface TaskPackManifest extends TaskPackMetadata {
   /**
+   * ShowRun versions known to be compatible with this pack.
+   * Used by the registry to communicate runtime compatibility.
+   */
+  showrunVersions?: string[];
+  /**
    * Pack kind
    */
   kind: 'json-dsl' | 'playwright-js';

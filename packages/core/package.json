@@ -15,7 +15,7 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "node scripts/generate-version.mjs && tsc",
     "test": "vitest run",
     "test:watch": "vitest"
   },
