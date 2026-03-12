@@ -1,6 +1,6 @@
 import { join } from 'path';
 import type { TaskPack, RunResult } from '@showrun/core';
-import { runTaskPack } from '@showrun/core';
+import { runTaskPack, executePlaywrightJs } from '@showrun/core';
 import { JSONLLogger } from './logger.js';
 
 /**
@@ -10,22 +10,26 @@ import { JSONLLogger } from './logger.js';
 export class TaskPackRunner {
   private logger: JSONLLogger;
   private runsDir: string;
+  private packPath?: string;
 
-  constructor(runsDir: string) {
+  constructor(runsDir: string, packPath?: string) {
     this.runsDir = runsDir;
+    this.packPath = packPath;
     this.logger = new JSONLLogger(runsDir);
   }
 
   async run(
     taskPack: TaskPack,
     inputs: Record<string, unknown>,
-    options?: { headful?: boolean; cdpUrl?: string }
+    options?: { headful?: boolean; cdpUrl?: string; timeoutMs?: number }
   ): Promise<RunResult> {
     const result = await runTaskPack(taskPack, inputs, {
       runDir: this.runsDir,
       logger: this.logger,
       headless: options?.headful !== true,
       cdpUrl: options?.cdpUrl,
+      packPath: this.packPath,
+      playwrightJsExecutor: (code, scope) => executePlaywrightJs(code, scope, options?.timeoutMs),
     });
 
     // Return just the RunResult part (without paths)

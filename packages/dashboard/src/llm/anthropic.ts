@@ -196,6 +196,7 @@ export class AnthropicProvider implements LlmProvider {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'x-api-key': this.apiKey,
+      'User-Agent': 'ShowRun/1.0',
       // 'anthropic-version': '2023-06-01',
     };
 

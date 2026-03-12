@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import { resolve } from 'path';
-import { existsSync, rmSync } from 'fs';
+import { existsSync, readFileSync, rmSync } from 'fs';
 import type { DashboardContext } from '../types/context.js';
 import { createTokenChecker } from '../helpers/auth.js';
 import { discoverPacks } from '@showrun/mcp-server';
@@ -18,6 +18,16 @@ import {
   restoreVersion,
 } from '@showrun/core';
 import type { TaskPackManifest, InputSchema, CollectibleDefinition, DslStep } from '@showrun/core';
+import {
+  getAllConversations,
+  getConversationsByPackId,
+  unlinkConversationsFromPack,
+} from '../db.js';
+import {
+  getConversationBrowserSession,
+  setConversationBrowserSession,
+} from '../agentTools.js';
+import { closeSession } from '../browserInspector.js';
 
 export function createPacksRouter(ctx: DashboardContext): Router {
   const router = Router();
@@ -121,25 +131,23 @@ export function createPacksRouter(ctx: DashboardContext): Router {
       return res.status(404).json({ error: 'Pack not found' });
     }
 
-    // Only allow JSON-DSL packs - check manifest kind
     try {
       const manifest = TaskPackLoader.loadManifest(packInfo.path);
-      if (manifest.kind !== 'json-dsl') {
-        return res.status(400).json({ error: 'Pack is not a JSON-DSL pack' });
-      }
-    } catch (error) {
-      // If we can't load manifest, assume it's not json-dsl
-      return res.status(400).json({
-        error: 'Pack is not a JSON-DSL pack or manifest is invalid',
-        details: error instanceof Error ? error.message : String(error),
-      });
-    }
-
-    try {
       const taskpackPath = resolve(packInfo.path, 'taskpack.json');
-      const flowPath = resolve(packInfo.path, 'flow.json');
-
       const taskpackJson = readJsonFile<TaskPackManifest>(taskpackPath);
+
+      if (manifest.kind === 'playwright-js') {
+        // Return the playwright-js source
+        const flowPath = resolve(packInfo.path, 'flow.playwright.js');
+        const source = existsSync(flowPath) ? readFileSync(flowPath, 'utf-8') : '';
+        return res.json({
+          taskpackJson,
+          playwrightJsSource: source,
+        });
+      }
+
+      // json-dsl: return flow.json
+      const flowPath = resolve(packInfo.path, 'flow.json');
       const flowJson = readJsonFile<{
         inputs?: InputSchema;
         collectibles?: CollectibleDefinition[];
@@ -158,6 +166,28 @@ export function createPacksRouter(ctx: DashboardContext): Router {
   });
 
   // REST API: Delete pack (only JSON-DSL packs in workspace)
+  router.get('/api/packs/:packId/usage', (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { packId } = req.params;
+    const packInfo = findPackById(packId);
+
+    if (!packInfo) {
+      return res.status(404).json({ error: 'Pack not found' });
+    }
+
+    const conversations = getConversationsByPackId(packId).map((conversation) => ({
+      id: conversation.id,
+      title: conversation.title,
+      status: conversation.status,
+      updatedAt: conversation.updatedAt,
+    }));
+
+    res.json({ packId, conversations });
+  });
+
   router.delete('/api/packs/:packId', async (req: Request, res: Response) => {
     if (!requireToken(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -195,6 +225,24 @@ export function createPacksRouter(ctx: DashboardContext): Router {
     }
 
     try {
+      const linkedConversations = getConversationsByPackId(packId);
+
+      for (const conversation of linkedConversations) {
+        const sessionId = getConversationBrowserSession(conversation.id);
+        if (!sessionId) continue;
+        try {
+          await closeSession(sessionId);
+        } catch (error) {
+          console.warn(`[Dashboard] Could not close browser session for conversation ${conversation.id}:`, error);
+        }
+        setConversationBrowserSession(conversation.id, null);
+      }
+
+      const unlinkedConversationIds = linkedConversations.map((conversation) => conversation.id);
+      if (unlinkedConversationIds.length > 0) {
+        unlinkConversationsFromPack(packId);
+      }
+
       // Remove the pack directory
       rmSync(packInfo.path, { recursive: true, force: true });
 
@@ -203,9 +251,18 @@ export function createPacksRouter(ctx: DashboardContext): Router {
 
       // Emit update
       ctx.io.emit('packs:updated', ctx.packMap.size);
+      if (unlinkedConversationIds.length > 0) {
+        ctx.io.emit('conversations:updated', getAllConversations());
+      }
 
       console.log(`[Dashboard] Pack deleted: ${packId} (${packInfo.path})`);
-      res.json({ success: true, packId, message: `Pack "${packId}" has been deleted` });
+      res.json({
+        success: true,
+        packId,
+        message: `Pack "${packId}" has been deleted`,
+        unlinkedConversationIds,
+        unlinkedConversationCount: unlinkedConversationIds.length,
+      });
     } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : String(error),
@@ -357,6 +414,49 @@ export function createPacksRouter(ctx: DashboardContext): Router {
           details: error.message,
         });
       }
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  });
+
+  router.post('/api/packs/:packId/convert-to-playwright-js', async (req: Request, res: Response) => {
+    if (!requireToken(req)) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { packId } = req.params;
+    const packInfo = findPackById(packId);
+
+    if (!packInfo) {
+      return res.status(404).json({ error: 'Pack not found' });
+    }
+
+    if (ctx.workspaceDir) {
+      try {
+        validatePathInAllowedDir(packInfo.path, ctx.workspaceDir);
+      } catch {
+        return res.status(403).json({ error: 'Pack is not in workspace directory' });
+      }
+    }
+
+    try {
+      const manifest = TaskPackLoader.loadManifest(packInfo.path);
+      if (manifest.kind !== 'json-dsl') {
+        return res.status(400).json({ error: 'Only JSON-DSL packs can be converted' });
+      }
+
+      const result = await ctx.taskPackEditor.convertJsonDslToPlaywrightJs(packId);
+      const reloaded = await TaskPackLoader.loadTaskPack(packInfo.path);
+      ctx.packMap.set(packId, { pack: reloaded, path: packInfo.path });
+      ctx.io.emit('packs:updated', ctx.packMap.size);
+
+      res.json({
+        ...result,
+        packId,
+        kind: 'playwright-js',
+      });
+    } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : String(error),
       });

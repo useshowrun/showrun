@@ -8,6 +8,7 @@ import { launchBrowser, type BrowserSession } from './browserLauncher.js';
 import { isFlowHttpCompatible } from './httpReplay.js';
 import { resolveProxy } from './proxy/proxyService.js';
 import type { ResolvedProxy } from './proxy/types.js';
+import { createReplayTransport } from './transport/index.js';
 import type { SnapshotFile, RequestSnapshot } from './requestSnapshot.js';
 import {
   writeSnapshots,
@@ -15,6 +16,7 @@ import {
   detectSensitiveHeaders,
 } from './requestSnapshot.js';
 import type { NetworkCaptureApi } from './networkCapture.js';
+import { createPlaywrightJsUtil } from './util/index.js';
 
 /**
  * Options for running a task pack
@@ -61,6 +63,30 @@ export interface RunTaskPackOptions {
    * instead of launching a new one.
    */
   cdpUrl?: string;
+  /**
+   * Executor for playwright-js packs.
+   * If not provided, playwright-js packs will throw an error.
+   */
+  playwrightJsExecutor?: (
+    source: string,
+    scope: {
+      page: Page;
+      context: import('playwright').BrowserContext;
+      frame: import('playwright').Frame;
+      inputs: Record<string, unknown>;
+      secrets: Record<string, string>;
+      showrun: {
+        network: {
+          list: NetworkCaptureApi['list'];
+          find: NetworkCaptureApi['find'];
+          get: NetworkCaptureApi['get'];
+          replay: NetworkCaptureApi['replay'];
+        };
+      };
+      util: import('./util/index.js').PlaywrightJsUtil;
+    },
+    timeoutMs?: number,
+  ) => Promise<{ collectibles: Record<string, unknown>; logs: string[] }>;
 }
 
 /**
@@ -127,9 +153,12 @@ export async function runTaskPack(
     console.log('[runner] Proxy enabled in pack but credentials not configured, running without proxy');
   }
 
-  // ─── HTTP-first execution ───────────────────────────────────────────
+  // ─── playwright-js packs always need a browser ─────────────────────
+  const isPlaywrightJs = taskPack.kind === 'playwright-js';
+
+  // ─── HTTP-first execution (json-dsl only) ─────────────────────────
   const snapshots = taskPack.snapshots ?? null;
-  if (!options.skipHttpReplay && isFlowHttpCompatible(taskPack.flow, snapshots)) {
+  if (!isPlaywrightJs && !options.skipHttpReplay && isFlowHttpCompatible(taskPack.flow, snapshots)) {
     logger.log({
       type: 'run_started',
       data: {
@@ -167,7 +196,7 @@ export async function runTaskPack(
 
   try {
     // Log run start (only if not already logged above)
-    if (options.skipHttpReplay || !isFlowHttpCompatible(taskPack.flow, snapshots)) {
+    if (isPlaywrightJs || options.skipHttpReplay || !isFlowHttpCompatible(taskPack.flow, snapshots)) {
       logger.log({
         type: 'run_started',
         data: {
@@ -189,8 +218,15 @@ export async function runTaskPack(
     });
     page = browserSession.page;
 
+    // Create replay transport (swappable HTTP client for network_replay steps)
+    const replayTransport = createReplayTransport(
+      taskPack.browser?.replayTransport,
+      page,
+      browserSession.context,
+    );
+
     // Attach network capture (rolling buffer, redacted for logs; full headers in-memory for replay only)
-    const networkCapture = attachNetworkCapture(page);
+    const networkCapture = attachNetworkCapture(page, replayTransport);
 
     // Create run context
     // Note: browserSession.browser may be null for persistent contexts or Camoufox
@@ -212,49 +248,106 @@ export async function runTaskPack(
       networkCapture
     );
 
-    // Execute declarative DSL flow
-    const flowResult = await runFlow(runContext, taskPack.flow, {
-      inputs: inputsWithDefaults,
-      auth: taskPack.auth,
-      sessionId: options.sessionId,
-      profileId: options.profileId,
-      cacheDir: options.cacheDir,
-      secrets,
-    });
+    let result: RunResult;
 
-    // Filter collectibles to only include those defined in the pack
-    // This prevents intermediate variables from polluting the output
-    const definedCollectibleNames = new Set(
-      (taskPack.collectibles || []).map(c => c.name)
-    );
-    const filteredCollectibles: Record<string, unknown> = {};
-    for (const [key, value] of Object.entries(flowResult.collectibles)) {
-      if (definedCollectibleNames.has(key)) {
-        filteredCollectibles[key] = value;
+    if (isPlaywrightJs) {
+      // ─── playwright-js execution ────────────────────────────────────
+      if (!taskPack.playwrightJsSource) {
+        throw new Error('playwright-js pack is missing playwrightJsSource');
       }
-    }
+      if (!options.playwrightJsExecutor) {
+        throw new Error('playwright-js packs require a playwrightJsExecutor option');
+      }
 
-    // Convert RunFlowResult to RunResult format
-    const result: RunResult = {
-      collectibles: filteredCollectibles,
-      meta: {
-        url: flowResult.meta.url,
-        durationMs: flowResult.meta.durationMs,
-        notes: `Executed ${flowResult.meta.stepsExecuted}/${flowResult.meta.stepsTotal} steps`,
-      },
-    };
+      const jsStartTime = Date.now();
+      const jsResult = await options.playwrightJsExecutor(
+        taskPack.playwrightJsSource,
+        {
+          page,
+          context: browserSession.context,
+          frame: page.mainFrame(),
+          inputs: inputsWithDefaults,
+          secrets,
+          showrun: {
+            network: {
+              list: networkCapture.list.bind(networkCapture),
+              find: networkCapture.find.bind(networkCapture),
+              get: networkCapture.get.bind(networkCapture),
+              replay: networkCapture.replay.bind(networkCapture),
+            },
+          },
+          util: createPlaywrightJsUtil(page),
+        },
+      );
+      const returnValue = jsResult.collectibles;
 
-    // Propagate diagnostic hints if present
-    if (flowResult._hints && flowResult._hints.length > 0) {
-      result._hints = flowResult._hints;
-    }
+      // Filter collectibles to only include those defined in the pack
+      const definedCollectibleNames = new Set(
+        (taskPack.collectibles || []).map(c => c.name)
+      );
+      const filteredCollectibles: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(returnValue)) {
+        if (definedCollectibleNames.has(key)) {
+          filteredCollectibles[key] = value;
+        }
+      }
 
-    // Capture snapshots for network_replay steps after successful browser run
-    if (packPath && networkCapture) {
-      try {
-        captureSnapshots(taskPack, flowResult, networkCapture, packPath);
-      } catch (snapErr) {
-        console.warn(`[runner] Failed to capture snapshots: ${snapErr instanceof Error ? snapErr.message : String(snapErr)}`);
+      result = {
+        collectibles: filteredCollectibles,
+        meta: {
+          url: page.url(),
+          durationMs: Date.now() - jsStartTime,
+          notes: 'Executed playwright-js flow',
+        },
+      };
+
+      // Surface captured console logs
+      if (jsResult.logs && jsResult.logs.length > 0) {
+        result._logs = jsResult.logs;
+      }
+    } else {
+      // ─── json-dsl execution ─────────────────────────────────────────
+      const flowResult = await runFlow(runContext, taskPack.flow, {
+        inputs: inputsWithDefaults,
+        auth: taskPack.auth,
+        sessionId: options.sessionId,
+        profileId: options.profileId,
+        cacheDir: options.cacheDir,
+        secrets,
+      });
+
+      // Filter collectibles to only include those defined in the pack
+      const definedCollectibleNames = new Set(
+        (taskPack.collectibles || []).map(c => c.name)
+      );
+      const filteredCollectibles: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(flowResult.collectibles)) {
+        if (definedCollectibleNames.has(key)) {
+          filteredCollectibles[key] = value;
+        }
+      }
+
+      result = {
+        collectibles: filteredCollectibles,
+        meta: {
+          url: flowResult.meta.url,
+          durationMs: flowResult.meta.durationMs,
+          notes: `Executed ${flowResult.meta.stepsExecuted}/${flowResult.meta.stepsTotal} steps`,
+        },
+      };
+
+      // Propagate diagnostic hints if present
+      if (flowResult._hints && flowResult._hints.length > 0) {
+        result._hints = flowResult._hints;
+      }
+
+      // Capture snapshots for network_replay steps after successful browser run
+      if (packPath && networkCapture) {
+        try {
+          captureSnapshots(taskPack, flowResult, networkCapture, packPath);
+        } catch (snapErr) {
+          console.warn(`[runner] Failed to capture snapshots: ${snapErr instanceof Error ? snapErr.message : String(snapErr)}`);
+        }
       }
     }
 

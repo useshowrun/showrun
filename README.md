@@ -17,7 +17,7 @@ A TypeScript + Playwright framework for deterministic, versioned browser automat
 # Launch the dashboard — that's it!
 # On first run, a setup wizard will prompt for your API key
 # and the Camoufox browser will be downloaded automatically.
-npx showrun dashboard --headful  # --headful is optional; omit for headless mode
+npx showrun@latest dashboard --headful  # --headful is optional; omit for headless mode
 ```
 
 ### From Git Clone

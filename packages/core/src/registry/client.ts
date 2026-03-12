@@ -7,6 +7,7 @@
  */
 
 import { join } from 'path';
+import { readFileSync } from 'fs';
 import { TaskPackLoader } from '../loader.js';
 import { readJsonFile, ensureDir, writeTaskPackManifest, writeFlowJson } from '../packUtils.js';
 import { loadTokens, saveTokens, clearTokens } from './tokenStore.js';
@@ -169,12 +170,26 @@ export class RegistryClient implements IRegistryClient {
 
     // Load local pack
     const manifest = TaskPackLoader.loadManifest(packPath);
-    const flowPath = join(packPath, 'flow.json');
-    const flowData = readJsonFile<{
-      inputs?: InputSchema;
-      collectibles?: CollectibleDefinition[];
-      flow: DslStep[];
-    }>(flowPath);
+
+    // Load flow data based on pack kind
+    let flowData: unknown;
+    let playwrightJsSource: string | undefined;
+    if (manifest.kind === 'playwright-js') {
+      // playwright-js packs use flow.playwright.js (raw source code)
+      // The registry expects 'playwrightJsSource' at top level, not inside 'flow'
+      const flowPath = join(packPath, 'flow.playwright.js');
+      playwrightJsSource = readFileSync(flowPath, 'utf-8');
+      // For playwright-js, no flow object is needed
+      flowData = undefined;
+    } else {
+      // json-dsl packs use flow.json
+      const flowPath = join(packPath, 'flow.json');
+      flowData = readJsonFile<{
+        inputs?: InputSchema;
+        collectibles?: CollectibleDefinition[];
+        flow: DslStep[];
+      }>(flowPath);
+    }
 
     const slug = userSlug || manifest.id;
 
@@ -203,22 +218,43 @@ export class RegistryClient implements IRegistryClient {
       }
     }
 
+    // Build the manifest payload for the registry
+    // For playwright-js packs, inputs and collectibles must be included in the manifest
+    // (the registry validates this)
+    const manifestPayload: Record<string, unknown> = {
+      id: manifest.id,
+      name: manifest.name,
+      version: manifest.version,
+      description: manifest.description,
+      kind: manifest.kind,
+    };
+
+    // Include inputs and collectibles for playwright-js packs (required by registry)
+    if (manifest.kind === 'playwright-js') {
+      manifestPayload.inputs = manifest.inputs || {};
+      manifestPayload.collectibles = manifest.collectibles || [];
+    }
+
+    // Build the version request body
+    // For playwright-js, playwrightJsSource goes at top level
+    // For json-dsl, flow data goes under 'flow' key
+    const versionBody: Record<string, unknown> = {
+      version: manifest.version,
+      manifest: manifestPayload,
+      changelog,
+    };
+
+    if (manifest.kind === 'playwright-js') {
+      versionBody.playwrightJsSource = playwrightJsSource;
+    } else {
+      versionBody.flow = flowData;
+    }
+
     // Publish version
     const versionData = await this.request<{ version: string | { version?: string } }>(
       'POST',
       `/api/packs/${encodeURIComponent(slug)}/versions`,
-      {
-        version: manifest.version,
-        manifest: {
-          id: manifest.id,
-          name: manifest.name,
-          version: manifest.version,
-          description: manifest.description,
-          kind: manifest.kind,
-        },
-        flow: flowData,
-        changelog,
-      },
+      versionBody,
       true,
     );
 

@@ -3,6 +3,7 @@ import type { DslStep } from './dsl/types.js';
 import type { NetworkCaptureApi } from './networkCapture.js';
 import type { SnapshotFile } from './requestSnapshot.js';
 import type { ProxyConfig } from './proxy/types.js';
+import type { ReplayTransportConfig } from './transport/types.js';
 
 /**
  * Primitive types supported in input/collectible schemas
@@ -51,6 +52,12 @@ export interface BrowserSettings {
    * Set by the agent's `set_proxy` tool or manually in taskpack.json.
    */
   proxy?: ProxyConfig;
+  /**
+   * Replay transport for network_replay steps.
+   * Controls which HTTP client sends replayed requests.
+   * Default: 'playwright' (uses page.request.fetch)
+   */
+  replayTransport?: ReplayTransportConfig;
 }
 
 /**
@@ -86,6 +93,11 @@ export interface TaskPackMetadata {
   name: string;
   version: string;
   description?: string;
+  /**
+   * Execution timeout in milliseconds (default: 300000 = 5 minutes)
+   * Can be overridden by CLI --timeout flag
+   */
+  timeoutMs?: number;
 }
 
 /**
@@ -97,9 +109,9 @@ export interface TaskPackMetadata {
  */
 export interface TaskPackManifest extends TaskPackMetadata {
   /**
-   * Pack kind: must be "json-dsl"
+   * Pack kind
    */
-  kind: 'json-dsl';
+  kind: 'json-dsl' | 'playwright-js';
   /**
    * Auth configuration for resilience and recovery
    */
@@ -112,6 +124,14 @@ export interface TaskPackManifest extends TaskPackMetadata {
    * Browser configuration
    */
   browser?: BrowserSettings;
+  /**
+   * Input schema (used by playwright-js packs where inputs are declared in taskpack.json)
+   */
+  inputs?: InputSchema;
+  /**
+   * Collectible definitions (used by playwright-js packs where collectibles are declared in taskpack.json)
+   */
+  collectibles?: CollectibleDefinition[];
 }
 
 /**
@@ -141,6 +161,10 @@ export interface RunResult {
    * These help AI agents understand why data extraction may have failed.
    */
   _hints?: string[];
+  /**
+   * Captured console.log output from playwright-js flows.
+   */
+  _logs?: string[];
 }
 
 /**
@@ -264,9 +288,17 @@ export interface TaskPack {
   inputs: InputSchema;
   collectibles: CollectibleDefinition[];
   /**
+   * Pack kind (default: 'json-dsl')
+   */
+  kind?: 'json-dsl' | 'playwright-js';
+  /**
    * Declarative flow of DSL steps
    */
   flow: DslStep[];
+  /**
+   * Raw Playwright JS source code (for playwright-js packs)
+   */
+  playwrightJsSource?: string;
   /**
    * Auth configuration for resilience and recovery
    */

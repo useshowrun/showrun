@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { io, type Socket } from 'socket.io-client';
 import Sidebar, { type Conversation } from './Sidebar.js';
-import ChatView, { type Message } from './ChatView.js';
+import ChatView from './ChatView.js';
 import BottomNav, { type NavView } from './BottomNav.js';
 import RunsView from './RunsView.js';
 import MCPServerView from './MCPServerView.js';
@@ -46,10 +46,6 @@ interface Config {
   packsCount: number;
 }
 
-interface ConversationWithMessages extends Conversation {
-  messages?: Message[];
-}
-
 function App() {
   const [config, setConfig] = useState<Config | null>(null);
   const [socket, setSocket] = useState<Socket | null>(null);
@@ -57,11 +53,20 @@ function App() {
   const [runs, setRuns] = useState<Run[]>([]);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
-  const [selectedConversation, setSelectedConversation] = useState<ConversationWithMessages | null>(null);
   const [activeView, setActiveView] = useState<NavView>('chat');
   const [navExpanded, setNavExpanded] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+
+  const refreshPacks = async (): Promise<Pack[]> => {
+    const packsRes = await fetch('/api/packs');
+    if (!packsRes.ok) {
+      throw new Error('Failed to fetch packs');
+    }
+    const packsData: Pack[] = await packsRes.json();
+    setPacks(packsData);
+    return packsData;
+  };
 
   // Fetch config and initialize
   useEffect(() => {
@@ -98,10 +103,7 @@ function App() {
         });
 
         newSocket.on('packs:updated', () => {
-          fetch('/api/packs')
-            .then((res) => res.json())
-            .then((data) => setPacks(data as Pack[]))
-            .catch(console.error);
+          refreshPacks().catch(console.error);
         });
 
         setSocket(newSocket);
@@ -142,59 +144,6 @@ function App() {
       }
     };
   }, []);
-
-  // Load full conversation when selection changes
-  useEffect(() => {
-    if (!selectedConversationId || !config) {
-      setSelectedConversation(null);
-      return;
-    }
-
-    async function loadConversation() {
-      try {
-        const res = await fetch(`/api/conversations/${selectedConversationId}`);
-        if (res.ok) {
-          const data = await res.json();
-          setSelectedConversation(data);
-        }
-      } catch (err) {
-        console.error('Failed to load conversation:', err);
-      }
-    }
-
-    loadConversation();
-  }, [selectedConversationId, config]);
-
-  // Sync selectedConversation with conversations list when it updates
-  // This ensures changes from socket updates (e.g., packId linked) are reflected
-  useEffect(() => {
-    if (!selectedConversationId || !selectedConversation) return;
-
-    const updated = conversations.find((c) => c.id === selectedConversationId);
-    if (updated) {
-      // Merge list updates into selectedConversation, preserving messages
-      const hasChanges =
-        updated.title !== selectedConversation.title ||
-        updated.description !== selectedConversation.description ||
-        updated.status !== selectedConversation.status ||
-        updated.packId !== selectedConversation.packId;
-
-      if (hasChanges) {
-        setSelectedConversation((prev) =>
-          prev
-            ? {
-                ...prev,
-                title: updated.title,
-                description: updated.description,
-                status: updated.status,
-                packId: updated.packId,
-                updatedAt: updated.updatedAt,
-              }
-            : null
-        );
-      }
-    }
-  }, [conversations, selectedConversationId]);
 
   const handleNewChat = async () => {
     if (!config) return;
@@ -246,9 +195,6 @@ function App() {
         setConversations((prev) =>
           prev.map((c) => (c.id === id ? updated : c))
         );
-        if (selectedConversation?.id === id) {
-          setSelectedConversation((prev) => (prev ? { ...prev, title } : null));
-        }
       }
     } catch (err) {
       console.error('Failed to update title:', err);
@@ -270,7 +216,6 @@ function App() {
         setConversations((prev) => prev.filter((c) => c.id !== id));
         if (selectedConversationId === id) {
           setSelectedConversationId(null);
-          setSelectedConversation(null);
         }
       }
     } catch (err) {
@@ -303,14 +248,6 @@ function App() {
     } catch (err) {
       console.error('Failed to create conversation with pack:', err);
     }
-  };
-
-  const handleConversationUpdate = (updates: Partial<Conversation>) => {
-    if (!selectedConversation) return;
-    setSelectedConversation((prev) => (prev ? { ...prev, ...updates } : null));
-    setConversations((prev) =>
-      prev.map((c) => (c.id === selectedConversation.id ? { ...c, ...updates } : c))
-    );
   };
 
   // Resizable sidebar
@@ -376,13 +313,31 @@ function App() {
     switch (activeView) {
       case 'chat':
         return (
-          <ChatView
-            conversation={selectedConversation}
-            token={config.token}
-            packs={packs}
-            onConversationUpdate={handleConversationUpdate}
-            onCreateConversationWithPack={handleNewChatWithPack}
-          />
+          <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+            {conversations.map((conversation) => (
+              <div
+                key={conversation.id}
+                style={{
+                  display: selectedConversationId === conversation.id ? 'flex' : 'none',
+                  width: '100%',
+                  height: '100%',
+                }}
+              >
+                <ChatView
+                  conversation={conversation}
+                  token={config.token}
+                  onCreateConversationWithPack={handleNewChatWithPack}
+                />
+              </div>
+            ))}
+            {!selectedConversationId && (
+              <ChatView
+                conversation={null}
+                token={config.token}
+                onCreateConversationWithPack={handleNewChatWithPack}
+              />
+            )}
+          </div>
         );
       case 'runs':
         return (
@@ -405,9 +360,12 @@ function App() {
           <div style={{ flex: 1, overflow: 'auto', padding: '24px' }}>
             <PacksView
               packs={packs}
+              conversations={conversations}
               socket={socket}
               token={config.token}
               onRun={() => setActiveView('runs')}
+              onEditInChat={handleNewChatWithPack}
+              onRefreshPacks={refreshPacks}
             />
           </div>
         );

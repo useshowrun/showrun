@@ -115,3 +115,11 @@ export function writeFlowJson(
   const content = JSON.stringify(flowData, null, 2) + '\n';
   atomicWrite(flowPath, content);
 }
+
+/**
+ * Write flow.playwright.js
+ */
+export function writePlaywrightJs(packDir: string, source: string): void {
+  const flowPath = join(packDir, 'flow.playwright.js');
+  atomicWrite(flowPath, source);
+}

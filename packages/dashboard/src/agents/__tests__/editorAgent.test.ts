@@ -5,10 +5,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   EXPLORATION_AGENT_TOOLS,
+  EDITOR_JSON_DSL_TOOLS,
+  EDITOR_PLAYWRIGHT_JS_TOOLS,
   EDITOR_AGENT_TOOLS,
   MAIN_AGENT_TOOL_DEFINITIONS,
   MCP_AGENT_TOOL_DEFINITIONS,
+  getEditorToolsForPackKind,
 } from '../../agentTools.js';
+import { getEditorAgentConfigForPackKind } from '../editorAgent.js';
 
 describe('Tool Definitions Split', () => {
   it('EXPLORATION_AGENT_TOOLS contains browser tools', () => {
@@ -54,18 +58,30 @@ describe('Tool Definitions Split', () => {
     expect(names).not.toContain('editor_create_pack');
   });
 
-  it('EDITOR_AGENT_TOOLS contains only editor tools', () => {
-    const names = EDITOR_AGENT_TOOLS.map(t => t.function.name);
+  it('EDITOR_JSON_DSL_TOOLS contains only json-dsl editor tools', () => {
+    const names = EDITOR_JSON_DSL_TOOLS.map(t => t.function.name);
     expect(names).toContain('editor_read_pack');
     expect(names).toContain('editor_list_secrets');
     expect(names).toContain('editor_apply_flow_patch');
+    expect(names).toContain('editor_validate_flow');
     expect(names).toContain('editor_run_pack');
+    expect(names).not.toContain('editor_write_js');
+    expect(names).toHaveLength(5);
+  });
+
+  it('EDITOR_PLAYWRIGHT_JS_TOOLS contains only playwright-js editor tools', () => {
+    const names = EDITOR_PLAYWRIGHT_JS_TOOLS.map(t => t.function.name);
+    expect(names).toContain('editor_read_pack');
+    expect(names).toContain('editor_list_secrets');
+    expect(names).toContain('editor_write_js');
+    expect(names).toContain('editor_run_pack');
+    expect(names).not.toContain('editor_apply_flow_patch');
     expect(names).not.toContain('editor_validate_flow');
     expect(names).toHaveLength(4);
   });
 
-  it('EDITOR_AGENT_TOOLS does NOT contain browser or conversation tools', () => {
-    const names = EDITOR_AGENT_TOOLS.map(t => t.function.name);
+  it('editor toolsets do NOT contain browser or conversation tools', () => {
+    const names = [...EDITOR_JSON_DSL_TOOLS, ...EDITOR_PLAYWRIGHT_JS_TOOLS].map(t => t.function.name);
     expect(names).not.toContain('browser_goto');
     expect(names).not.toContain('browser_screenshot');
     expect(names).not.toContain('conversation_set_status');
@@ -96,8 +112,10 @@ describe('Tool Definitions Split', () => {
 
   it('all tool definitions in splits come from MCP_AGENT_TOOL_DEFINITIONS or are new', () => {
     const masterNames = new Set(MCP_AGENT_TOOL_DEFINITIONS.map(t => t.function.name));
-    // Editor tools should all be in master
-    for (const tool of EDITOR_AGENT_TOOLS) {
+    for (const tool of EDITOR_JSON_DSL_TOOLS) {
+      expect(masterNames.has(tool.function.name)).toBe(true);
+    }
+    for (const tool of EDITOR_PLAYWRIGHT_JS_TOOLS) {
       expect(masterNames.has(tool.function.name)).toBe(true);
     }
     // Exploration tools should be in master (except agent_build_flow, agent_validate_flow, and techniques_* which are defined separately)
@@ -107,5 +125,27 @@ describe('Tool Definitions Split', () => {
       if (tool.function.name.startsWith('techniques_')) continue;
       expect(masterNames.has(tool.function.name)).toBe(true);
     }
+  });
+
+  it('getEditorToolsForPackKind selects the correct toolset', () => {
+    expect(getEditorToolsForPackKind('json-dsl').map(t => t.function.name)).toEqual(
+      EDITOR_JSON_DSL_TOOLS.map(t => t.function.name)
+    );
+    expect(getEditorToolsForPackKind('playwright-js').map(t => t.function.name)).toEqual(
+      EDITOR_PLAYWRIGHT_JS_TOOLS.map(t => t.function.name)
+    );
+    expect(EDITOR_AGENT_TOOLS.map(t => t.function.name)).toEqual(
+      EDITOR_PLAYWRIGHT_JS_TOOLS.map(t => t.function.name)
+    );
+  });
+
+  it('getEditorAgentConfigForPackKind selects prompt and tools by pack kind', () => {
+    const dsl = getEditorAgentConfigForPackKind('json-dsl');
+    const js = getEditorAgentConfigForPackKind('playwright-js');
+
+    expect(dsl.tools.map(t => t.function.name)).toEqual(EDITOR_JSON_DSL_TOOLS.map(t => t.function.name));
+    expect(js.tools.map(t => t.function.name)).toEqual(EDITOR_PLAYWRIGHT_JS_TOOLS.map(t => t.function.name));
+    expect(dsl.systemPrompt).toContain('JSON-DSL');
+    expect(js.systemPrompt).toContain('Playwright JS');
   });
 });

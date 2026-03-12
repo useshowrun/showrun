@@ -1,8 +1,6 @@
 import { Router, type Request, type Response } from 'express';
-import { rmSync } from 'fs';
 import type { DashboardContext } from '../types/context.js';
 import { createTokenChecker } from '../helpers/auth.js';
-import { TaskPackLoader, validatePathInAllowedDir } from '@showrun/core';
 import {
   createConversation,
   getConversation,
@@ -104,7 +102,7 @@ export function createConversationsRouter(ctx: DashboardContext): Router {
     }
   });
 
-  // Delete conversation (and its linked pack if any)
+  // Delete conversation
   router.delete('/api/conversations/:id', async (req: Request, res: Response) => {
     if (!requireToken(req)) {
       return res.status(401).json({ error: 'Unauthorized' });
@@ -113,7 +111,7 @@ export function createConversationsRouter(ctx: DashboardContext): Router {
     const { id } = req.params;
 
     try {
-      // Get conversation first to check for linked pack
+      // Get conversation first to ensure it exists
       const conversation = getConversation(id);
       if (!conversation) {
         return res.status(404).json({ error: 'Conversation not found' });
@@ -127,28 +125,6 @@ export function createConversationsRouter(ctx: DashboardContext): Router {
         setConversationBrowserSession(id, null);
       }
 
-      // If conversation has a linked pack, delete it too (1:1 relationship)
-      let packDeleted = false;
-      if (conversation.packId) {
-        const packInfo = ctx.packMap.get(conversation.packId);
-        if (packInfo && ctx.workspaceDir) {
-          try {
-            // Only delete JSON-DSL packs in workspace directory
-            const manifest = TaskPackLoader.loadManifest(packInfo.path);
-            if (manifest.kind === 'json-dsl') {
-              validatePathInAllowedDir(packInfo.path, ctx.workspaceDir);
-              rmSync(packInfo.path, { recursive: true, force: true });
-              ctx.packMap.delete(conversation.packId);
-              packDeleted = true;
-              console.log(`[Dashboard] Pack deleted with conversation: ${conversation.packId}`);
-            }
-          } catch (packErr) {
-            // Log but don't fail - pack might be outside workspace or not JSON-DSL
-            console.warn(`[Dashboard] Could not delete pack ${conversation.packId}:`, packErr);
-          }
-        }
-      }
-
       // Delete the conversation
       const deleted = deleteConversation(id);
       if (!deleted) {
@@ -156,10 +132,7 @@ export function createConversationsRouter(ctx: DashboardContext): Router {
       }
 
       ctx.io.emit('conversations:updated', getAllConversations());
-      if (packDeleted) {
-        ctx.io.emit('packs:updated', ctx.packMap.size);
-      }
-      res.json({ success: true, packDeleted });
+      res.json({ success: true });
     } catch (error) {
       res.status(500).json({
         error: error instanceof Error ? error.message : String(error),

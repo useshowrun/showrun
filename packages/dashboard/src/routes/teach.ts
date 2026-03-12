@@ -341,8 +341,9 @@ export function createTeachRouter(ctx: DashboardContext): Router {
       const packInfo = findPackById(packId);
       if (packInfo) {
         try {
-          const { flowJson } = await ctx.taskPackEditor.readPack(packId);
-          const flowSummary = `Current pack "${packId}" flow: ${JSON.stringify(flowJson, null, 2).slice(0, 2000)}`;
+          const packData = await ctx.taskPackEditor.readPack(packId);
+          const flowContent = (packData as any).playwrightJsSource ?? (packData as any).flowJson;
+          const flowSummary = `Current pack "${packId}" flow: ${typeof flowContent === 'string' ? flowContent.slice(0, 2000) : JSON.stringify(flowContent, null, 2).slice(0, 2000)}`;
           systemPrompt = `${systemPrompt}\n\n${flowSummary}`;
         } catch {
           // ignore
@@ -490,7 +491,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
     }
 
     if (effectivePackId) {
-      systemPrompt = `${systemPrompt}\n\n**Pack "${effectivePackId}" is linked to this conversation. Use editor_read_pack() to see its current state, then use editor_apply_flow_patch to modify it. You do not need to pass packId — it is automatic.**`;
+      systemPrompt = `${systemPrompt}\n\n**Pack "${effectivePackId}" is linked to this conversation. Use editor_read_pack() to see its current state. You do not need to pass packId — it is automatic.**`;
     }
     // Note: Browser sessions are now managed automatically per-conversation.
     // No need to inform the AI about session management.
@@ -638,8 +639,8 @@ export function createTeachRouter(ctx: DashboardContext): Router {
         let flowData: unknown = null;
         if (conv?.status === 'ready' && effectivePackId) {
           try {
-            const { flowJson } = await ctx.taskPackEditor.readPack(effectivePackId);
-            flowData = flowJson;
+            const packData = await ctx.taskPackEditor.readPack(effectivePackId);
+            flowData = (packData as any).playwrightJsSource ?? (packData as any).flowJson;
           } catch { /* ignore */ }
         }
         createConversationTranscript({
@@ -800,7 +801,12 @@ export function createTeachRouter(ctx: DashboardContext): Router {
 
               let editorResult: EditorAgentResult;
               try {
+                const editorPackData = effectivePackId
+                  ? await ctx.taskPackEditor.readPack(effectivePackId)
+                  : null;
+                const editorPackKind = (editorPackData?.taskpackJson?.kind ?? 'playwright-js') as 'json-dsl' | 'playwright-js';
                 editorResult = await runEditorAgent({
+                  packKind: editorPackKind,
                   instruction: (toolArgs.instruction as string) || '',
                   explorationContext: (toolArgs.explorationContext as string) || '',
                   testInputs: (toolArgs.testInputs as Record<string, unknown>) || undefined,
@@ -811,11 +817,18 @@ export function createTeachRouter(ctx: DashboardContext): Router {
                     // Read pack and emit flow_updated when editor patches the flow
                     if (effectivePackId) {
                       try {
-                        const { flowJson } = await ctx.taskPackEditor.readPack(effectivePackId);
-                        updatedFlow = flowJson;
-                        const val = await ctx.taskPackEditor.validateFlow(JSON.stringify(flowJson));
-                        validation = { ok: val.ok, errors: val.errors, warnings: val.warnings };
-                        writeStreamLine({ type: 'flow_updated', flow: flowJson, validation: val });
+                        const packData = await ctx.taskPackEditor.readPack(effectivePackId);
+                        const flowContent = (packData as any).playwrightJsSource ?? (packData as any).flowJson;
+                        updatedFlow = flowContent;
+                        if ((packData as any).flowJson) {
+                          const val = await ctx.taskPackEditor.validateFlow(JSON.stringify((packData as any).flowJson));
+                          validation = { ok: val.ok, errors: val.errors, warnings: val.warnings };
+                          writeStreamLine({ type: 'flow_updated', flow: flowContent, validation: val });
+                        } else {
+                          // playwright-js — no JSON validation
+                          validation = { ok: true, errors: [], warnings: [] };
+                          writeStreamLine({ type: 'flow_updated', flow: flowContent, validation });
+                        }
                       } catch {
                         // ignore
                       }
@@ -843,6 +856,7 @@ export function createTeachRouter(ctx: DashboardContext): Router {
                 });
               } catch (err) {
                 editorResult = {
+                  packKind: 'playwright-js',
                   success: false,
                   summary: '',
                   stepsCreated: 0,
@@ -879,11 +893,17 @@ export function createTeachRouter(ctx: DashboardContext): Router {
               // Read final flow state after editor agent completes
               if (effectivePackId) {
                 try {
-                  const { flowJson } = await ctx.taskPackEditor.readPack(effectivePackId);
-                  updatedFlow = flowJson;
-                  const val = await ctx.taskPackEditor.validateFlow(JSON.stringify(flowJson));
-                  validation = { ok: val.ok, errors: val.errors, warnings: val.warnings };
-                  writeStreamLine({ type: 'flow_updated', flow: flowJson, validation: val });
+                  const packData = await ctx.taskPackEditor.readPack(effectivePackId);
+                  const flowContent = (packData as any).playwrightJsSource ?? (packData as any).flowJson;
+                  updatedFlow = flowContent;
+                  if ((packData as any).flowJson) {
+                    const val = await ctx.taskPackEditor.validateFlow(JSON.stringify((packData as any).flowJson));
+                    validation = { ok: val.ok, errors: val.errors, warnings: val.warnings };
+                    writeStreamLine({ type: 'flow_updated', flow: flowContent, validation: val });
+                  } else {
+                    validation = { ok: true, errors: [], warnings: [] };
+                    writeStreamLine({ type: 'flow_updated', flow: flowContent, validation });
+                  }
                 } catch {
                   // ignore
                 }
@@ -1057,13 +1077,19 @@ export function createTeachRouter(ctx: DashboardContext): Router {
                 url: execResult.browserSnapshot.url,
               };
             }
-            if (tc.name === 'editor_apply_flow_patch' && effectivePackId) {
+            if ((tc.name === 'editor_apply_flow_patch' || tc.name === 'editor_write_js') && effectivePackId) {
               try {
-                const { flowJson } = await ctx.taskPackEditor.readPack(effectivePackId);
-                updatedFlow = flowJson;
-                const val = await ctx.taskPackEditor.validateFlow(JSON.stringify(flowJson));
-                validation = { ok: val.ok, errors: val.errors, warnings: val.warnings };
-                writeStreamLine({ type: 'flow_updated', flow: flowJson, validation: val });
+                const packData = await ctx.taskPackEditor.readPack(effectivePackId);
+                const flowContent = (packData as any).playwrightJsSource ?? (packData as any).flowJson;
+                updatedFlow = flowContent;
+                if ((packData as any).flowJson) {
+                  const val = await ctx.taskPackEditor.validateFlow(JSON.stringify((packData as any).flowJson));
+                  validation = { ok: val.ok, errors: val.errors, warnings: val.warnings };
+                  writeStreamLine({ type: 'flow_updated', flow: flowContent, validation: val });
+                } else {
+                  validation = { ok: true, errors: [], warnings: [] };
+                  writeStreamLine({ type: 'flow_updated', flow: flowContent, validation });
+                }
               } catch {
                 // ignore
               }

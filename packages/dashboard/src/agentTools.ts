@@ -5,7 +5,7 @@
 import type { ToolDef } from './llm/provider.js';
 import type { TaskPackEditorWrapper } from './mcpWrappers.js';
 import * as browserInspector from './browserInspector.js';
-import { isSessionAlive, startBrowserSession, closeSession } from './browserInspector.js';
+import { isSessionAlive, startBrowserSession, closeSession, getSessionPage } from './browserInspector.js';
 import { getSecretNamesWithValues } from './secretsUtils.js';
 import { resolveTemplates, TaskPackLoader, saveVersion, resolveProxy } from '@showrun/core';
 import type { ProxyConfig } from '@showrun/core';
@@ -16,6 +16,7 @@ import {
 } from './db.js';
 import { join } from 'path';
 import { mkdirSync, readFileSync, writeFileSync } from 'fs';
+import type { TaskPackManifest } from '@showrun/core';
 
 /**
  * Redact common sensitive patterns (tokens, passwords, credentials) from error messages.
@@ -143,9 +144,54 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
   {
     type: 'function',
     function: {
+      name: 'editor_write_js',
+      description:
+        'Write the full flow.playwright.js source code. Auto-converts json-dsl packs to playwright-js kind on first call. ' +
+        'Pass the complete source (module.exports = async function({ page, context, frame, inputs, secrets, showrun }) { ... }), ' +
+        'plus optional inputs schema and collectibles definitions for taskpack.json.',
+      parameters: {
+        type: 'object',
+        properties: {
+          source: {
+            type: 'string',
+            description: 'Full JavaScript source code for flow.playwright.js',
+          },
+          inputs: {
+            type: 'object',
+            description: 'Optional input schema for taskpack.json. Object of { fieldName: { type, description?, required?, default? } }.',
+            additionalProperties: {
+              type: 'object',
+              properties: {
+                type: { type: 'string', description: 'Field type: string, number, boolean, etc.' },
+                description: { type: 'string' },
+                required: { type: 'boolean' },
+                default: {},
+              },
+            },
+          },
+          collectibles: {
+            type: 'array',
+            description: 'Optional collectible definitions for taskpack.json. Array of { name, type, description }.',
+            items: {
+              type: 'object',
+              properties: {
+                name: { type: 'string' },
+                type: { type: 'string' },
+                description: { type: 'string' },
+              },
+            },
+          },
+        },
+        required: ['source'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
       name: 'editor_create_pack',
       description:
-        'Create a new JSON Task Pack. Call this FIRST when starting work on a new automation flow. Returns the created pack info including packId. After creating, use editor_apply_flow_patch to add steps to the flow. Also call conversation_link_pack to associate the pack with the current conversation.',
+        'Create a new Task Pack. Call this FIRST when starting work on a new automation flow. Returns the created pack info including packId. After creating, use editor_write_js to write the flow. Also call conversation_link_pack to associate the pack with the current conversation.',
       parameters: {
         type: 'object',
         properties: {
@@ -396,6 +442,22 @@ export const MCP_AGENT_TOOL_DEFINITIONS: ToolDef[] = [
           clickCount: { type: 'number', description: '1 for single click, 2 for double click (default 1)' },
         },
         required: ['x', 'y'],
+      },
+    },
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'browser_solve_turnstile',
+      description: 'Detect and solve Cloudflare Turnstile CAPTCHA. Uses image-based detection to find the checkbox (works even with shadow-DOM). Takes a screenshot, detects the widget, and clicks the checkbox. Supports both light and dark themes. Use this when you encounter a Cloudflare Turnstile challenge on a page.',
+      parameters: {
+        type: 'object',
+        properties: {
+          scale: { type: 'number', description: 'Scale factor for HiDPI/retina displays (default 1). Use 2 if detection fails on high-resolution screens.' },
+          retries: { type: 'number', description: 'Number of retry attempts (default 3)' },
+          waitAfterClick: { type: 'number', description: 'Milliseconds to wait after clicking (default 2000)' },
+        },
+        required: [],
       },
     },
   },
@@ -872,7 +934,7 @@ const AGENT_BUILD_FLOW_TOOL: ToolDef = {
     name: 'agent_build_flow',
     description:
       'Delegate flow building to the Editor Agent. Call this after exploration is complete and roadmap is approved. ' +
-      'The Editor Agent will build the DSL flow, test it with editor_run_pack, and return results. ' +
+      'The Editor Agent will use the linked pack kind to choose the correct editing mode, test with editor_run_pack, and return results. ' +
       'You MUST provide comprehensive exploration context (all API endpoints, DOM structure, auth info, pagination). ' +
       'Do not call this more than 3 times per conversation.',
     parameters: {
@@ -903,18 +965,44 @@ const AGENT_BUILD_FLOW_TOOL: ToolDef = {
   },
 };
 
-/** Editor-only tools (for the Editor Agent) */
-const EDITOR_TOOL_NAMES = new Set([
+/** Editor tools shared across pack kinds */
+const EDITOR_COMMON_TOOL_NAMES = new Set([
   'editor_read_pack',
   'editor_list_secrets',
-  'editor_apply_flow_patch',
   'editor_run_pack',
 ]);
 
-/** Editor Agent tools: editor tools only (no browser, no conversation) */
-export const EDITOR_AGENT_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
-  t => EDITOR_TOOL_NAMES.has(t.function.name)
+/** Editor tools for JSON-DSL packs */
+const EDITOR_JSON_DSL_TOOL_NAMES = new Set([
+  ...EDITOR_COMMON_TOOL_NAMES,
+  'editor_apply_flow_patch',
+  'editor_validate_flow',
+]);
+
+/** Editor tools for Playwright JS packs */
+const EDITOR_PLAYWRIGHT_JS_TOOL_NAMES = new Set([
+  ...EDITOR_COMMON_TOOL_NAMES,
+  'editor_write_js',
+]);
+
+export const EDITOR_COMMON_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
+  t => EDITOR_COMMON_TOOL_NAMES.has(t.function.name)
 );
+
+export const EDITOR_JSON_DSL_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
+  t => EDITOR_JSON_DSL_TOOL_NAMES.has(t.function.name)
+);
+
+export const EDITOR_PLAYWRIGHT_JS_TOOLS: ToolDef[] = MCP_AGENT_TOOL_DEFINITIONS.filter(
+  t => EDITOR_PLAYWRIGHT_JS_TOOL_NAMES.has(t.function.name)
+);
+
+/** Backward-compatible alias: defaults to the Playwright JS editor toolset */
+export const EDITOR_AGENT_TOOLS: ToolDef[] = EDITOR_PLAYWRIGHT_JS_TOOLS;
+
+export function getEditorToolsForPackKind(kind: TaskPackManifest['kind']): ToolDef[] {
+  return kind === 'json-dsl' ? EDITOR_JSON_DSL_TOOLS : EDITOR_PLAYWRIGHT_JS_TOOLS;
+}
 
 /** Validator-only tools (read-only + run — no flow modification) */
 const VALIDATOR_TOOL_NAMES = new Set([
@@ -978,6 +1066,7 @@ const EXPLORATION_ONLY_TOOL_NAMES = new Set([
   'browser_goto', 'browser_go_back', 'browser_type', 'browser_screenshot',
   'browser_get_links', 'browser_get_dom_snapshot', 'browser_click',
   'browser_click_coordinates', 'browser_get_element_bounds',
+  'browser_solve_turnstile',
   'browser_last_actions', 'browser_close_session',
   // Network tools
   'browser_network_list', 'browser_network_search', 'browser_network_get',
@@ -1019,6 +1108,7 @@ const BROWSER_TOOLS = new Set([
   'click',
   'click_coordinates',
   'get_element_bounds',
+  'solve_turnstile',
   'network_list',
   'network_search',
   'network_get',
@@ -1188,13 +1278,23 @@ export async function executeAgentTool(
         const result = await taskPackEditor.applyFlowPatch(packId, patch as any);
         return wrap(JSON.stringify(result, null, 2));
       }
+      case 'write_js': {
+        const packId = (args.packId as string) || ctx.packId;
+        if (!packId) throw new Error('No pack linked to this conversation');
+        const source = args.source as string;
+        if (!source || typeof source !== 'string') throw new Error('source (string) is required');
+        const jsInputs = args.inputs as Record<string, { type: string; description?: string; required?: boolean; default?: unknown }> | undefined;
+        const jsCollectibles = args.collectibles as Array<{ name: string; type: string; description?: string }> | undefined;
+        const result = await taskPackEditor.writePlaywrightJsSource(packId, source, jsInputs, jsCollectibles);
+        return wrap(JSON.stringify(result, null, 2));
+      }
       case 'create_pack': {
         // Check if conversation already has a linked pack
         if (ctx.packId) {
           return wrap(JSON.stringify({
-            error: `A pack is already linked to this conversation: "${ctx.packId}". Do not create a new pack. Use editor_read_pack() to see the current flow, then use editor_apply_flow_patch to modify it.`,
+            error: `A pack is already linked to this conversation: "${ctx.packId}". Do not create a new pack. Use editor_read_pack() to inspect the current flow and continue editing that pack.`,
             existingPackId: ctx.packId,
-            suggestion: 'Call editor_read_pack() first to understand the existing flow, then use editor_apply_flow_patch to make changes.',
+            suggestion: 'Call editor_read_pack() first to understand the existing flow, then use the editor tools appropriate for that pack kind.',
           }, null, 2));
         }
 
@@ -1306,6 +1406,24 @@ export async function executeAgentTool(
         const resolvedUrl = await resolveTemplateValue(url, ctx);
         const result = await browserInspector.gotoUrl(sessionId, resolvedUrl);
         const { resultJson, snapshot } = await actionWithScreenshot(sessionId, result);
+        
+        // Check for Cloudflare Turnstile and add hint if detected
+        const page = getSessionPage(sessionId);
+        if (page) {
+          try {
+            const { detectCloudflareTurnstile } = await import('@showrun/core');
+            const turnstileResult = await detectCloudflareTurnstile(page, { scale: 1 });
+            if (turnstileResult.found) {
+              const parsed = JSON.parse(resultJson);
+              parsed._turnstileDetected = true;
+              parsed._hint = 'Cloudflare Turnstile CAPTCHA detected on this page. Use browser_solve_turnstile() to solve it before continuing.';
+              return wrap(JSON.stringify(parsed, null, 2), snapshot);
+            }
+          } catch {
+            // Ignore detection errors, continue normally
+          }
+        }
+        
         return wrap(resultJson, snapshot);
       }
       case 'go_back': {
@@ -1352,6 +1470,19 @@ export async function executeAgentTool(
         const button = (args.button as 'left' | 'right' | 'middle') ?? 'left';
         const clickCount = (args.clickCount as number) ?? 1;
         const result = await browserInspector.clickAtCoordinates(sessionId, x, y, { button, clickCount });
+        return wrap(JSON.stringify(result, null, 2));
+      }
+      case 'solve_turnstile': {
+        const sessionId = effectiveArgs.sessionId as string;
+        const page = getSessionPage(sessionId);
+        if (!page) throw new Error('No active browser session');
+        
+        const { solveCloudflareTurnstile } = await import('@showrun/core');
+        const scale = (args.scale as number) ?? 1;
+        const retries = (args.retries as number) ?? 3;
+        const waitAfterClick = (args.waitAfterClick as number) ?? 2000;
+        
+        const result = await solveCloudflareTurnstile(page, { scale, retries, waitAfterClick });
         return wrap(JSON.stringify(result, null, 2));
       }
       case 'get_element_bounds': {
@@ -1498,11 +1629,11 @@ export async function executeAgentTool(
             }));
           }
           try {
-            const { flowJson } = await ctx.taskPackEditor.readPack(ctx.packId);
-            const stepCount = flowJson?.flow?.length ?? 0;
-            if (stepCount === 0) {
+            const packData = await ctx.taskPackEditor.readPack(ctx.packId);
+            const hasFlow = !!(packData as any).playwrightJsSource || ((packData as any).flowJson?.flow?.length ?? 0) > 0;
+            if (!hasFlow) {
               return wrap(JSON.stringify({
-                error: `Cannot set status to "ready": the pack "${ctx.packId}" has 0 flow steps. You must implement DSL steps in the flow using editor_apply_flow_patch before marking as ready. Exploration alone is not enough — the goal is a reusable, deterministic flow.`,
+                error: `Cannot set status to "ready": the pack "${ctx.packId}" has no flow. You must implement a real flow before marking as ready. Exploration alone is not enough — the goal is a reusable, deterministic pack.`,
               }));
             }
           } catch (readErr) {

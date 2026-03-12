@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { resolve } from 'path';
 import type { DashboardContext } from '../types/context.js';
 import { createTokenChecker } from '../helpers/auth.js';
-import { runTaskPack, TaskPackLoader } from '@showrun/core';
+import { runTaskPack, TaskPackLoader, executePlaywrightJs } from '@showrun/core';
 import { SocketLogger } from '../logger.js';
 
 export function createRunsRouter(ctx: DashboardContext): Router {
@@ -67,6 +67,7 @@ export function createRunsRouter(ctx: DashboardContext): Router {
           headless: !ctx.headful,
           profileId: packId,
           packPath: packInfo.path,
+          playwrightJsExecutor: executePlaywrightJs,
         });
 
         ctx.runManager.updateRun(runId, {

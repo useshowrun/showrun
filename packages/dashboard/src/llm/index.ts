@@ -6,6 +6,7 @@
 import type { LlmProvider } from './provider.js';
 import { OpenAIProvider } from './openai.js';
 import { AnthropicProvider } from './anthropic.js';
+import { CliProxyProvider } from './cliproxy.js';
 
 export function createLlmProvider(): LlmProvider {
   // Auto-detect provider based on available API keys
@@ -17,6 +18,8 @@ export function createLlmProvider(): LlmProvider {
       return new OpenAIProvider();
     case 'anthropic':
       return new AnthropicProvider();
+    case 'cliproxy':
+      return new CliProxyProvider();
     default:
       throw new Error(`Unsupported LLM provider: ${provider}`);
   }
