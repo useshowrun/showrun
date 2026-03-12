@@ -105,12 +105,19 @@ describe('tokenStore', () => {
 // ── RegistryClient tests ──────────────────────────────────────────────────
 
 describe('RegistryClient', () => {
+  let tempDir: string;
   let originalEnv: Record<string, string | undefined>;
 
   beforeEach(() => {
+    tempDir = join(tmpdir(), `showrun-registry-client-${randomBytes(6).toString('hex')}`);
+    mkdirSync(tempDir, { recursive: true });
     originalEnv = {
       SHOWRUN_REGISTRY_URL: process.env.SHOWRUN_REGISTRY_URL,
+      XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME,
+      APPDATA: process.env.APPDATA,
+      HOME: process.env.HOME,
     };
+    process.env.XDG_CONFIG_HOME = tempDir;
   });
 
   afterEach(() => {
@@ -121,6 +128,7 @@ describe('RegistryClient', () => {
         process.env[key] = value;
       }
     }
+    rmSync(tempDir, { recursive: true, force: true });
     vi.restoreAllMocks();
   });
 
@@ -282,5 +290,71 @@ describe('RegistryClient', () => {
         return client.searchPacks({ q: 'fail' });
       })(),
     ).rejects.toThrow(RegistryError);
+  });
+
+  it('installs playwright-js packs using flow.playwright.js', async () => {
+    const tempDir = join(tmpdir(), `showrun-registry-install-${randomBytes(6).toString('hex')}`);
+    mkdirSync(tempDir, { recursive: true });
+
+    const manifest = {
+      id: 'example-pack',
+      name: 'Example Pack',
+      version: '1.2.3',
+      kind: 'playwright-js' as const,
+      description: 'Example playwright-js pack',
+      inputs: {
+        query: { type: 'string', required: true },
+      },
+      collectibles: [
+        { name: 'items', type: 'array' },
+      ],
+    };
+
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    fetchSpy
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          id: 'pack-1',
+          slug: '@alice/example-pack',
+          name: 'Example Pack',
+          description: 'Example playwright-js pack',
+          visibility: 'public',
+          latestVersion: '1.2.3',
+          owner: { id: 'user-1', username: 'alice' },
+          createdAt: '2026-03-12T00:00:00.000Z',
+          updatedAt: '2026-03-12T00:00:00.000Z',
+          versions: [{ version: '1.2.3', createdAt: '2026-03-12T00:00:00.000Z' }],
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({
+          manifest,
+          playwrightJsSource: 'module.exports = async function() { return { items: [] }; };\n',
+        }), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        }),
+      );
+
+    try {
+      const { RegistryClient } = await import('../registry/client.js');
+      const client = new RegistryClient('https://registry.example.com');
+
+      await client.installPack('@alice/example-pack', tempDir);
+
+      const packDir = join(tempDir, '@alice/example-pack');
+      expect(existsSync(join(packDir, 'taskpack.json'))).toBe(true);
+      expect(existsSync(join(packDir, 'flow.playwright.js'))).toBe(true);
+      expect(existsSync(join(packDir, 'flow.json'))).toBe(false);
+
+      const installedManifest = JSON.parse(readFileSync(join(packDir, 'taskpack.json'), 'utf-8'));
+      expect(installedManifest.kind).toBe('playwright-js');
+      expect(readFileSync(join(packDir, 'flow.playwright.js'), 'utf-8')).toContain('return { items: [] }');
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

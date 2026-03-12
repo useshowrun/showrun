@@ -9,7 +9,7 @@
 import { join } from 'path';
 import { readFileSync } from 'fs';
 import { TaskPackLoader } from '../loader.js';
-import { readJsonFile, ensureDir, writeTaskPackManifest, writeFlowJson } from '../packUtils.js';
+import { readJsonFile, ensureDir, writeTaskPackManifest, writeFlowJson, writePlaywrightJs } from '../packUtils.js';
 import { loadTokens, saveTokens, clearTokens } from './tokenStore.js';
 import type {
   IRegistryClient,
@@ -301,7 +301,8 @@ export class RegistryClient implements IRegistryClient {
     // Get version data (manifest + flow)
     const versionData = await this.request<{
       manifest: TaskPackManifest;
-      flow: { inputs?: InputSchema; collectibles?: CollectibleDefinition[]; flow: DslStep[] };
+      flow?: { inputs?: InputSchema; collectibles?: CollectibleDefinition[]; flow: DslStep[] };
+      playwrightJsSource?: string;
     }>('GET', `/api/packs/${scopedPath}/versions/${targetVersion}`, undefined, false);
 
     // Write to local directory — creates nested @username/slug/ structure
@@ -309,6 +310,26 @@ export class RegistryClient implements IRegistryClient {
     ensureDir(packDir);
 
     writeTaskPackManifest(packDir, versionData.manifest);
+    if (versionData.manifest.kind === 'playwright-js') {
+      if (!versionData.playwrightJsSource) {
+        throw new RegistryError(
+          `Registry version payload for "${ref}" is missing playwrightJsSource`,
+          500,
+          versionData,
+        );
+      }
+      writePlaywrightJs(packDir, versionData.playwrightJsSource);
+      return;
+    }
+
+    if (!versionData.flow) {
+      throw new RegistryError(
+        `Registry version payload for "${ref}" is missing flow`,
+        500,
+        versionData,
+      );
+    }
+
     writeFlowJson(packDir, versionData.flow);
   }
 
