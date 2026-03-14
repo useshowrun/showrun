@@ -92,10 +92,11 @@ async function doAuth() {
   if (!csrfToken) throw new Error('JSESSIONID not found. Are you logged in?');
   if (!cookieMap['li_at']) throw new Error('li_at cookie not found. Are you logged in?');
 
-  // Get own profile URN
+  // Get own profile URN (use application/json to get flat response)
   const meResp = await apiFetch(
     { cookie: cookieStr, csrfToken },
-    'https://www.linkedin.com/voyager/api/me'
+    'https://www.linkedin.com/voyager/api/me',
+    { headers: { 'accept': 'application/json' } }
   );
   const myUrn = meResp.data?.miniProfile?.dashEntityUrn || meResp.data?.miniProfile?.entityUrn || '';
   if (!myUrn) throw new Error('Could not determine your profile URN.');
