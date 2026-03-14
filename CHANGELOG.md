@@ -10,6 +10,8 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [added] Showrun compatibility version tracking — published packs include the showrun version they were built with; CLI displays version on startup
+- [fixed] Registry install now correctly handles `playwright-js` packs (downloads `flow.playwright.js` alongside `taskpack.json`)
 - [added] `showrun agent` CLI command — run AI agents headlessly from the terminal
   - `showrun agent explore <pack> <prompt>`: Run Exploration Agent (research, planning)
   - `showrun agent editor <pack> <prompt>`: Run Editor Agent (implementation, testing)
