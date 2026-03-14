@@ -6,7 +6,7 @@ Send LinkedIn messages from the terminal. No browser needed after initial auth.
 
 - Node.js 22+ (uses built-in `fetch` and `crypto`)
 - Chrome with remote debugging enabled (only for `auth` step)
-- [chrome-cdp](../chrome-cdp/) skill (only for `auth` step)
+- [chrome-cdp](https://github.com/pasky/chrome-cdp-skill/tree/main/skills/chrome-cdp) skill (only for `auth` step)
 
 ## Setup
 
