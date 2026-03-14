@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// linkedin-salesnav.mjs — Query LinkedIn Sales Navigator saved searches and fetch full profiles
+// linkedin-salesnav-saved-lead-search.mjs — Query Sales Navigator saved searches and fetch full profiles
 //
 // Setup (one-time, requires Chrome with Sales Navigator open):
-//   node linkedin-salesnav.mjs auth
+//   node linkedin-salesnav-saved-lead-search.mjs auth
 //
 // Usage (no browser needed after auth):
-//   node linkedin-salesnav.mjs search <savedSearchId> [--count=50] [--start=0]
-//   node linkedin-salesnav.mjs profiles <id1,id2,...>
-//   node linkedin-salesnav.mjs search-profiles <savedSearchId>    # search + fetch in one go
+//   node linkedin-salesnav-saved-lead-search.mjs search <savedSearchId> [--count=50] [--start=0]
+//   node linkedin-salesnav-saved-lead-search.mjs profiles <id1,id2,...>
+//   node linkedin-salesnav-saved-lead-search.mjs search-profiles <savedSearchId>    # search + fetch in one go
 //
 // Requires Node 22+ (built-in fetch).
 
@@ -20,7 +20,7 @@ import { homedir } from 'os';
 // Data directory
 // ---------------------------------------------------------------------------
 
-const DATA_DIR = resolve(homedir(), '.local/share/showrun/data/linkedin-salesnav');
+const DATA_DIR = resolve(homedir(), '.local/share/showrun/data/linkedin-salesnav-saved-lead-search');
 const SESSION_FILE = resolve(DATA_DIR, 'session.json');
 const CACHE_DIR = resolve(DATA_DIR, 'cache');
 
@@ -99,7 +99,7 @@ async function doAuth() {
 function getAuth() {
   const auth = loadJson(SESSION_FILE);
   if (!auth.cookie) {
-    console.error('No auth found. Run: node linkedin-salesnav.mjs auth');
+    console.error('No auth found. Run: node linkedin-salesnav-saved-lead-search.mjs auth');
     process.exit(1);
   }
   return auth;
@@ -123,7 +123,7 @@ async function apiFetch(auth, url) {
   try { data = JSON.parse(text); } catch { data = text; }
   if (!resp.ok) {
     if (resp.status === 401 || resp.status === 403) {
-      console.error('Session expired. Run: node linkedin-salesnav.mjs auth');
+      console.error('Session expired. Run: node linkedin-salesnav-saved-lead-search.mjs auth');
     }
     throw new Error(`API error (HTTP ${resp.status}): ${JSON.stringify(data).substring(0, 300)}`);
   }
@@ -268,7 +268,7 @@ switch (command) {
     const { flags, positional } = parseFlags(args);
     const savedSearchId = positional[0];
     if (!savedSearchId) {
-      console.error('Usage: node linkedin-salesnav.mjs search <savedSearchId> [--count=50] [--start=0]');
+      console.error('Usage: node linkedin-salesnav-saved-lead-search.mjs search <savedSearchId> [--count=50] [--start=0]');
       process.exit(1);
     }
 
@@ -293,11 +293,24 @@ switch (command) {
   }
 
   case 'profiles': {
-    const profileIds = args[0]?.split(',').filter(Boolean);
-    if (!profileIds?.length) {
-      console.error('Usage: node linkedin-salesnav.mjs profiles <id1,id2,...>');
+    const rawIds = args[0]?.split(',').filter(Boolean);
+    if (!rawIds?.length) {
+      console.error('Usage: node linkedin-salesnav-saved-lead-search.mjs profiles <id1,id2,...>');
+      console.error('  Accepts: Sales Nav IDs (ACwAA...), LinkedIn URNs (urn:li:fsd_profile:ACoAA...),');
+      console.error('           or member URNs (urn:li:member:123456)');
       process.exit(1);
     }
+    // Normalize IDs — strip URN prefixes, accept any format
+    const profileIds = rawIds.map(id => {
+      // urn:li:fsd_profile:ACoAA... → ACoAA...
+      const fsdMatch = id.match(/fsd_profile:([^,)]+)/);
+      if (fsdMatch) return fsdMatch[1];
+      // urn:li:fs_salesProfile:(ACwAA...,... ) → ACwAA...
+      const salesMatch = id.match(/salesProfile:\(([^,]+)/);
+      if (salesMatch) return salesMatch[1];
+      // Already a raw ID
+      return id;
+    });
 
     const auth = getAuth();
     console.log(`Fetching ${profileIds.length} profiles...`);
@@ -321,7 +334,7 @@ switch (command) {
     const { flags, positional } = parseFlags(args);
     const savedSearchId = positional[0];
     if (!savedSearchId) {
-      console.error('Usage: node linkedin-salesnav.mjs search-profiles <savedSearchId> [--count=50] [--start=0]');
+      console.error('Usage: node linkedin-salesnav-saved-lead-search.mjs search-profiles <savedSearchId> [--count=50] [--start=0]');
       process.exit(1);
     }
 
@@ -355,13 +368,18 @@ switch (command) {
   }
 
   default:
-    console.log(`linkedin-salesnav — Query Sales Navigator saved searches and fetch profiles
+    console.log(`linkedin-salesnav-saved-lead-search — Query saved searches and fetch profiles
 
 Commands:
   auth                                        Authenticate via Chrome (one-time)
   search <savedSearchId> [--count] [--start]  Run a saved search
-  profiles <id1,id2,...>                       Fetch full profiles by Sales Nav ID
+  profiles <id1,id2,...>                       Fetch full profiles by ID or URN
   search-profiles <savedSearchId> [opts]      Search + fetch profiles in one step
+
+Profile ID formats (all work for 'profiles' command):
+  ACwAABJVBJEB...                             Sales Nav / LinkedIn ID
+  urn:li:fsd_profile:ACoAABJVBJEB...          LinkedIn profile URN
+  urn:li:fs_salesProfile:(ACwAABJVBJEB...,...)  Sales Nav URN
 
 Data: ${DATA_DIR}/
   session.json       Auth cookies
