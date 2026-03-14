@@ -50,7 +50,8 @@ showrun serve --packs ./taskpacks
 showrun serve --packs ./taskpacks --http --port 3001
 
 # Pack management
-showrun pack create --dir ./taskpacks --id my-pack --name "My Pack"
+showrun pack create --dir ./taskpacks --id my-pack --name "My Pack"  # playwright-js (default)
+showrun pack create --dir ./taskpacks --id my-pack --name "My Pack" --kind json-dsl
 showrun pack validate --path ./taskpacks/my-pack
 showrun pack set-flow --path ./taskpacks/my-pack --flow '{"flow":[...]}'
 showrun pack set-meta --path ./taskpacks/my-pack --meta '{"description":"..."}'

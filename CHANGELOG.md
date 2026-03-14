@@ -10,6 +10,7 @@ Tags: `added`, `fixed`, `changed`, `removed`
 
 ## Unreleased
 
+- [changed] `showrun pack create` now defaults to `playwright-js` kind — use `--kind json-dsl` for the previous behavior
 - [added] Showrun compatibility version tracking — published packs include the showrun version they were built with; CLI displays version on startup
 - [fixed] Registry install now correctly handles `playwright-js` packs (downloads `flow.playwright.js` alongside `taskpack.json`)
 - [added] `showrun agent` CLI command — run AI agents headlessly from the terminal

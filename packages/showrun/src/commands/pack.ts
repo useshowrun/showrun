@@ -12,6 +12,7 @@ import {
   ensureDir,
   writeTaskPackManifest,
   writeFlowJson,
+  writePlaywrightJs,
   readJsonFile,
   saveVersion,
   listVersions,
@@ -41,12 +42,13 @@ function parseJsonInput(input: string): unknown {
 }
 
 /**
- * Create a new JSON Task Pack
+ * Create a new Task Pack
  */
 export async function cmdPackCreate(args: string[]): Promise<void> {
   let packsDir: string | undefined;
   let packId: string | undefined;
   let packName: string | undefined;
+  let kind: 'playwright-js' | 'json-dsl' = 'playwright-js';
   let template: string = 'basic';
 
   for (let i = 0; i < args.length; i++) {
@@ -73,6 +75,16 @@ export async function cmdPackCreate(args: string[]): Promise<void> {
           throw new Error('--name requires a pack name');
         }
         packName = next;
+        i++;
+        break;
+      case '--kind':
+        if (!next || next.startsWith('--')) {
+          throw new Error('--kind requires a value: playwright-js or json-dsl');
+        }
+        if (next !== 'playwright-js' && next !== 'json-dsl') {
+          throw new Error('--kind must be "playwright-js" or "json-dsl"');
+        }
+        kind = next;
         i++;
         break;
       case '--template':
@@ -116,38 +128,57 @@ export async function cmdPackCreate(args: string[]): Promise<void> {
     name: packName,
     version: '0.1.0',
     description: '',
-    kind: 'json-dsl',
+    kind,
   };
 
   writeTaskPackManifest(packDir, manifest);
 
-  // Create flow.json with template
-  const flowData: {
-    inputs: InputSchema;
-    collectibles: CollectibleDefinition[];
-    flow: DslStep[];
-  } = {
-    inputs: {},
-    collectibles: [],
-    flow: template === 'basic' ? [
-      {
-        id: 'navigate',
-        type: 'navigate',
-        label: 'Navigate to page',
-        params: {
-          url: 'https://example.com',
-          waitUntil: 'networkidle',
+  if (kind === 'playwright-js') {
+    // Create flow.playwright.js with scaffold
+    const scaffold = `module.exports = async function({ page, context, frame, inputs, secrets }) {
+  // Navigate to your target page
+  await page.goto('https://example.com', { waitUntil: 'networkidle' });
+
+  // Your automation code here
+
+  return {};
+};
+`;
+    writePlaywrightJs(packDir, scaffold);
+
+    console.log(`Created Playwright JS Task Pack: ${packDir}`);
+    console.log(`  ID: ${packId}`);
+    console.log(`  Name: ${packName}`);
+    console.log(`  Files: taskpack.json, flow.playwright.js`);
+  } else {
+    // Create flow.json with template
+    const flowData: {
+      inputs: InputSchema;
+      collectibles: CollectibleDefinition[];
+      flow: DslStep[];
+    } = {
+      inputs: {},
+      collectibles: [],
+      flow: template === 'basic' ? [
+        {
+          id: 'navigate',
+          type: 'navigate',
+          label: 'Navigate to page',
+          params: {
+            url: 'https://example.com',
+            waitUntil: 'networkidle',
+          },
         },
-      },
-    ] : [],
-  };
+      ] : [],
+    };
 
-  writeFlowJson(packDir, flowData);
+    writeFlowJson(packDir, flowData);
 
-  console.log(`Created JSON Task Pack: ${packDir}`);
-  console.log(`  ID: ${packId}`);
-  console.log(`  Name: ${packName}`);
-  console.log(`  Files: taskpack.json, flow.json`);
+    console.log(`Created JSON-DSL Task Pack: ${packDir}`);
+    console.log(`  ID: ${packId}`);
+    console.log(`  Name: ${packName}`);
+    console.log(`  Files: taskpack.json, flow.json`);
+  }
 }
 
 /**
@@ -291,8 +322,8 @@ export async function cmdPackSetMeta(args: string[]): Promise<void> {
   const updated: TaskPackManifest = {
     ...existing,
     ...meta,
-    // Ensure kind is preserved for json-dsl packs
-    kind: existing.kind === 'json-dsl' ? 'json-dsl' : meta.kind,
+    // Preserve existing kind unless explicitly overridden
+    kind: meta.kind ?? existing.kind,
   };
 
   // Validate required fields
@@ -451,11 +482,12 @@ Usage: showrun pack <command> [options]
 Pack management commands
 
 Commands:
-  create        Create a new JSON Task Pack
+  create        Create a new Task Pack
     --dir <path>       Packs directory (required)
     --id <id>          Pack ID (required)
     --name <name>      Pack name (required)
-    --template <name>  Template: basic (default)
+    --kind <kind>      Pack kind: playwright-js (default), json-dsl
+    --template <name>  Template: basic (default, json-dsl only)
 
   validate      Validate a Task Pack
     --path <path>      Pack directory (required)
