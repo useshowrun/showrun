@@ -16,7 +16,7 @@ import {
 } from '../agentTools.js';
 import { closeSession as closeBrowserSession } from '../browserInspector.js';
 import { TaskPackEditorWrapper } from '../mcpWrappers.js';
-import { summarizeIfNeeded, estimateTotalTokens, forceSummarize, type AgentMessage } from '../contextManager.js';
+import { summarizeIfNeeded, estimateTotalTokens, forceSummarize, reconstructAgentMessages, type AgentMessage } from '../contextManager.js';
 import { createLlmProvider } from '../llm/index.js';
 import { runEditorAgent } from '../agents/editorAgent.js';
 import { runValidatorAgent } from '../agents/validatorAgent.js';
@@ -229,40 +229,6 @@ function sanitizeForStorage(messages: AgentMsg[]): AgentMsg[] {
     }
     return msg;
   });
-}
-
-/**
- * Reconstruct the full LLM-format agent message history from DB messages.
- * Messages with agentContext get their rich intermediate messages (tool_calls + tool results) expanded.
- * Messages without agentContext (legacy) use flat text.
- */
-function reconstructAgentMessages(conversationId: string): AgentMsg[] {
-  const dbMessages = getMessagesForConversation(conversationId);
-  const result: AgentMsg[] = [];
-
-  for (const msg of dbMessages) {
-    if (msg.role === 'system') continue; // Skip system messages
-
-    if (msg.role === 'user') {
-      result.push({ role: 'user', content: msg.content });
-    } else if (msg.role === 'assistant') {
-      if (msg.agentContext) {
-        // Rich context: insert the full agent turn (assistant with tool_calls + tool results)
-        try {
-          const turnMessages = JSON.parse(msg.agentContext) as AgentMsg[];
-          result.push(...turnMessages);
-        } catch {
-          // Fallback to flat text if JSON is corrupted
-          result.push({ role: 'assistant', content: msg.content });
-        }
-      } else {
-        // Legacy message without agentContext: flat text
-        result.push({ role: 'assistant', content: msg.content });
-      }
-    }
-  }
-
-  return result;
 }
 
 export function createTeachRouter(ctx: DashboardContext): Router {

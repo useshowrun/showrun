@@ -4,7 +4,7 @@
  */
 
 import type { LlmProvider } from './llm/provider.js';
-import { getConversationPlan, setConversationPlan } from './db.js';
+import { getConversationPlan, setConversationPlan, getMessagesForConversation } from './db.js';
 
 // Fallback token estimation: ~4 characters per token
 const FALLBACK_CHARS_PER_TOKEN = 4;
@@ -352,3 +352,38 @@ export function executePlanTool(
 
   return JSON.stringify({ error: `Unknown plan tool: ${toolName}` });
 }
+
+/**
+ * Reconstruct the full LLM-format agent message history from DB messages.
+ * Messages with agentContext get their rich intermediate messages (tool_calls + tool results) expanded.
+ * Messages without agentContext (legacy) use flat text.
+ */
+export function reconstructAgentMessages(conversationId: string): AgentMessage[] {
+  const dbMessages = getMessagesForConversation(conversationId);
+  const result: AgentMessage[] = [];
+
+  for (const msg of dbMessages) {
+    if (msg.role === 'system') continue; // Skip system messages
+
+    if (msg.role === 'user') {
+      result.push({ role: 'user', content: msg.content });
+    } else if (msg.role === 'assistant') {
+      if (msg.agentContext) {
+        // Rich context: insert the full agent turn (assistant with tool_calls + tool results)
+        try {
+          const turnMessages = JSON.parse(msg.agentContext) as AgentMessage[];
+          result.push(...turnMessages);
+        } catch {
+          // Fallback to flat text if JSON is corrupted
+          result.push({ role: 'assistant', content: msg.content });
+        }
+      } else {
+        // Legacy message without agentContext: flat text
+        result.push({ role: 'assistant', content: msg.content });
+      }
+    }
+  }
+
+  return result;
+}
+

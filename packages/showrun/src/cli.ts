@@ -45,6 +45,8 @@ import {
   printRegistryHelp,
   cmdResults,
   printResultsHelp,
+  cmdAgent,
+  printAgentHelp,
 } from './commands/index.js';
 
 function printHelp(): void {
@@ -57,6 +59,7 @@ Commands:
   run <pack>              Run a task pack
   serve                   Start MCP server for AI agents
   dashboard               Start web dashboard with Teach Mode
+  agent <subcommand>      Run AI agent headlessly (explore, editor)
   pack <subcommand>       Pack management
     create                Create new pack
     validate              Validate pack
@@ -150,6 +153,9 @@ async function main(): Promise<void> {
       case 'results':
         printResultsHelp();
         break;
+      case 'agent':
+        printAgentHelp();
+        break;
       case 'registry':
         printRegistryHelp();
         break;
@@ -187,6 +193,9 @@ async function main(): Promise<void> {
         break;
       case 'results':
         await cmdResults(commandArgs);
+        break;
+      case 'agent':
+        await cmdAgent(commandArgs);
         break;
       case 'registry':
         await cmdRegistry(commandArgs);

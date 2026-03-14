@@ -12,3 +12,4 @@ export { cmdUninstall, printUninstallHelp } from './uninstall.js';
 export { cmdTechniques, printTechniquesHelp } from './techniques.js';
 export { cmdRegistry, printRegistryHelp } from './registry.js';
 export { cmdResults, printResultsHelp } from './results.js';
+export { cmdAgent, printAgentHelp } from './agent.js';
