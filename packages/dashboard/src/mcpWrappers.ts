@@ -165,19 +165,14 @@ export class TaskPackEditorWrapper {
       name,
       version: '0.1.0',
       description: description || '',
-      kind: 'json-dsl',
+      kind: 'playwright-js',
     };
 
     writeTaskPackManifest(packDir, manifest);
 
-    // Create empty flow.json
-    const flowData = {
-      inputs: {},
-      collectibles: [],
-      flow: [],
-    };
-
-    writeFlowJson(packDir, flowData, true); // Skip validation for empty flow
+    // Create starter flow.playwright.js
+    const starterJs = `module.exports = async function({ page, context, inputs, secrets, showrun, util }) {\n  // Your Playwright automation code here\n};\n`;
+    writePlaywrightJs(packDir, starterJs);
 
     return {
       id,
