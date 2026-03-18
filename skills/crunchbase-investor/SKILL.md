@@ -24,12 +24,17 @@ node crunchbase-investor.mjs view andreessen-horowitz
 
 # View by UUID
 node crunchbase-investor.mjs view 6acfa7da-1dbd-936e-d985-cf07a1b27711
+
+# List investments (paginated)
+node crunchbase-investor.mjs investments y-combinator --count=50
+node crunchbase-investor.mjs investments y-combinator --after-id=<uuid>
 ```
 
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
 2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/organizations/{uuid}`
+3. `investments` — Fetches paginated investments via POST to `/v4/data/entities/organizations/{permalink}/overrides` with `card_lookups: [{card_id: "investments_list", limit, after_id}]`
 
 Available cards: overview_fields_extended, investments_list, overview_company_fields, funding_rounds_list
 

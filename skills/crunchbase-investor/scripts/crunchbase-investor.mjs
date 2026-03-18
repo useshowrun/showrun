@@ -3,6 +3,7 @@
 //
 // Setup:   node crunchbase-investor.mjs auth
 // Usage:   node crunchbase-investor.mjs view <permalink|uuid>
+//          node crunchbase-investor.mjs investments <permalink|uuid> [--count=100] [--after-id=UUID]
 //
 // Requires Node 22+ (built-in fetch).
 
@@ -184,6 +185,40 @@ async function viewInvestor(auth, input) {
 }
 
 // ---------------------------------------------------------------------------
+// Investments list (paginated via overrides endpoint)
+// ---------------------------------------------------------------------------
+
+async function resolveToPermalink(auth, input) {
+  // If it's already a permalink (no dashes pattern of UUID), use directly
+  if (!input.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)) {
+    return input;
+  }
+  // Resolve UUID to permalink via entity lookup
+  const data = await apiFetch(auth,
+    `/v4/data/entities/organizations/${input}?field_ids=${encodeURIComponent('["identifier"]')}`);
+  return data.properties?.identifier?.permalink || input;
+}
+
+async function fetchInvestments(auth, input, { count = 100, afterId = null } = {}) {
+  const permalink = await resolveToPermalink(auth, input);
+
+  const fieldIds = encodeURIComponent(JSON.stringify(
+    ['identifier', 'layout_id', 'facet_ids', 'title', 'short_description', 'is_locked']));
+  const sectionIds = encodeURIComponent(JSON.stringify(['investments']));
+
+  const cardLookup = { card_id: 'investments_list', limit: count };
+  if (afterId) cardLookup.after_id = afterId;
+
+  const data = await apiFetch(auth,
+    `/v4/data/entities/organizations/${permalink}/overrides?field_ids=${fieldIds}&section_ids=${sectionIds}`, {
+      method: 'POST',
+      body: JSON.stringify({ card_lookups: [cardLookup] }),
+    });
+
+  return data;
+}
+
+// ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
 
@@ -267,16 +302,72 @@ switch (command) {
     break;
   }
 
+  case 'investments': {
+    const { flags, positional } = parseFlags(args);
+    const input = positional[0];
+    if (!input) {
+      console.error('Usage: node crunchbase-investor.mjs investments <permalink|uuid> [--count=100] [--after-id=UUID]');
+      process.exit(1);
+    }
+
+    const auth = getAuth();
+    const count = parseInt(flags.count || '100');
+    const afterId = flags['after-id'] || null;
+
+    console.log(`Fetching investments for: ${input}...`);
+    const data = await fetchInvestments(auth, input, { count, afterId });
+
+    const cacheFile = resolve(CACHE_DIR, `investments-${input}-${Date.now()}.json`);
+    saveJson(cacheFile, data);
+
+    const investments = data.cards?.investments_list || [];
+    const summary = data.cards?.investments_headline || {};
+    const invSummary = data.cards?.investments_summary || {};
+
+    console.log(`\n${data.properties?.identifier?.value || input} — Investments`);
+    if (summary.num_investments) console.log(`  Total investments: ${summary.num_investments}`);
+    if (summary.num_lead_investments) console.log(`  Lead investments: ${summary.num_lead_investments}`);
+    if (summary.num_portfolio_organizations) console.log(`  Portfolio orgs: ${summary.num_portfolio_organizations}`);
+
+    console.log(`\n  Showing ${investments.length} investments:\n`);
+    for (const inv of investments) {
+      const org = inv.organization_identifier?.value || 'Unknown';
+      const round = inv.funding_round_identifier?.value || '';
+      const date = inv.announced_on || '';
+      const amount = inv.funding_round_money_raised?.value_usd
+        ? `$${inv.funding_round_money_raised.value_usd.toLocaleString()}`
+        : '';
+      const lead = inv.is_lead_investor ? ' [LEAD]' : '';
+      console.log(`    ${org} — ${round} — ${date} ${amount}${lead}`);
+    }
+
+    if (investments.length === count) {
+      const lastId = investments[investments.length - 1]?.identifier?.uuid;
+      if (lastId) {
+        console.log(`\n  More results available. Use --after-id=${lastId} to get next page.`);
+      }
+    }
+
+    console.log(`\nCached to: ${cacheFile}`);
+    break;
+  }
+
   default:
     console.log(`crunchbase-investor — Fetch detailed investor data from Crunchbase
 
 Commands:
-  auth                           Authenticate via Chrome (one-time)
-  view <permalink|uuid>          Fetch full investor details with all cards
+  auth                                         Authenticate via Chrome (one-time)
+  view <permalink|uuid>                        Fetch full investor details with all cards
+  investments <permalink|uuid> [options]       Fetch paginated investments list
 
-Input formats:
-  sequoia-capital                Investor permalink (from Crunchbase URL)
-  6acfa7da-1dbd-936e-...         Investor UUID
+Investment options:
+  --count=N                                    Number of results (default: 100)
+  --after-id=UUID                              Pagination cursor (UUID of last investment)
+
+Examples:
+  node crunchbase-investor.mjs view y-combinator
+  node crunchbase-investor.mjs investments y-combinator --count=50
+  node crunchbase-investor.mjs investments y-combinator --after-id=<uuid>
 
 Data: ${DATA_DIR}/
   session.json     Auth cookies
