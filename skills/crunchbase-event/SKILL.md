@@ -24,12 +24,23 @@ node crunchbase-event.mjs view web-summit-2024
 
 # View by UUID
 node crunchbase-event.mjs view 6acfa7da-1dbd-936e-d985-cf07a1b27711
+
+# Section commands (speakers, sponsors, exhibitors, contestants, news)
+node crunchbase-event.mjs speakers techcrunch-disrupt-2024
+node crunchbase-event.mjs sponsors web-summit-2024 --count=50
+node crunchbase-event.mjs exhibitors techcrunch-disrupt-2024
+node crunchbase-event.mjs contestants techcrunch-disrupt-2024
+node crunchbase-event.mjs news techcrunch-disrupt-2024 --count=20
+
+# Pagination
+node crunchbase-event.mjs speakers techcrunch-disrupt-2024 --after-id=<UUID>
 ```
 
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
 2. `view` — Resolves permalink to UUID via search API, then fetches entity from `/v4/data/entities/events/{uuid}`
+3. Section commands — Use the overrides endpoint (`POST /v4/data/entities/events/{permalink}/overrides`) to fetch paginated section data (speakers, sponsors, exhibitors, contestants, news)
 
 Available fields: identifier, starts_on, ends_on, location_identifiers, short_description, description, event_url, venue_name, categories, category_groups, num_speakers, num_sponsors, num_exhibitors, num_contestants, num_organizers, organizer_identifiers, registration_url, event_type, rank_event
 

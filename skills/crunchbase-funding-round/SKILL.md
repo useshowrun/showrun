@@ -23,14 +23,20 @@ node crunchbase-funding-round.mjs view series-a--abc-company
 
 # View by UUID
 node crunchbase-funding-round.mjs view 6acfa7da-1dbd-936e-d985-cf07a1b27711
+
+# Section commands (all support --count=N --after-id=UUID for pagination)
+node crunchbase-funding-round.mjs investors series-a--abc-company
+node crunchbase-funding-round.mjs news series-a--abc-company --count=20
+node crunchbase-funding-round.mjs timeline series-a--abc-company
 ```
 
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
 2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/funding_rounds/{uuid}`
+3. Section commands (`investors`, `news`, `timeline`) — Use the overrides endpoint `POST /v4/data/entities/funding_rounds/{permalink}/overrides?field_ids=[...]&section_ids=[...]` to fetch paginated section data
 
-Available cards: investors_list
+Available cards: investors_list, news_list, timeline
 
 Available fields: identifier, funded_organization_identifier, money_raised, investment_type, announced_on, investor_identifiers, num_investors, lead_investor_identifiers, pre_money_valuation, post_money_valuation, short_description, closed_on, target_money_raised, is_equity
 

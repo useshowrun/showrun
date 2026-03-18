@@ -23,16 +23,22 @@ node crunchbase-acquisition.mjs view google-acquires-fitbit
 
 # View by UUID
 node crunchbase-acquisition.mjs view 6acfa7da-1dbd-936e-d985-cf07a1b27711
+
+# Section commands (all support --count=N --after-id=UUID)
+node crunchbase-acquisition.mjs news google-acquires-fitbit --count=20
 ```
 
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
 2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/acquisitions/{uuid}`
+3. Section commands — Use the overrides endpoint `POST /v4/data/entities/acquisitions/{permalink}/overrides?field_ids=[...]&section_ids=[...]` to fetch paginated section data
 
 Available cards: overview_fields
 
 Available fields: identifier, acquiree_identifier, acquirer_identifier, announced_on, price, acquisition_type, status, terms, disposition_of_acquired, completed_on, acquiree_categories, acquirer_categories, acquiree_short_description, acquirer_short_description, acquiree_locations, acquirer_locations, short_description, acquiree_funding_total, acquirer_funding_total, acquiree_num_funding_rounds, acquirer_num_funding_rounds
+
+Available sections: news
 
 ## Data storage
 

@@ -3,6 +3,10 @@
 //
 // Setup:   node crunchbase-people.mjs auth
 // Usage:   node crunchbase-people.mjs view <permalink|uuid>
+//          node crunchbase-people.mjs investments <permalink|uuid> [--count=100] [--after-id=UUID]
+//          node crunchbase-people.mjs exits <permalink|uuid> [--count=100] [--after-id=UUID]
+//          node crunchbase-people.mjs education <permalink|uuid> [--count=50] [--after-id=UUID]
+//          node crunchbase-people.mjs news <permalink|uuid> [--count=50] [--after-id=UUID]
 //
 // Requires Node 22+ (built-in fetch).
 
@@ -155,6 +159,137 @@ async function resolvePermalink(auth, permalink) {
 }
 
 // ---------------------------------------------------------------------------
+// Resolve UUID -> permalink (for overrides endpoint)
+// ---------------------------------------------------------------------------
+
+async function resolveToPermalink(auth, input) {
+  if (!input.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)) {
+    return input;
+  }
+  const data = await apiFetch(auth,
+    `/v4/data/entities/people/${input}?field_ids=${encodeURIComponent('["identifier"]')}`);
+  return data.properties?.identifier?.permalink || input;
+}
+
+// ---------------------------------------------------------------------------
+// Generic overrides endpoint (powers all section commands)
+// ---------------------------------------------------------------------------
+
+const SECTIONS = {
+  investments: {
+    listCard: 'investments_list',
+    defaultCount: 100,
+    display(item) {
+      const org = item.organization_identifier?.value || 'Unknown';
+      const round = item.funding_round_identifier?.value || '';
+      const date = item.announced_on || '';
+      const amount = item.funding_round_money_raised?.value_usd
+        ? ` $${item.funding_round_money_raised.value_usd.toLocaleString()}`
+        : '';
+      const lead = item.is_lead_investor ? ' [LEAD]' : '';
+      return `${org} — ${round} — ${date}${amount}${lead}`;
+    },
+    summary(cards) {
+      const h = cards.investments_headline || {};
+      const lines = [];
+      if (h.num_investments) lines.push(`Total investments: ${h.num_investments}`);
+      return lines;
+    },
+  },
+  exits: {
+    listCard: 'exits_image_list',
+    defaultCount: 100,
+    display(item) {
+      const name = item.identifier?.value || 'Unknown';
+      const desc = item.short_description ? ` — ${item.short_description.substring(0, 80)}` : '';
+      return `${name}${desc}`;
+    },
+    summary(cards) {
+      const h = cards.exits_headline || {};
+      const lines = [];
+      if (h.num_exits) lines.push(`Total exits: ${h.num_exits}`);
+      return lines;
+    },
+  },
+  education: {
+    listCard: 'education_image_list',
+    defaultCount: 50,
+    display(item) {
+      const degree = item.type_name || '';
+      const subject = item.subject || '';
+      const school = item.school_identifier?.value || 'Unknown';
+      const year = item.completed_on?.value || item.completed_on || '';
+      const parts = [degree, subject].filter(Boolean).join(' ');
+      return `${parts ? parts + ' @ ' : ''}${school}${year ? ` (${year})` : ''}`;
+    },
+    summary(cards) {
+      const h = cards.education_summary || {};
+      return [];
+    },
+  },
+  news: {
+    listCard: 'news_list',
+    defaultCount: 50,
+    display(item) {
+      const title = item.identifier?.value || 'Untitled';
+      const date = item.posted_on || '';
+      const pub = item.publisher || '';
+      const url = item.url?.value || '';
+      return `[${date}] ${title} (${pub})${url ? `\n      ${url}` : ''}`;
+    },
+    summary() { return []; },
+  },
+};
+
+async function fetchSection(auth, input, sectionName, { count, afterId } = {}) {
+  const config = SECTIONS[sectionName];
+  if (!config) throw new Error(`Unknown section: ${sectionName}`);
+
+  const permalink = await resolveToPermalink(auth, input);
+  const sectionId = config.sectionId || sectionName;
+  const limit = count || config.defaultCount;
+
+  const fieldIds = encodeURIComponent(JSON.stringify(
+    ['identifier', 'layout_id', 'facet_ids', 'title', 'short_description', 'is_locked']));
+  const sectionIds = encodeURIComponent(JSON.stringify([sectionId]));
+
+  const cardLookup = { card_id: config.listCard, limit };
+  if (afterId) cardLookup.after_id = afterId;
+
+  return apiFetch(auth,
+    `/v4/data/entities/people/${permalink}/overrides?field_ids=${fieldIds}&section_ids=${sectionIds}`, {
+      method: 'POST',
+      body: JSON.stringify({ card_lookups: [cardLookup] }),
+    });
+}
+
+function printSection(sectionName, data, count) {
+  const config = SECTIONS[sectionName];
+  const items = data.cards?.[config.listCard] || [];
+  const personName = data.properties?.identifier?.value || '';
+
+  console.log(`\n${personName} — ${sectionName.replace(/_/g, ' ')}`);
+
+  const summaryLines = config.summary(data.cards || {});
+  for (const line of summaryLines) console.log(`  ${line}`);
+
+  console.log(`\n  Showing ${items.length} results:\n`);
+  for (const item of items) {
+    const line = config.display(item);
+    for (const subline of line.split('\n')) {
+      console.log(`    ${subline}`);
+    }
+  }
+
+  if (items.length === count) {
+    const lastId = items[items.length - 1]?.identifier?.uuid;
+    if (lastId) {
+      console.log(`\n  More results available. Use --after-id=${lastId} to get next page.`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Person detail
 // ---------------------------------------------------------------------------
 
@@ -196,78 +331,112 @@ function parseFlags(args) {
   return { flags, positional };
 }
 
-switch (command) {
-  case 'auth': {
-    await doAuth();
-    break;
+// Check if command is a section command
+const sectionCommand = SECTIONS[command];
+
+if (command === 'auth') {
+  await doAuth();
+} else if (command === 'view') {
+  const { positional } = parseFlags(args);
+  const input = positional[0];
+  if (!input) {
+    console.error('Usage: node crunchbase-people.mjs view <permalink|uuid>');
+    process.exit(1);
   }
 
-  case 'view': {
-    const { positional } = parseFlags(args);
-    const input = positional[0];
-    if (!input) {
-      console.error('Usage: node crunchbase-people.mjs view <permalink|uuid>');
-      process.exit(1);
-    }
+  const auth = getAuth();
+  console.log(`Fetching person: ${input}...`);
+  const data = await viewPerson(auth, input);
 
-    const auth = getAuth();
-    console.log(`Fetching person: ${input}...`);
-    const data = await viewPerson(auth, input);
+  const cacheFile = resolve(CACHE_DIR, `view-${input}.json`);
+  saveJson(cacheFile, data);
 
-    const cacheFile = resolve(CACHE_DIR, `view-${input}.json`);
-    saveJson(cacheFile, data);
-
-    const props = data.properties || {};
-    const id = props.identifier || {};
-    const name = [props.first_name, props.last_name].filter(Boolean).join(' ') || id.value || input;
-    console.log(`\n${name}`);
-    if (props.primary_job_title) {
-      const org = props.primary_organization?.value || '';
-      console.log(`  ${props.primary_job_title}${org ? ` at ${org}` : ''}`);
+  const props = data.properties || {};
+  const id = props.identifier || {};
+  const name = [props.first_name, props.last_name].filter(Boolean).join(' ') || id.value || input;
+  console.log(`\n${name}`);
+  if (props.primary_job_title) {
+    const org = props.primary_organization?.value || '';
+    console.log(`  ${props.primary_job_title}${org ? ` at ${org}` : ''}`);
+  }
+  if (props.short_description) console.log(`  ${props.short_description}`);
+  if (props.gender) console.log(`  Gender: ${props.gender}`);
+  if (props.location_identifiers?.length) {
+    console.log(`  Location: ${props.location_identifiers.map(l => l.value).join(', ')}`);
+  }
+  if (props.born_on) console.log(`  Born: ${props.born_on.value || props.born_on}`);
+  if (props.died_on) console.log(`  Died: ${props.died_on.value || props.died_on}`);
+  if (props.num_founded_organizations) console.log(`  Founded Organizations: ${props.num_founded_organizations}`);
+  if (props.num_investments_funding_rounds) console.log(`  Investments: ${props.num_investments_funding_rounds}`);
+  if (props.num_exits) console.log(`  Exits: ${props.num_exits}`);
+  if (props.num_current_jobs) console.log(`  Current Jobs: ${props.num_current_jobs}`);
+  if (props.num_past_jobs) console.log(`  Past Jobs: ${props.num_past_jobs}`);
+  if (props.linkedin) console.log(`  LinkedIn: ${props.linkedin.value || props.linkedin}`);
+  if (props.twitter) console.log(`  Twitter: ${props.twitter.value || props.twitter}`);
+  if (props.facebook) console.log(`  Facebook: ${props.facebook.value || props.facebook}`);
+  if (props.rank_person) console.log(`  Rank: ${props.rank_person}`);
+  if (props.current_organizations?.length) {
+    console.log(`\n  Current Organizations:`);
+    for (const org of props.current_organizations) {
+      console.log(`    ${org.value || org}`);
     }
-    if (props.short_description) console.log(`  ${props.short_description}`);
-    if (props.gender) console.log(`  Gender: ${props.gender}`);
-    if (props.location_identifiers?.length) {
-      console.log(`  Location: ${props.location_identifiers.map(l => l.value).join(', ')}`);
+  }
+  if (props.attended_schools?.length) {
+    console.log(`\n  Schools:`);
+    for (const school of props.attended_schools) {
+      console.log(`    ${school.value || school}`);
     }
-    if (props.born_on) console.log(`  Born: ${props.born_on.value || props.born_on}`);
-    if (props.died_on) console.log(`  Died: ${props.died_on.value || props.died_on}`);
-    if (props.num_founded_organizations) console.log(`  Founded Organizations: ${props.num_founded_organizations}`);
-    if (props.num_investments_funding_rounds) console.log(`  Investments: ${props.num_investments_funding_rounds}`);
-    if (props.num_exits) console.log(`  Exits: ${props.num_exits}`);
-    if (props.num_current_jobs) console.log(`  Current Jobs: ${props.num_current_jobs}`);
-    if (props.num_past_jobs) console.log(`  Past Jobs: ${props.num_past_jobs}`);
-    if (props.linkedin) console.log(`  LinkedIn: ${props.linkedin.value || props.linkedin}`);
-    if (props.twitter) console.log(`  Twitter: ${props.twitter.value || props.twitter}`);
-    if (props.facebook) console.log(`  Facebook: ${props.facebook.value || props.facebook}`);
-    if (props.rank_person) console.log(`  Rank: ${props.rank_person}`);
-    if (props.current_organizations?.length) {
-      console.log(`\n  Current Organizations:`);
-      for (const org of props.current_organizations) {
-        console.log(`    ${org.value || org}`);
-      }
-    }
-    if (props.attended_schools?.length) {
-      console.log(`\n  Schools:`);
-      for (const school of props.attended_schools) {
-        console.log(`    ${school.value || school}`);
-      }
-    }
-
-    console.log(`\nCached to: ${cacheFile}`);
-    break;
   }
 
-  default:
-    console.log(`crunchbase-people — Fetch detailed people data from Crunchbase
+  console.log(`\nCached to: ${cacheFile}`);
+} else if (sectionCommand) {
+  // Generic section command handler
+  const { flags, positional } = parseFlags(args);
+  const input = positional[0];
+  if (!input) {
+    console.error(`Usage: node crunchbase-people.mjs ${command} <permalink|uuid> [--count=N] [--after-id=UUID]`);
+    process.exit(1);
+  }
+
+  const auth = getAuth();
+  const count = parseInt(flags.count || String(sectionCommand.defaultCount));
+  const afterId = flags['after-id'] || null;
+
+  console.log(`Fetching ${command} for: ${input}...`);
+  const data = await fetchSection(auth, input, command, { count, afterId });
+
+  const cacheFile = resolve(CACHE_DIR, `${command}-${input}-${Date.now()}.json`);
+  saveJson(cacheFile, data);
+
+  printSection(command, data, count);
+  console.log(`\nCached to: ${cacheFile}`);
+} else {
+  console.log(`crunchbase-people — Fetch detailed people data from Crunchbase
 
 Commands:
-  auth                           Authenticate via Chrome (one-time)
-  view <permalink|uuid>          Fetch full person details with all cards
+  auth                                         Authenticate via Chrome (one-time)
+  view <permalink|uuid>                        Fetch full person details with all cards
+
+Section commands (all support --count=N --after-id=UUID):
+  investments <permalink|uuid>                 Personal investments (org, round, amount, lead)
+  exits <permalink|uuid>                       IPO and acquisition exits
+  education <permalink|uuid>                   Education history (degree, school, year)
+  news <permalink|uuid>                        Press and news articles
+
+Options (for section commands):
+  --count=N                                    Number of results (default varies by section)
+  --after-id=UUID                              Pagination cursor (UUID of last item)
 
 Input formats:
-  mark-zuckerberg                Person permalink (from Crunchbase URL)
-  6acfa7da-1dbd-936e-...         Person UUID
+  mark-zuckerberg                              Person permalink (from Crunchbase URL)
+  6acfa7da-1dbd-936e-...                       Person UUID
+
+Examples:
+  node crunchbase-people.mjs view mark-zuckerberg
+  node crunchbase-people.mjs investments marc-andreessen --count=50
+  node crunchbase-people.mjs exits elon-musk
+  node crunchbase-people.mjs education mark-zuckerberg
+  node crunchbase-people.mjs news elon-musk --count=20
 
 Data: ${DATA_DIR}/
   session.json     Auth cookies

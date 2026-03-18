@@ -3,6 +3,11 @@
 //
 // Setup:   node crunchbase-event.mjs auth
 // Usage:   node crunchbase-event.mjs view <permalink|uuid>
+//          node crunchbase-event.mjs speakers <permalink|uuid> [--count=100] [--after-id=UUID]
+//          node crunchbase-event.mjs sponsors <permalink|uuid> [--count=100] [--after-id=UUID]
+//          node crunchbase-event.mjs exhibitors <permalink|uuid> [--count=100] [--after-id=UUID]
+//          node crunchbase-event.mjs contestants <permalink|uuid> [--count=100] [--after-id=UUID]
+//          node crunchbase-event.mjs news <permalink|uuid> [--count=50] [--after-id=UUID]
 //
 // Requires Node 22+ (built-in fetch).
 
@@ -155,6 +160,144 @@ async function resolvePermalink(auth, permalink) {
 }
 
 // ---------------------------------------------------------------------------
+// Resolve to permalink (for overrides endpoint which uses permalink)
+// ---------------------------------------------------------------------------
+
+async function resolveToPermalink(auth, input) {
+  if (!input.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)) {
+    return input;
+  }
+  const data = await apiFetch(auth,
+    `/v4/data/entities/events/${input}?field_ids=${encodeURIComponent('["identifier"]')}`);
+  return data.properties?.identifier?.permalink || input;
+}
+
+// ---------------------------------------------------------------------------
+// Generic overrides endpoint (powers all section commands)
+// ---------------------------------------------------------------------------
+
+// Section configs: section_id -> { listCard, displayFn }
+const SECTIONS = {
+  speakers: {
+    listCard: 'speakers_image_list',
+    defaultCount: 100,
+    display(item) {
+      const name = item.identifier?.value || 'Unknown';
+      const title = item.primary_job_title || '';
+      const org = item.primary_organization?.value || '';
+      const suffix = title && org ? ` — ${title} at ${org}` : title ? ` — ${title}` : org ? ` — ${org}` : '';
+      return `${name}${suffix}`;
+    },
+    summary(cards) {
+      const h = cards.speakers_headline || {};
+      const lines = [];
+      if (h.num_speakers) lines.push(`Total speakers: ${h.num_speakers}`);
+      return lines;
+    },
+  },
+  sponsors: {
+    listCard: 'sponsors_image_list',
+    defaultCount: 100,
+    display(item) {
+      const name = item.identifier?.value || 'Unknown';
+      const desc = item.short_description ? ` — ${item.short_description.substring(0, 80)}` : '';
+      return `${name}${desc}`;
+    },
+    summary() { return []; },
+  },
+  exhibitors: {
+    listCard: 'exhibitors_image_list',
+    defaultCount: 100,
+    display(item) {
+      const name = item.identifier?.value || 'Unknown';
+      const desc = item.short_description ? ` — ${item.short_description.substring(0, 80)}` : '';
+      return `${name}${desc}`;
+    },
+    summary(cards) {
+      const h = cards.exhibitors_headline || {};
+      const lines = [];
+      if (h.num_exhibitors) lines.push(`Total exhibitors: ${h.num_exhibitors}`);
+      return lines;
+    },
+  },
+  contestants: {
+    listCard: 'contestants_image_list',
+    defaultCount: 100,
+    display(item) {
+      const name = item.identifier?.value || 'Unknown';
+      const desc = item.short_description ? ` — ${item.short_description.substring(0, 80)}` : '';
+      return `${name}${desc}`;
+    },
+    summary(cards) {
+      const h = cards.contestants_headline || {};
+      const lines = [];
+      if (h.num_contestants) lines.push(`Total contestants: ${h.num_contestants}`);
+      return lines;
+    },
+  },
+  news: {
+    listCard: 'news_list',
+    defaultCount: 50,
+    display(item) {
+      const title = item.identifier?.value || 'Untitled';
+      const date = item.posted_on || '';
+      const pub = item.publisher || '';
+      const url = item.url?.value || '';
+      return `[${date}] ${title} (${pub})${url ? `\n      ${url}` : ''}`;
+    },
+    summary() { return []; },
+  },
+};
+
+async function fetchSection(auth, input, sectionName, { count, afterId } = {}) {
+  const config = SECTIONS[sectionName];
+  if (!config) throw new Error(`Unknown section: ${sectionName}`);
+
+  const permalink = await resolveToPermalink(auth, input);
+  const sectionId = config.sectionId || sectionName;
+  const limit = count || config.defaultCount;
+
+  const fieldIds = encodeURIComponent(JSON.stringify(
+    ['identifier', 'layout_id', 'facet_ids', 'title', 'short_description', 'is_locked']));
+  const sectionIds = encodeURIComponent(JSON.stringify([sectionId]));
+
+  const cardLookup = { card_id: config.listCard, limit };
+  if (afterId) cardLookup.after_id = afterId;
+
+  return apiFetch(auth,
+    `/v4/data/entities/events/${permalink}/overrides?field_ids=${fieldIds}&section_ids=${sectionIds}`, {
+      method: 'POST',
+      body: JSON.stringify({ card_lookups: [cardLookup] }),
+    });
+}
+
+function printSection(sectionName, data, count) {
+  const config = SECTIONS[sectionName];
+  const items = data.cards?.[config.listCard] || [];
+  const eventName = data.properties?.identifier?.value || '';
+
+  console.log(`\n${eventName} — ${sectionName.replace(/_/g, ' ')}`);
+
+  const summaryLines = config.summary(data.cards || {});
+  for (const line of summaryLines) console.log(`  ${line}`);
+
+  console.log(`\n  Showing ${items.length} results:\n`);
+  for (const item of items) {
+    const line = config.display(item);
+    for (const subline of line.split('\n')) {
+      console.log(`    ${subline}`);
+    }
+  }
+
+  if (items.length === count) {
+    const lastId = items[items.length - 1]?.identifier?.uuid;
+    if (lastId) {
+      console.log(`\n  More results available. Use --after-id=${lastId} to get next page.`);
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Event detail
 // ---------------------------------------------------------------------------
 
@@ -196,69 +339,103 @@ function parseFlags(args) {
   return { flags, positional };
 }
 
-switch (command) {
-  case 'auth': {
-    await doAuth();
-    break;
+// Check if command is a section command
+const sectionCommand = SECTIONS[command];
+
+if (command === 'auth') {
+  await doAuth();
+} else if (command === 'view') {
+  const { positional } = parseFlags(args);
+  const input = positional[0];
+  if (!input) {
+    console.error('Usage: node crunchbase-event.mjs view <permalink|uuid>');
+    process.exit(1);
   }
 
-  case 'view': {
-    const { positional } = parseFlags(args);
-    const input = positional[0];
-    if (!input) {
-      console.error('Usage: node crunchbase-event.mjs view <permalink|uuid>');
-      process.exit(1);
-    }
+  const auth = getAuth();
+  console.log(`Fetching event: ${input}...`);
+  const data = await viewEvent(auth, input);
 
-    const auth = getAuth();
-    console.log(`Fetching event: ${input}...`);
-    const data = await viewEvent(auth, input);
+  const cacheFile = resolve(CACHE_DIR, `view-${input}.json`);
+  saveJson(cacheFile, data);
 
-    const cacheFile = resolve(CACHE_DIR, `view-${input}.json`);
-    saveJson(cacheFile, data);
-
-    const props = data.properties || {};
-    const id = props.identifier || {};
-    console.log(`\n${id.value || input}`);
-    if (props.short_description) console.log(`  ${props.short_description}`);
-    if (props.event_type) console.log(`  Type: ${props.event_type}`);
-    if (props.starts_on) console.log(`  Starts: ${props.starts_on.value || props.starts_on}`);
-    if (props.ends_on) console.log(`  Ends: ${props.ends_on.value || props.ends_on}`);
-    if (props.venue_name) console.log(`  Venue: ${props.venue_name}`);
-    if (props.location_identifiers?.length) {
-      console.log(`  Location: ${props.location_identifiers.map(l => l.value).join(', ')}`);
-    }
-    if (props.event_url) console.log(`  Event URL: ${props.event_url.value || props.event_url}`);
-    if (props.registration_url) console.log(`  Registration: ${props.registration_url.value || props.registration_url}`);
-    if (props.num_speakers) console.log(`  Speakers: ${props.num_speakers}`);
-    if (props.num_sponsors) console.log(`  Sponsors: ${props.num_sponsors}`);
-    if (props.num_exhibitors) console.log(`  Exhibitors: ${props.num_exhibitors}`);
-    if (props.num_contestants) console.log(`  Contestants: ${props.num_contestants}`);
-    if (props.num_organizers) console.log(`  Organizers: ${props.num_organizers}`);
-    if (props.organizer_identifiers?.length) {
-      console.log(`  Organized by: ${props.organizer_identifiers.map(o => o.value).join(', ')}`);
-    }
-    if (props.rank_event) console.log(`  Rank: ${props.rank_event}`);
-    if (props.categories?.length) {
-      console.log(`  Categories: ${props.categories.map(c => c.value).join(', ')}`);
-    }
-    if (props.category_groups?.length) {
-      console.log(`  Category Groups: ${props.category_groups.map(c => c.value).join(', ')}`);
-    }
-    if (props.description) {
-      console.log(`\n  Description:\n    ${props.description.substring(0, 500)}`);
-    }
-
-    console.log(`\nCached to: ${cacheFile}`);
-    break;
+  const props = data.properties || {};
+  const id = props.identifier || {};
+  console.log(`\n${id.value || input}`);
+  if (props.short_description) console.log(`  ${props.short_description}`);
+  if (props.event_type) console.log(`  Type: ${props.event_type}`);
+  if (props.starts_on) console.log(`  Starts: ${props.starts_on.value || props.starts_on}`);
+  if (props.ends_on) console.log(`  Ends: ${props.ends_on.value || props.ends_on}`);
+  if (props.venue_name) console.log(`  Venue: ${props.venue_name}`);
+  if (props.location_identifiers?.length) {
+    console.log(`  Location: ${props.location_identifiers.map(l => l.value).join(', ')}`);
+  }
+  if (props.event_url) console.log(`  Event URL: ${props.event_url.value || props.event_url}`);
+  if (props.registration_url) console.log(`  Registration: ${props.registration_url.value || props.registration_url}`);
+  if (props.num_speakers) console.log(`  Speakers: ${props.num_speakers}`);
+  if (props.num_sponsors) console.log(`  Sponsors: ${props.num_sponsors}`);
+  if (props.num_exhibitors) console.log(`  Exhibitors: ${props.num_exhibitors}`);
+  if (props.num_contestants) console.log(`  Contestants: ${props.num_contestants}`);
+  if (props.num_organizers) console.log(`  Organizers: ${props.num_organizers}`);
+  if (props.organizer_identifiers?.length) {
+    console.log(`  Organized by: ${props.organizer_identifiers.map(o => o.value).join(', ')}`);
+  }
+  if (props.rank_event) console.log(`  Rank: ${props.rank_event}`);
+  if (props.categories?.length) {
+    console.log(`  Categories: ${props.categories.map(c => c.value).join(', ')}`);
+  }
+  if (props.category_groups?.length) {
+    console.log(`  Category Groups: ${props.category_groups.map(c => c.value).join(', ')}`);
+  }
+  if (props.description) {
+    console.log(`\n  Description:\n    ${props.description.substring(0, 500)}`);
   }
 
-  default:
-    console.log(`crunchbase-event — Fetch detailed event data from Crunchbase
+  console.log(`\nCached to: ${cacheFile}`);
+} else if (sectionCommand) {
+  // Generic section command handler
+  const { flags, positional } = parseFlags(args);
+  const input = positional[0];
+  if (!input) {
+    console.error(`Usage: node crunchbase-event.mjs ${command} <permalink|uuid> [--count=N] [--after-id=UUID]`);
+    process.exit(1);
+  }
+
+  const auth = getAuth();
+  const count = parseInt(flags.count || String(sectionCommand.defaultCount));
+  const afterId = flags['after-id'] || null;
+
+  console.log(`Fetching ${command} for: ${input}...`);
+  const data = await fetchSection(auth, input, command, { count, afterId });
+
+  const cacheFile = resolve(CACHE_DIR, `${command}-${input}-${Date.now()}.json`);
+  saveJson(cacheFile, data);
+
+  printSection(command, data, count);
+  console.log(`\nCached to: ${cacheFile}`);
+} else {
+  console.log(`crunchbase-event — Fetch detailed event data from Crunchbase
 
 Commands:
-  auth                           Authenticate via Chrome (one-time)
-  view <permalink|uuid>          Fetch full event details
+  auth                                         Authenticate via Chrome (one-time)
+  view <permalink|uuid>                        Fetch full event details
+
+Section commands (all support --count=N --after-id=UUID):
+  speakers <permalink|uuid>                    Event speakers (name, title, org)
+  sponsors <permalink|uuid>                    Event sponsors
+  exhibitors <permalink|uuid>                  Event exhibitors
+  contestants <permalink|uuid>                 Event contestants
+  news <permalink|uuid>                        Press and news articles
+
+Options (for section commands):
+  --count=N                                    Number of results (default varies by section)
+  --after-id=UUID                              Pagination cursor (UUID of last item)
+
+Examples:
+  node crunchbase-event.mjs view techcrunch-disrupt-2024
+  node crunchbase-event.mjs speakers techcrunch-disrupt-2024
+  node crunchbase-event.mjs sponsors web-summit-2024 --count=50
+  node crunchbase-event.mjs news techcrunch-disrupt-2024 --count=20
 
 Input formats:
   techcrunch-disrupt-2024        Event permalink (from Crunchbase URL)
