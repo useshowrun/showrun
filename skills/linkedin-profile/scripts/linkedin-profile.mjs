@@ -156,6 +156,20 @@ function parseVanityName(input) {
   return match ? decodeURIComponent(match[1]) : input;
 }
 
+function findTargetProfile(graphqlData) {
+  const included = graphqlData?.included || [];
+  // Use the *elements reference from the response to find the correct profile
+  const topData = graphqlData?.data?.data || graphqlData?.data || {};
+  const byMember = topData.identityDashProfilesByMemberIdentity || topData;
+  const targetUrns = byMember['*elements'] || [];
+  if (targetUrns.length) {
+    const profile = included.find(e => e.entityUrn === targetUrns[0] && e.firstName);
+    if (profile) return profile;
+  }
+  // Fallback: first profile with firstName (legacy)
+  return included.find(e => e.entityUrn?.includes('fsd_profile') && e.firstName);
+}
+
 async function fetchProfileGraphQL(auth, vanityName) {
   const url = `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(vanityName:${encodeURIComponent(vanityName)})&queryId=voyagerIdentityDashProfiles.a3de77c32c473719f1c58fae6bff43a5`;
   const result = await apiFetch(auth, url);
@@ -244,7 +258,7 @@ async function resolveProfileUrn(auth, vanityName) {
 
   const data = await fetchProfileGraphQL(auth, vanityName);
   const included = data?.included || [];
-  const profile = included.find(e => e.entityUrn?.includes('fsd_profile') && e.firstName);
+  const profile = findTargetProfile(data);
   if (!profile) throw new Error(`Could not find profile data for "${vanityName}"`);
 
   const profileData = {
@@ -339,7 +353,7 @@ async function viewProfile(auth, vanityName) {
   // Step 1: Fetch profile via GraphQL (includes relationship data)
   const graphqlData = await fetchProfileGraphQL(auth, vanityName);
   const included = graphqlData?.included || [];
-  const profile = included.find(e => e.entityUrn?.includes('fsd_profile') && e.firstName);
+  const profile = findTargetProfile(graphqlData);
   if (!profile) throw new Error(`Could not find profile data for "${vanityName}"`);
 
   const relationship = extractRelationship(included);
