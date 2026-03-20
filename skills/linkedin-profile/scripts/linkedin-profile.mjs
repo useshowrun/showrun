@@ -1,13 +1,19 @@
 #!/usr/bin/env node
-// linkedin-profile.mjs — Fetch LinkedIn profile data from regular LinkedIn
+// linkedin-profile.mjs — LinkedIn profile data & actions from the terminal
 //
 // Setup (one-time, requires Chrome with LinkedIn open):
 //   node linkedin-profile.mjs auth
 //
-// Usage:
-//   node linkedin-profile.mjs resolve emrahyalaz
-//   node linkedin-profile.mjs view emrahyalaz
-//   node linkedin-profile.mjs view-api emrahyalaz
+// Commands:
+//   node linkedin-profile.mjs view <profile>         Full profile via API
+//   node linkedin-profile.mjs resolve <profile>      Resolve vanity name to URN
+//   node linkedin-profile.mjs posts <profile>        Fetch recent posts
+//   node linkedin-profile.mjs connections [--count]  List your connections
+//   node linkedin-profile.mjs connect <profile>      Send connection request
+//   node linkedin-profile.mjs disconnect <profile>   Remove connection
+//   node linkedin-profile.mjs withdraw <profile>     Withdraw pending invitation
+//   node linkedin-profile.mjs follow <profile>       Follow a profile
+//   node linkedin-profile.mjs unfollow <profile>     Unfollow a profile
 //
 // Requires Node 22+ (built-in fetch).
 
@@ -40,7 +46,7 @@ function saveJson(path, data) {
 }
 
 // ---------------------------------------------------------------------------
-// CDP integration
+// CDP integration (only needed for auth)
 // ---------------------------------------------------------------------------
 
 function findCdpScript() {
@@ -142,60 +148,117 @@ async function apiFetch(auth, url, options = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// Profile resolution: vanity name -> URN
+// Profile resolution: vanity name -> URN (via GraphQL)
 // ---------------------------------------------------------------------------
 
 function parseVanityName(input) {
-  const match = input.match(/(?:linkedin\.com\/in\/|^\/in\/|^)([a-zA-Z0-9\-_%]+)\/?$/);
+  const match = input.match(/(?:linkedin\.com\/in\/|^\/in\/|^)([^\s/]+)\/?$/);
   return match ? decodeURIComponent(match[1]) : input;
+}
+
+async function fetchProfileGraphQL(auth, vanityName) {
+  const url = `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(vanityName:${encodeURIComponent(vanityName)})&queryId=voyagerIdentityDashProfiles.a3de77c32c473719f1c58fae6bff43a5`;
+  const result = await apiFetch(auth, url);
+  if (!result.ok) {
+    if (result.status === 401 || result.status === 403) {
+      console.error('Session expired. Run: node linkedin-profile.mjs auth');
+    }
+    throw new Error(`Failed to fetch profile "${vanityName}" (HTTP ${result.status})`);
+  }
+  return result.data;
+}
+
+function extractRelationship(included) {
+  const memberRel = included.find(e => e.$type?.includes('MemberRelationship'));
+  const followState = included.find(e => e.$type?.includes('FollowingState'));
+  const connection = included.find(e => e.$type === 'com.linkedin.voyager.dash.relationships.Connection');
+
+  let connectionStatus = 'unknown';
+  let memberDistance = null;
+  let invitationUrn = null;
+  if (memberRel?.memberRelationship) {
+    const rel = memberRel.memberRelationship;
+    if (rel.self) connectionStatus = 'self';
+    else if (rel.connection) connectionStatus = 'connected';
+    else if (rel.noConnection) {
+      memberDistance = rel.noConnection.memberDistance;
+      const inv = rel.noConnection.invitation;
+      if (inv?.invitation) {
+        connectionStatus = 'pending';
+        invitationUrn = inv.invitation.entityUrn || inv.invitation['*invitation'];
+      } else {
+        connectionStatus = 'not_connected';
+      }
+    }
+  }
+
+  return {
+    connectionStatus,
+    memberDistance,
+    following: followState?.following || false,
+    followerCount: followState?.followerCount || null,
+    connectionUrn: connection?.entityUrn || null,
+    invitationUrn,
+    followingStateUrn: followState?.entityUrn || null,
+  };
+}
+
+function extractMutualConnections(included) {
+  const insight = included.find(e => e.$type?.includes('Insight') && e.text?.text?.includes('mutual'));
+  if (!insight) return null;
+
+  const text = insight.text?.text || '';
+  const countMatch = text.match(/(\d+)\s*other\s*mutual/);
+
+  // Extract named profile URNs from text attributes
+  const attrs = insight.text?.attributesV2 || [];
+  const namedUrns = attrs
+    .filter(a => a.detailData?.['*profileFullName'])
+    .map(a => a.detailData['*profileFullName']);
+
+  // Resolve names from included
+  const namedProfiles = namedUrns.map(urn => {
+    const p = included.find(e => e.entityUrn === urn && e.firstName);
+    return p ? { urn, name: `${p.firstName || ''} ${p.lastName || ''}`.trim() } : { urn, name: urn };
+  });
+
+  // Dedupe
+  const seen = new Set();
+  const unique = namedProfiles.filter(p => { if (seen.has(p.urn)) return false; seen.add(p.urn); return true; });
+
+  const otherCount = countMatch ? parseInt(countMatch[1]) : 0;
+  const totalCount = unique.length + otherCount;
+
+  return {
+    text,
+    totalCount,
+    namedConnections: unique,
+    searchUrl: insight.navigationUrl || null,
+  };
 }
 
 async function resolveProfileUrn(auth, vanityName) {
   const profiles = loadJson(PROFILES_FILE);
   const cacheKey = vanityName.toLowerCase();
-
   if (profiles[cacheKey]) return profiles[cacheKey];
 
-  const url = `https://www.linkedin.com/voyager/api/voyagerIdentityDashProfiles?q=memberIdentity&memberIdentity=${encodeURIComponent(vanityName)}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-19`;
-  const result = await apiFetch(auth, url);
-
-  if (!result.ok) {
-    if (result.status === 401 || result.status === 403) {
-      console.error('Session expired. Run: node linkedin-profile.mjs auth');
-    }
-    throw new Error(`Failed to resolve profile "${vanityName}" (HTTP ${result.status})`);
-  }
-
-  const elements = result.data?.data?.['*elements'] || result.data?.['*elements'] || [];
-  let profileUrn = elements.find(e => e.includes('fsd_profile'));
-
-  const included = result.data?.included || [];
-
-  if (!profileUrn) {
-    const profile = included.find(e => e.entityUrn?.includes('fsd_profile') && e.firstName);
-    if (profile) profileUrn = profile.entityUrn;
-  }
-
-  if (!profileUrn) throw new Error(`Could not find profile URN for "${vanityName}"`);
-
-  const profileObj = included.find(e => e.entityUrn === profileUrn);
-  const name = profileObj
-    ? `${profileObj.firstName || ''} ${profileObj.lastName || ''}`.trim()
-    : vanityName;
+  const data = await fetchProfileGraphQL(auth, vanityName);
+  const included = data?.included || [];
+  const profile = included.find(e => e.entityUrn?.includes('fsd_profile') && e.firstName);
+  if (!profile) throw new Error(`Could not find profile data for "${vanityName}"`);
 
   const profileData = {
-    urn: profileUrn,
-    name,
+    urn: profile.entityUrn,
+    name: `${profile.firstName || ''} ${profile.lastName || ''}`.trim(),
     vanityName,
-    firstName: profileObj?.firstName,
-    lastName: profileObj?.lastName,
-    headline: profileObj?.headline,
-    location: profileObj?.geoLocationName || profileObj?.locationName,
-    publicIdentifier: profileObj?.publicIdentifier,
+    firstName: profile.firstName,
+    lastName: profile.lastName,
+    headline: profile.headline,
+    location: profile.geoLocationName || profile.locationName,
+    publicIdentifier: profile.publicIdentifier,
   };
   profiles[cacheKey] = profileData;
   saveJson(PROFILES_FILE, profiles);
-
   return profileData;
 }
 
@@ -220,14 +283,12 @@ function extractEntityItems(components) {
   if (!components) return items;
   for (const comp of components) {
     const union = comp.componentsUnion || comp.components || comp;
-    // Direct entity component
     const entity = union.entityComponent;
     if (entity) {
       const title = entity.titleV2?.text?.text || entity.title?.text;
       const subtitle = entity.subtitle?.text;
       const caption = entity.caption?.text;
       const metadata = entity.metadata?.text;
-      // Extract description from subComponents
       let description = null;
       let skills = null;
       const subComps = entity.subComponents?.components || [];
@@ -250,7 +311,6 @@ function extractEntityItems(components) {
         items.push({ title, subtitle, caption, metadata, description, skills });
       }
     }
-    // Nested fixedListComponent (contains entityComponents)
     const fixedList = union.fixedListComponent;
     if (fixedList?.components) {
       items.push(...extractEntityItems(fixedList.components));
@@ -262,55 +322,40 @@ function extractEntityItems(components) {
 function parseCardItems(cardData) {
   const items = [];
   const topComponents = cardData?.data?.topComponents || cardData?.topComponents || [];
-
   for (const comp of topComponents) {
     const union = comp.componentsUnion || comp.components || comp;
-    // Skip header components (they just contain the section title like "Experience")
     if (union.headerComponent) continue;
-
-    // Extract entity items from fixedListComponent or direct entityComponent
     const extracted = extractEntityItems([comp]);
     items.push(...extracted);
   }
-
   return items;
 }
 
 // ---------------------------------------------------------------------------
-// view-api: direct API call (fetches profile + card data, no browser needed)
+// view: fetch full profile via API (GraphQL + profile cards, no browser)
 // ---------------------------------------------------------------------------
 
-async function viewApi(auth, vanityName) {
-  // Step 1: Fetch basic profile to get card URNs
-  const url = `https://www.linkedin.com/voyager/api/voyagerIdentityDashProfiles?q=memberIdentity&memberIdentity=${encodeURIComponent(vanityName)}&decorationId=com.linkedin.voyager.dash.deco.identity.profile.WebTopCardCore-19`;
-  const result = await apiFetch(auth, url);
-
-  if (!result.ok) {
-    if (result.status === 401 || result.status === 403) {
-      console.error('Session expired. Run: node linkedin-profile.mjs auth');
-    }
-    throw new Error(`Failed to fetch profile "${vanityName}" (HTTP ${result.status})`);
-  }
-
-  const included = result.data?.included || [];
+async function viewProfile(auth, vanityName) {
+  // Step 1: Fetch profile via GraphQL (includes relationship data)
+  const graphqlData = await fetchProfileGraphQL(auth, vanityName);
+  const included = graphqlData?.included || [];
   const profile = included.find(e => e.entityUrn?.includes('fsd_profile') && e.firstName);
   if (!profile) throw new Error(`Could not find profile data for "${vanityName}"`);
 
-  // Extract geo location from included entities
-  const geoEntity = included.find(e => e.$type?.includes('Geo') && e.entityUrn === profile.geoLocation?.geoUrn);
-  const location = geoEntity?.defaultLocalizedName || profile.geoLocationName || profile.locationName;
+  const relationship = extractRelationship(included);
+  const mutualConnections = extractMutualConnections(included);
+  const connectionsTotal = profile.connections?.paging?.total || null;
 
   // Extract profile picture URL
   const pic = profile.profilePicture?.displayImageReference?.vectorImage;
   const profilePicture = pic ? `${pic.rootUrl}400_400/${pic.artifacts?.find(a => a.width === 400)?.fileIdentifyingUrlPathSegment || pic.artifacts?.[0]?.fileIdentifyingUrlPathSegment || ''}` : null;
 
-  // Build base profile
   const output = {
     fullName: `${profile.firstName || ''} ${profile.lastName || ''}`.trim(),
     firstName: profile.firstName,
     lastName: profile.lastName,
     headline: profile.headline,
-    location,
+    location: profile.geoLocationName || profile.locationName,
     profileUrl: `https://www.linkedin.com/in/${profile.publicIdentifier || vanityName}/`,
     profileUrn: profile.entityUrn,
     objectUrn: profile.objectUrn,
@@ -318,6 +363,9 @@ async function viewApi(auth, vanityName) {
     influencer: profile.influencer,
     creator: profile.creator,
     profilePicture,
+    connectionsCount: connectionsTotal,
+    relationship,
+    mutualConnections,
     experience: [],
     education: [],
     skills: [],
@@ -330,50 +378,21 @@ async function viewApi(auth, vanityName) {
     courses: [],
   };
 
-  // Step 2: Extract card URNs from profile entity
+  // Step 2: Build card URNs
   const cardUrns = [];
-  // Check both reference patterns LinkedIn uses
-  for (const cardType of CARD_TYPES) {
-    const urnKey = `*${cardType.toLowerCase().replace(/_(\w)/g, (_, c) => c.toUpperCase())}Card`;
-    const urnKey2 = `${cardType.toLowerCase().replace(/_(\w)/g, (_, c) => c.toUpperCase())}CardUrn`;
-    const cardUrn = profile[urnKey] || profile[urnKey2];
-    if (cardUrn) {
-      cardUrns.push({ type: cardType, urn: cardUrn });
-    }
-  }
-
-  // Also look for known patterns directly
-  if (profile['*experienceCard']) cardUrns.push({ type: 'EXPERIENCE', urn: profile['*experienceCard'] });
-  if (profile.experienceCardUrn) cardUrns.push({ type: 'EXPERIENCE', urn: profile.experienceCardUrn });
-  if (profile['*educationCard']) cardUrns.push({ type: 'EDUCATION', urn: profile['*educationCard'] });
-  if (profile.educationCardUrn) cardUrns.push({ type: 'EDUCATION', urn: profile.educationCardUrn });
-
-  // Also try to construct card URNs from the profile URN for common types
   const profileId = profile.entityUrn?.replace('urn:li:fsd_profile:', '');
   if (profileId) {
     for (const cardType of CARD_TYPES) {
-      const constructedUrn = `urn:li:fsd_profileCard:(${profileId},${cardType},en_US)`;
-      if (!cardUrns.find(c => c.type === cardType)) {
-        cardUrns.push({ type: cardType, urn: constructedUrn });
-      }
+      cardUrns.push({ type: cardType, urn: `urn:li:fsd_profileCard:(${profileId},${cardType},en_US)` });
     }
   }
 
-  // Deduplicate by type
-  const seenTypes = new Set();
-  const uniqueCards = cardUrns.filter(c => {
-    if (seenTypes.has(c.type)) return false;
-    seenTypes.add(c.type);
-    return true;
-  });
-
   // Step 3: Fetch each card
-  console.log(`Fetching ${uniqueCards.length} profile cards...`);
-  for (const card of uniqueCards) {
+  console.log(`Fetching ${cardUrns.length} profile cards...`);
+  for (const card of cardUrns) {
     try {
       const cardData = await fetchProfileCard(auth, card.urn);
       if (!cardData) continue;
-
       const items = parseCardItems(cardData);
       for (const item of items) {
         switch (card.type) {
@@ -411,207 +430,106 @@ async function viewApi(auth, vanityName) {
             if (!output.organizations) output.organizations = [];
             output.organizations.push({ name: item.title, role: item.subtitle, duration: item.caption });
             break;
-          default:
-            break;
         }
       }
-    } catch (err) {
-      // Card fetch failed — skip silently (e.g., card doesn't exist for this profile)
+    } catch {
+      // Card doesn't exist for this profile
     }
-    // Small delay between card requests
-    await new Promise(r => setTimeout(r, 300));
+    await new Promise(r => setTimeout(r, 200));
   }
 
   // Clean up empty arrays
   for (const key of Object.keys(output)) {
-    if (Array.isArray(output[key]) && output[key].length === 0) {
-      delete output[key];
-    }
+    if (Array.isArray(output[key]) && output[key].length === 0) delete output[key];
   }
 
-  output._raw = result.data;
+  output._raw = graphqlData;
   return output;
 }
 
 // ---------------------------------------------------------------------------
-// view: CDP-based full profile capture (intercepts all GraphQL responses)
+// Actions: follow, unfollow, connect, withdraw, disconnect
 // ---------------------------------------------------------------------------
 
-async function viewFull(auth, vanityName) {
-  console.log('Finding LinkedIn tab...');
-  const list = cdp('list');
-  let target;
-  for (const line of list.split('\n')) {
-    if (line.includes('linkedin.com')) {
-      target = line.trim().split(/\s+/)[0];
-      break;
-    }
-  }
-  if (!target) throw new Error('No LinkedIn tab found. Open LinkedIn in Chrome first.');
-
-  // Install network interceptor
-  console.log('Installing interceptor...');
-  const interceptorCode = `(() => {
-    window.__profileData = { requests: [], installed: true };
-    const orig = window.fetch;
-    window.fetch = async function(...a) {
-      const resp = await orig.apply(this, a);
-      const url = typeof a[0] === "string" ? a[0] : a[0]?.url || "";
-      if (url.includes("/voyager/api/")) {
-        try {
-          const clone = resp.clone();
-          const body = await clone.text();
-          window.__profileData.requests.push({
-            url: url.substring(0, 500),
-            status: resp.status,
-            body,
-            ts: Date.now()
-          });
-        } catch(e) {}
-      }
-      return resp;
-    };
-    return "interceptor_installed";
-  })()`;
-  cdp('eval', target, interceptorCode);
-
-  // Navigate to profile
-  const profileUrl = `https://www.linkedin.com/in/${vanityName}/`;
-  console.log(`Navigating to ${profileUrl}...`);
-  cdp('nav', target, profileUrl);
-
-  // Wait for initial load
-  await new Promise(r => setTimeout(r, 3000));
-
-  // Scroll down to trigger lazy-loaded sections
-  console.log('Scrolling to load all sections...');
-  cdp('eval', target, 'window.scrollTo(0, document.body.scrollHeight)');
-  await new Promise(r => setTimeout(r, 2000));
-  cdp('eval', target, 'window.scrollTo(0, document.body.scrollHeight * 2)');
-  await new Promise(r => setTimeout(r, 2000));
-
-  // Collect intercepted data
-  console.log('Collecting intercepted data...');
-  const rawCount = cdp('eval', target, 'window.__profileData.requests.length');
-  const count = parseInt(rawCount) || 0;
-  console.log(`Captured ${count} API responses.`);
-
-  // Read all captured responses
-  const allData = [];
-  for (let i = 0; i < count; i++) {
-    try {
-      const chunk = cdp('eval', target, `JSON.stringify({url: window.__profileData.requests[${i}].url, body: window.__profileData.requests[${i}].body.substring(0, 50000)})`);
-      const parsed = JSON.parse(chunk);
-      allData.push(parsed);
-    } catch { /* skip oversized responses */ }
-  }
-
-  // Clean up
-  cdp('eval', target, 'delete window.__profileData');
-
-  // Parse and compile profile data
-  const profile = compileProfileData(allData, vanityName);
-  return profile;
+async function followProfile(auth, profileUrn, follow) {
+  const followStateUrn = `urn:li:fsd_followingState:${profileUrn}`;
+  const url = `https://www.linkedin.com/voyager/api/feed/dash/followingStates/${followStateUrn}`;
+  return await apiFetch(auth, url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json; charset=UTF-8' },
+    body: JSON.stringify({ patch: { $set: { following: follow } } }),
+  });
 }
 
-function compileProfileData(capturedResponses, vanityName) {
-  const profile = {
-    vanityName,
-    profileUrl: `https://www.linkedin.com/in/${vanityName}/`,
-    fullName: null,
-    firstName: null,
-    lastName: null,
-    headline: null,
-    location: null,
-    summary: null,
-    profileUrn: null,
-    experience: [],
-    education: [],
-    skills: [],
-    languages: [],
-    certifications: [],
-    honors: [],
-    contactInfo: {},
-    _capturedEndpoints: [],
+async function sendConnectionRequest(auth, profileUrn, message) {
+  const body = {
+    invitee: { inviteeUnion: { memberProfile: profileUrn } },
   };
-
-  for (const resp of capturedResponses) {
-    profile._capturedEndpoints.push(resp.url);
-
-    let data;
-    try { data = JSON.parse(resp.body); } catch { continue; }
-
-    const included = data?.included || [];
-    for (const entity of included) {
-      const type = entity.$type || '';
-      const urn = entity.entityUrn || '';
-
-      // Profile basic info
-      if (urn.includes('fsd_profile') && entity.firstName) {
-        profile.fullName = profile.fullName || `${entity.firstName || ''} ${entity.lastName || ''}`.trim();
-        profile.firstName = profile.firstName || entity.firstName;
-        profile.lastName = profile.lastName || entity.lastName;
-        profile.headline = profile.headline || entity.headline;
-        profile.location = profile.location || entity.geoLocationName || entity.locationName;
-        profile.summary = profile.summary || entity.summary;
-        profile.profileUrn = profile.profileUrn || urn;
-      }
-
-      // Experience/positions
-      if ((type.includes('Position') || entity.companyName) && entity.title && !profile.experience.find(e => e.title === entity.title && e.company === entity.companyName)) {
-        profile.experience.push({
-          title: entity.title,
-          company: entity.companyName,
-          location: entity.locationName || entity.geoLocationName,
-          description: entity.description,
-          startDate: entity.dateRange?.start || entity.timePeriod?.startDate,
-          endDate: entity.dateRange?.end || entity.timePeriod?.endDate,
-          current: entity.dateRange?.end ? false : true,
-        });
-      }
-
-      // Education
-      if ((type.includes('Education') || entity.schoolName) && entity.schoolName && !profile.education.find(e => e.school === entity.schoolName)) {
-        profile.education.push({
-          school: entity.schoolName,
-          degree: entity.degreeName,
-          field: entity.fieldOfStudy,
-          description: entity.description,
-          startDate: entity.dateRange?.start || entity.timePeriod?.startDate,
-          endDate: entity.dateRange?.end || entity.timePeriod?.endDate,
-        });
-      }
-
-      // Skills
-      if ((type.includes('Skill') || entity.name) && entity.name && type.includes('Skill') && !profile.skills.includes(entity.name)) {
-        profile.skills.push(entity.name);
-      }
-
-      // Languages
-      if (type.includes('Language') && entity.name && !profile.languages.includes(entity.name)) {
-        profile.languages.push(entity.name);
-      }
-
-      // Certifications
-      if (type.includes('Certification') && entity.name) {
-        profile.certifications.push({
-          name: entity.name,
-          authority: entity.authority,
-          url: entity.url,
-        });
-      }
-
-      // Contact info
-      if (type.includes('ContactInfo') || entity.emailAddress) {
-        if (entity.emailAddress) profile.contactInfo.email = entity.emailAddress;
-        if (entity.phoneNumbers) profile.contactInfo.phones = entity.phoneNumbers;
-        if (entity.websites) profile.contactInfo.websites = entity.websites;
-        if (entity.twitterHandles) profile.contactInfo.twitter = entity.twitterHandles;
-      }
+  if (message) body.customMessage = message;
+  return await apiFetch(auth,
+    'https://www.linkedin.com/voyager/api/voyagerRelationshipsDashMemberRelationships?action=verifyQuotaAndCreateV2&decorationId=com.linkedin.voyager.dash.deco.relationships.InvitationCreationResultWithInvitee-2',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json; charset=UTF-8', 'accept': 'application/json' },
+      body: JSON.stringify(body),
     }
+  );
+}
+
+async function withdrawInvitation(auth, invitationUrn) {
+  const encoded = encodeURIComponent(invitationUrn);
+  return await apiFetch(auth,
+    `https://www.linkedin.com/voyager/api/voyagerRelationshipsDashInvitations/${encoded}?action=withdraw`,
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json; charset=UTF-8', 'accept': 'application/json' },
+      body: JSON.stringify({ sharedSecret: null, invitationType: 'CONNECTION' }),
+    }
+  );
+}
+
+async function removeConnection(auth, connectionUrn) {
+  return await apiFetch(auth,
+    'https://www.linkedin.com/voyager/api/relationships/dash/memberRelationships?action=removeFromMyConnections&decorationId=com.linkedin.voyager.dash.deco.relationships.MemberRelationship-34',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json; charset=UTF-8', 'accept': 'application/json' },
+      body: JSON.stringify({ connectionUrn }),
+    }
+  );
+}
+
+async function listConnections(auth, { count = 10, start = 0, sortType = 'RECENTLY_ADDED' } = {}) {
+  const url = `https://www.linkedin.com/voyager/api/relationships/dash/connections?q=search&sortType=${sortType}&count=${count}&start=${start}`;
+  const result = await apiFetch(auth, url);
+  if (!result.ok) throw new Error(`Failed to list connections (HTTP ${result.status})`);
+
+  const included = result.data?.included || [];
+  const connections = included
+    .filter(e => e.$type === 'com.linkedin.voyager.dash.relationships.Connection')
+    .map(c => ({
+      connectionUrn: c.entityUrn,
+      profileUrn: c.connectedMember,
+      createdAt: c.createdAt,
+    }));
+
+  // Resolve names for each connection
+  for (const conn of connections) {
+    if (!conn.profileUrn) continue;
+    const url = `https://www.linkedin.com/voyager/api/identity/dash/profiles/${conn.profileUrn}?decorationId=com.linkedin.voyager.dash.deco.identity.profile.FullProfile-76`;
+    try {
+      const result = await apiFetch(auth, url);
+      if (result.ok) {
+        const p = result.data?.data || result.data;
+        conn.name = `${p.firstName || ''} ${p.lastName || ''}`.trim();
+        conn.headline = p.headline;
+        conn.publicIdentifier = p.publicIdentifier;
+      }
+    } catch {}
+    await new Promise(r => setTimeout(r, 150));
   }
 
-  return profile;
+  return connections;
 }
 
 // ---------------------------------------------------------------------------
@@ -621,7 +539,6 @@ function compileProfileData(capturedResponses, vanityName) {
 async function fetchPosts(auth, profileUrn, { count = 10 } = {}) {
   const encodedUrn = encodeURIComponent(profileUrn);
   const url = `https://www.linkedin.com/voyager/api/identity/profileUpdatesV2?profileUrn=${encodedUrn}&q=memberShareFeed&moduleKey=member-shares_your-posts&count=${count}`;
-  // Use application/json to get denormalized response (not normalized URN refs)
   const result = await apiFetch(auth, url, { headers: { 'accept': 'application/json' } });
 
   if (!result.ok) {
@@ -633,13 +550,9 @@ async function fetchPosts(auth, profileUrn, { count = 10 } = {}) {
 
   const elements = result.data?.elements || [];
   const posts = elements.map(el => {
-    const text = el.commentary?.text?.text
-      || el.resharedUpdate?.commentary?.text?.text
-      || '';
+    const text = el.commentary?.text?.text || el.resharedUpdate?.commentary?.text?.text || '';
     const socialCounts = el.socialDetail?.totalSocialActivityCounts || {};
     const media = [];
-
-    // Extract images/articles/videos
     const content = el.content || {};
     if (content.articleComponent) {
       media.push({
@@ -649,13 +562,8 @@ async function fetchPosts(auth, profileUrn, { count = 10 } = {}) {
         url: content.articleComponent.navigationContext?.actionTarget,
       });
     }
-    if (content.imageComponent) {
-      media.push({ type: 'image' });
-    }
-    if (content.videoComponent) {
-      media.push({ type: 'video' });
-    }
-    // Check for reshared content
+    if (content.imageComponent) media.push({ type: 'image' });
+    if (content.videoComponent) media.push({ type: 'video' });
     const reshared = el.resharedUpdate ? {
       text: el.resharedUpdate.commentary?.text?.text,
       actor: el.resharedUpdate.actor?.name?.text,
@@ -674,11 +582,7 @@ async function fetchPosts(auth, profileUrn, { count = 10 } = {}) {
     };
   });
 
-  return {
-    profileUrn,
-    posts,
-    paginationToken: result.data?.metadata?.paginationToken || null,
-  };
+  return { profileUrn, posts, paginationToken: result.data?.metadata?.paginationToken || null };
 }
 
 // ---------------------------------------------------------------------------
@@ -696,6 +600,17 @@ function parseFlags(args) {
   return { flags, positional };
 }
 
+function formatRelationship(rel) {
+  const parts = [];
+  if (rel.connectionStatus === 'connected') parts.push('Connected');
+  else if (rel.connectionStatus === 'pending') parts.push('Invitation pending');
+  else if (rel.connectionStatus === 'self') parts.push('This is you');
+  else parts.push(`Not connected (${rel.memberDistance || '?'})`);
+  if (rel.following) parts.push('Following');
+  if (rel.followerCount) parts.push(`${rel.followerCount} followers`);
+  return parts.join(' | ');
+}
+
 switch (command) {
   case 'auth': {
     await doAuth();
@@ -708,7 +623,6 @@ switch (command) {
       console.error('Usage: node linkedin-profile.mjs resolve <vanityName|url>');
       process.exit(1);
     }
-
     const auth = getAuth();
     const vanityName = parseVanityName(input);
     console.log(`Resolving ${vanityName}...`);
@@ -720,25 +634,22 @@ switch (command) {
     break;
   }
 
+  case 'view':
   case 'view-api': {
     const input = args[0];
     if (!input) {
-      console.error('Usage: node linkedin-profile.mjs view-api <vanityName|url>');
+      console.error('Usage: node linkedin-profile.mjs view <vanityName|url>');
       process.exit(1);
     }
-
     const auth = getAuth();
     const vanityName = parseVanityName(input);
-    console.log(`Fetching profile via API: ${vanityName}...`);
-    const profile = await viewApi(auth, vanityName);
+    console.log(`Fetching profile: ${vanityName}...`);
+    const profile = await viewProfile(auth, vanityName);
 
-    // Save without raw data
     const { _raw, ...clean } = profile;
-    const outFile = resolve(CACHE_DIR, `api-${vanityName}.json`);
+    const outFile = resolve(CACHE_DIR, `profile-${vanityName}.json`);
     saveJson(outFile, clean);
-
-    // Also save raw response
-    const rawFile = resolve(CACHE_DIR, `api-raw-${vanityName}.json`);
+    const rawFile = resolve(CACHE_DIR, `profile-raw-${vanityName}.json`);
     saveJson(rawFile, _raw);
 
     console.log(`\n${profile.fullName}`);
@@ -746,17 +657,22 @@ switch (command) {
     if (profile.location) console.log(`  ${profile.location}`);
     console.log(`  ${profile.profileUrl}`);
     console.log(`  URN: ${profile.profileUrn}`);
+    if (profile.connectionsCount) console.log(`  Connections: ${profile.connectionsCount}`);
+    if (profile.relationship) console.log(`  Status: ${formatRelationship(profile.relationship)}`);
+    if (profile.mutualConnections) {
+      console.log(`  Mutual: ${profile.mutualConnections.text}`);
+    }
     if (profile.experience?.length) {
       console.log(`\n  Experience (${profile.experience.length}):`);
       for (const p of profile.experience) {
-        console.log(`    ${p.title || ''} @ ${p.company || p.subtitle || ''}`);
-        if (p.duration || p.caption) console.log(`      ${p.duration || p.caption}`);
+        console.log(`    ${p.title || ''} @ ${p.company || ''}`);
+        if (p.duration) console.log(`      ${p.duration}`);
       }
     }
     if (profile.education?.length) {
       console.log(`\n  Education (${profile.education.length}):`);
       for (const e of profile.education) {
-        console.log(`    ${e.school || ''} — ${e.degree || ''} ${e.field || ''}`);
+        console.log(`    ${e.school || ''} — ${e.degree || ''}`);
       }
     }
     if (profile.skills?.length) {
@@ -770,53 +686,6 @@ switch (command) {
       for (const c of profile.certifications) console.log(`    ${c.name}${c.authority ? ' — ' + c.authority : ''}`);
     }
     console.log(`\nSaved to: ${outFile}`);
-    console.log(`Raw response: ${rawFile}`);
-    break;
-  }
-
-  case 'view': {
-    const input = args[0];
-    if (!input) {
-      console.error('Usage: node linkedin-profile.mjs view <vanityName|url>');
-      console.error('  Requires Chrome with LinkedIn open.');
-      process.exit(1);
-    }
-
-    const auth = getAuth();
-    const vanityName = parseVanityName(input);
-    console.log(`Fetching full profile via CDP: ${vanityName}...`);
-    const profile = await viewFull(auth, vanityName);
-
-    const outFile = resolve(CACHE_DIR, `profile-${vanityName}.json`);
-    saveJson(outFile, profile);
-
-    console.log(`\n${profile.fullName || vanityName}`);
-    if (profile.headline) console.log(`  ${profile.headline}`);
-    if (profile.location) console.log(`  ${profile.location}`);
-    if (profile.summary) console.log(`  ${profile.summary.substring(0, 200)}...`);
-    console.log(`  URN: ${profile.profileUrn || '(not captured)'}`);
-
-    if (profile.experience.length) {
-      console.log(`\n  Experience (${profile.experience.length}):`);
-      for (const e of profile.experience) {
-        console.log(`    ${e.title} @ ${e.company}${e.current ? ' (current)' : ''}`);
-      }
-    }
-    if (profile.education.length) {
-      console.log(`\n  Education (${profile.education.length}):`);
-      for (const e of profile.education) {
-        console.log(`    ${e.school} — ${e.degree || ''} ${e.field || ''}`);
-      }
-    }
-    if (profile.skills.length) {
-      console.log(`\n  Skills (${profile.skills.length}): ${profile.skills.slice(0, 10).join(', ')}${profile.skills.length > 10 ? '...' : ''}`);
-    }
-    if (profile.contactInfo.email) {
-      console.log(`\n  Email: ${profile.contactInfo.email}`);
-    }
-
-    console.log(`\nCaptured ${profile._capturedEndpoints.length} API responses.`);
-    console.log(`Saved to: ${outFile}`);
     break;
   }
 
@@ -827,18 +696,15 @@ switch (command) {
       console.error('Usage: node linkedin-profile.mjs posts <vanityName|url> [--count=10]');
       process.exit(1);
     }
-
     const auth = getAuth();
     const vanityName = parseVanityName(input);
     const count = parseInt(flags.count || '10');
 
-    // Resolve URN first
     console.log(`Resolving ${vanityName}...`);
     const resolved = await resolveProfileUrn(auth, vanityName);
     console.log(`Fetching posts for ${resolved.name}...`);
 
     const postsResult = await fetchPosts(auth, resolved.urn, { count });
-
     const outFile = resolve(CACHE_DIR, `posts-${vanityName}.json`);
     saveJson(outFile, postsResult);
 
@@ -857,24 +723,194 @@ switch (command) {
       if (post.urn) console.log(`    ${post.urn}`);
       console.log();
     }
-    if (postsResult.paginationToken) {
-      console.log(`More posts available. Use --count=N for more.`);
-    }
+    if (postsResult.paginationToken) console.log(`More posts available. Use --count=N for more.`);
     console.log(`Saved to: ${outFile}`);
     break;
   }
 
+  case 'mutual': {
+    const input = args[0];
+    if (!input) {
+      console.error('Usage: node linkedin-profile.mjs mutual <vanityName|url>');
+      process.exit(1);
+    }
+    const auth = getAuth();
+    const vanityName = parseVanityName(input);
+    console.log(`Fetching mutual connections for ${vanityName}...`);
+    const graphqlData = await fetchProfileGraphQL(auth, vanityName);
+    const included = graphqlData?.included || [];
+    const mutual = extractMutualConnections(included);
+
+    if (!mutual) {
+      console.log('No mutual connections found (you may already be connected or this is your own profile).');
+      break;
+    }
+
+    console.log(`\n${mutual.text}`);
+    console.log(`  Total: ${mutual.totalCount} mutual connections`);
+    if (mutual.namedConnections.length) {
+      console.log('\n  Named:');
+      for (const c of mutual.namedConnections) {
+        console.log(`    ${c.name} (${c.urn})`);
+      }
+    }
+    if (mutual.searchUrl) {
+      console.log(`\n  Full list: ${mutual.searchUrl}`);
+    }
+    break;
+  }
+
+  case 'connections': {
+    const { flags } = parseFlags(args);
+    const auth = getAuth();
+    const count = parseInt(flags.count || '10');
+    const start = parseInt(flags.start || '0');
+
+    console.log(`Fetching connections (${start}-${start + count})...`);
+    const connections = await listConnections(auth, { count, start });
+
+    if (!connections.length) {
+      console.log('No connections found.');
+      break;
+    }
+
+    for (const c of connections) {
+      const date = c.createdAt ? new Date(c.createdAt).toLocaleDateString() : '';
+      console.log(`  ${c.name || 'Unknown'} — ${c.headline || ''}`);
+      if (c.publicIdentifier) console.log(`    linkedin.com/in/${c.publicIdentifier}`);
+      console.log(`    Connected: ${date} | ${c.profileUrn}`);
+      console.log();
+    }
+    console.log(`${connections.length} connections shown. Use --start=${start + count} for more.`);
+    break;
+  }
+
+  case 'follow':
+  case 'unfollow': {
+    const input = args[0];
+    if (!input) {
+      console.error(`Usage: node linkedin-profile.mjs ${command} <vanityName|url>`);
+      process.exit(1);
+    }
+    const auth = getAuth();
+    const vanityName = parseVanityName(input);
+    const resolved = await resolveProfileUrn(auth, vanityName);
+    const follow = command === 'follow';
+
+    console.log(`${follow ? 'Following' : 'Unfollowing'} ${resolved.name}...`);
+    const result = await followProfile(auth, resolved.urn, follow);
+    if (result.ok || result.status === 200) {
+      console.log(`${follow ? 'Now following' : 'Unfollowed'} ${resolved.name}.`);
+    } else {
+      console.error(`Failed (HTTP ${result.status}):`, JSON.stringify(result.data).substring(0, 300));
+      process.exit(1);
+    }
+    break;
+  }
+
+  case 'connect': {
+    const { positional } = parseFlags(args);
+    const input = positional[0];
+    const message = positional.slice(1).join(' ') || undefined;
+    if (!input) {
+      console.error('Usage: node linkedin-profile.mjs connect <vanityName|url> ["optional message"]');
+      process.exit(1);
+    }
+    const auth = getAuth();
+    const vanityName = parseVanityName(input);
+    const resolved = await resolveProfileUrn(auth, vanityName);
+
+    console.log(`Sending connection request to ${resolved.name}...`);
+    const result = await sendConnectionRequest(auth, resolved.urn, message);
+    if (result.ok) {
+      console.log(`Connection request sent to ${resolved.name}.`);
+    } else {
+      console.error(`Failed (HTTP ${result.status}):`, JSON.stringify(result.data).substring(0, 300));
+      process.exit(1);
+    }
+    break;
+  }
+
+  case 'withdraw': {
+    const input = args[0];
+    if (!input) {
+      console.error('Usage: node linkedin-profile.mjs withdraw <vanityName|url>');
+      process.exit(1);
+    }
+    const auth = getAuth();
+    const vanityName = parseVanityName(input);
+
+    // Fetch profile to get invitation URN
+    console.log(`Checking invitation status for ${vanityName}...`);
+    const graphqlData = await fetchProfileGraphQL(auth, vanityName);
+    const included = graphqlData?.included || [];
+    const rel = extractRelationship(included);
+
+    if (!rel.invitationUrn) {
+      console.error('No pending invitation found for this profile.');
+      process.exit(1);
+    }
+
+    console.log(`Withdrawing invitation ${rel.invitationUrn}...`);
+    const result = await withdrawInvitation(auth, rel.invitationUrn);
+    if (result.ok) {
+      console.log('Invitation withdrawn.');
+    } else {
+      console.error(`Failed (HTTP ${result.status}):`, JSON.stringify(result.data).substring(0, 300));
+      process.exit(1);
+    }
+    break;
+  }
+
+  case 'disconnect': {
+    const input = args[0];
+    if (!input) {
+      console.error('Usage: node linkedin-profile.mjs disconnect <vanityName|url>');
+      process.exit(1);
+    }
+    const auth = getAuth();
+    const vanityName = parseVanityName(input);
+
+    // Fetch profile to get connection URN
+    console.log(`Checking connection status for ${vanityName}...`);
+    const graphqlData = await fetchProfileGraphQL(auth, vanityName);
+    const included = graphqlData?.included || [];
+    const rel = extractRelationship(included);
+
+    if (!rel.connectionUrn) {
+      console.error('Not connected to this profile.');
+      process.exit(1);
+    }
+
+    console.log(`Removing connection (${rel.connectionUrn})...`);
+    const result = await removeConnection(auth, rel.connectionUrn);
+    if (result.ok) {
+      console.log('Connection removed.');
+    } else {
+      console.error(`Failed (HTTP ${result.status}):`, JSON.stringify(result.data).substring(0, 300));
+      process.exit(1);
+    }
+    break;
+  }
+
   default:
-    console.log(`linkedin-profile — Fetch LinkedIn profile data from regular LinkedIn
+    console.log(`linkedin-profile — LinkedIn profile data & actions
 
 Commands:
   auth                              Authenticate via Chrome (one-time)
-  resolve <vanityName|url>          Resolve to profile URN
-  view-api <vanityName|url>         Fetch profile via API (basic info, no browser)
-  view <vanityName|url>             Fetch full profile via CDP (needs Chrome)
-  posts <vanityName|url> [--count]  Fetch recent posts/activity
+  view <profile>                    Fetch full profile via API
+  resolve <profile>                 Resolve vanity name to URN
+  posts <profile> [--count=10]      Fetch recent posts/activity
+  mutual <profile>                  Show mutual connections
+  connections [--count=10] [--start=0]
+                                    List your connections
+  connect <profile> ["message"]     Send connection request
+  disconnect <profile>              Remove connection
+  withdraw <profile>                Withdraw pending invitation
+  follow <profile>                  Follow a profile
+  unfollow <profile>                Unfollow a profile
 
-Profile input formats (all work):
+Profile input formats:
   https://linkedin.com/in/username
   /in/username
   username
@@ -882,5 +918,5 @@ Profile input formats (all work):
 Data: ${DATA_DIR}/
   session.json     Auth cookies & CSRF token
   profiles.json    Cached URN lookups
-  cache/           Profile data`);
+  cache/           Profile & posts data`);
 }
