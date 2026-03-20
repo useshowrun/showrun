@@ -1,13 +1,14 @@
 #!/usr/bin/env node
-// linkedin-msg.mjs — Send LinkedIn messages from the terminal
+// linkedin-msg.mjs — LinkedIn messaging from the terminal
 //
 // Setup (one-time, requires Chrome with LinkedIn open):
 //   node linkedin-msg.mjs auth
 //
-// Send messages (no browser needed):
-//   node linkedin-msg.mjs send https://linkedin.com/in/emrahyalaz "Hello!"
-//   node linkedin-msg.mjs send emrahyalaz "Hello!"
-//   node linkedin-msg.mjs send ACoAAAB0OpgBZOZ1m040shN_2CxvGsj7uzP70Dc "Hello!"
+// Commands:
+//   node linkedin-msg.mjs inbox                  List conversations
+//   node linkedin-msg.mjs messages <urn|index>    View messages in a conversation
+//   node linkedin-msg.mjs search "Name"           Find contacts
+//   node linkedin-msg.mjs send <profile> "Hello!" Send a message
 //
 // Requires Node 22+ (built-in fetch).
 
@@ -23,9 +24,11 @@ import { homedir } from 'os';
 const DATA_DIR = resolve(homedir(), '.local/share/showrun/data/linkedin-msg');
 const SESSION_FILE = resolve(DATA_DIR, 'session.json');
 const PROFILES_FILE = resolve(DATA_DIR, 'profiles.json');
+const CACHE_DIR = resolve(DATA_DIR, 'cache');
+const CONVERSATIONS_FILE = resolve(CACHE_DIR, 'conversations.json');
 
-function ensureDataDir() {
-  if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+function ensureDir(dir) {
+  if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
 }
 
 function loadJson(path) {
@@ -34,7 +37,7 @@ function loadJson(path) {
 }
 
 function saveJson(path, data) {
-  ensureDataDir();
+  ensureDir(resolve(path, '..'));
   writeFileSync(path, JSON.stringify(data, null, 2));
 }
 
@@ -155,7 +158,7 @@ async function apiFetch(auth, url, options = {}) {
 // ---------------------------------------------------------------------------
 
 function parseVanityName(input) {
-  const match = input.match(/(?:linkedin\.com\/in\/|^\/in\/|^)([a-zA-Z0-9\-_%]+)\/?$/);
+  const match = input.match(/(?:linkedin\.com\/in\/|^\/in\/|^)([^\s/]+)\/?$/);
   return match ? decodeURIComponent(match[1]) : input;
 }
 
@@ -195,6 +198,174 @@ async function resolveProfileUrn(auth, vanityName) {
   saveJson(PROFILES_FILE, profiles);
 
   return profileData;
+}
+
+// ---------------------------------------------------------------------------
+// Conversations API
+// ---------------------------------------------------------------------------
+
+function extractConversations(responseData) {
+  const included = responseData?.included || [];
+  const conversations = included.filter(e => e.$type === 'com.linkedin.messenger.Conversation');
+  const participants = included.filter(e => e.$type === 'com.linkedin.messenger.MessagingParticipant');
+  const messages = included.filter(e => e.$type === 'com.linkedin.messenger.Message');
+
+  const participantMap = {};
+  for (const p of participants) {
+    if (p.entityUrn) {
+      const member = p.participantType?.member;
+      participantMap[p.entityUrn] = {
+        entityUrn: p.entityUrn,
+        hostIdentityUrn: p.hostIdentityUrn,
+        name: member ? `${member.firstName?.text || ''} ${member.lastName?.text || ''}`.trim() : 'Unknown',
+        profileUrl: member?.profileUrl || '',
+      };
+    }
+  }
+
+  const messageMap = {};
+  for (const m of messages) {
+    if (m.entityUrn) {
+      messageMap[m.entityUrn] = {
+        entityUrn: m.entityUrn,
+        text: m.body?.text || '',
+        sender: m['*sender'] || '',
+        deliveredAt: m.deliveredAt,
+      };
+    }
+  }
+
+  return conversations.map(c => {
+    const convParticipantUrns = c['*conversationParticipants'] || [];
+    const convParticipants = convParticipantUrns
+      .map(urn => participantMap[urn])
+      .filter(Boolean);
+
+    const lastMsgUrn = c['*messages']?.[0];
+    const lastMsg = lastMsgUrn ? messageMap[lastMsgUrn] : null;
+
+    return {
+      entityUrn: c.entityUrn,
+      participants: convParticipants,
+      lastMessage: lastMsg ? { text: lastMsg.text, deliveredAt: lastMsg.deliveredAt } : null,
+      lastActivityAt: c.lastActivityAt,
+      unreadCount: c.unreadCount || 0,
+      categories: c.categories || [],
+    };
+  }).sort((a, b) => (b.lastActivityAt || 0) - (a.lastActivityAt || 0));
+}
+
+function encodeRestliValue(val) {
+  return encodeURIComponent(val).replace(/\(/g, '%28').replace(/\)/g, '%29');
+}
+
+async function listConversations(auth, { count = 20, category = 'PRIMARY_INBOX' } = {}) {
+  const variables = `(query:(predicateUnions:List((conversationCategoryPredicate:(category:${category})))),count:${count},mailboxUrn:${encodeRestliValue(auth.myUrn)})`;
+  const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerConversations.9501074288a12f3ae9e3c7ea243bccbf&variables=${variables}`;
+
+  const result = await apiFetch(auth, url);
+  if (!result.ok) {
+    const detail = typeof result.data === 'string' ? result.data.substring(0, 200) : JSON.stringify(result.data).substring(0, 200);
+    throw new Error(`Failed to fetch conversations (HTTP ${result.status}): ${detail}`);
+  }
+
+  const conversations = extractConversations(result.data);
+
+  // Save to cache
+  saveJson(CONVERSATIONS_FILE, {
+    fetchedAt: new Date().toISOString(),
+    category,
+    conversations,
+  });
+
+  return conversations;
+}
+
+async function listMessages(auth, conversationUrn) {
+  const variables = `(conversationUrn:${encodeRestliValue(conversationUrn)})`;
+  const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerMessages.5846eeb71c981f11e0134cb6626cc314&variables=${variables}`;
+
+  const result = await apiFetch(auth, url);
+  if (!result.ok) {
+    const detail = typeof result.data === 'string' ? result.data.substring(0, 200) : JSON.stringify(result.data).substring(0, 200);
+    throw new Error(`Failed to fetch messages (HTTP ${result.status}): ${detail}`);
+  }
+
+  const included = result.data?.included || [];
+  const msgs = included.filter(e => e.$type === 'com.linkedin.messenger.Message');
+  const participants = included.filter(e => e.$type === 'com.linkedin.messenger.MessagingParticipant');
+
+  const participantMap = {};
+  for (const p of participants) {
+    if (p.entityUrn) {
+      const member = p.participantType?.member;
+      participantMap[p.entityUrn] = member
+        ? `${member.firstName?.text || ''} ${member.lastName?.text || ''}`.trim()
+        : 'Unknown';
+    }
+  }
+
+  const messages = msgs.map(m => ({
+    text: m.body?.text || '',
+    sender: participantMap[m['*sender']] || m['*sender'] || 'Unknown',
+    deliveredAt: m.deliveredAt,
+  })).sort((a, b) => (a.deliveredAt || 0) - (b.deliveredAt || 0));
+
+  // Save to cache
+  const convId = conversationUrn.split(':').pop();
+  saveJson(resolve(CACHE_DIR, `messages_${convId}.json`), {
+    fetchedAt: new Date().toISOString(),
+    conversationUrn,
+    messages,
+  });
+
+  return messages;
+}
+
+function resolveConversationUrn(input) {
+  // Full URN
+  if (input.startsWith('urn:li:')) return input;
+  // Numeric index from last inbox output
+  if (/^\d+$/.test(input)) {
+    const cache = loadJson(CONVERSATIONS_FILE);
+    const conversations = cache.conversations || [];
+    const idx = parseInt(input, 10) - 1;
+    if (idx < 0 || idx >= conversations.length) {
+      throw new Error(`Index ${input} out of range. Run 'inbox' first. Have ${conversations.length} conversations cached.`);
+    }
+    return conversations[idx].entityUrn;
+  }
+  // Assume it's a thread/conversation ID
+  return `urn:li:msg_conversation:${input}`;
+}
+
+async function searchConversations(auth, query) {
+  // Fetch conversations and search by participant name
+  const conversations = await listConversations(auth, { count: 40 });
+  const q = query.toLowerCase();
+  return conversations.filter(c =>
+    c.participants.some(p => p.name.toLowerCase().includes(q))
+  );
+}
+
+async function resolveProfileFromConversations(auth, nameQuery) {
+  const q = nameQuery.toLowerCase();
+  const cache = loadJson(CONVERSATIONS_FILE);
+  let conversations = cache.conversations || [];
+
+  // If cache is empty or stale (>1 hour), fetch fresh
+  if (!conversations.length || (cache.fetchedAt && Date.now() - new Date(cache.fetchedAt).getTime() > 3600000)) {
+    conversations = await listConversations(auth, { count: 40 });
+  }
+
+  for (const conv of conversations) {
+    for (const p of conv.participants) {
+      if (p.name.toLowerCase().includes(q) && p.hostIdentityUrn) {
+        return { urn: p.hostIdentityUrn, name: p.name, conversationUrn: conv.entityUrn };
+      }
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -241,25 +412,48 @@ switch (command) {
     const [profileInput, ...msgParts] = args;
     const message = msgParts.join(' ');
     if (!profileInput || !message) {
-      console.error('Usage: node linkedin-msg.mjs send <profile> "message"');
-      console.error('  <profile> can be: LinkedIn URL, vanity name, or URN');
+      console.error('Usage: node linkedin-msg.mjs send <profile|conversationUrn> "message"');
+      console.error('  <profile> can be: LinkedIn URL, vanity name, URN, or person\'s name');
       process.exit(1);
     }
 
     const auth = getAuth();
 
     let recipientUrn, displayName;
-    if (profileInput.startsWith('urn:') || profileInput.startsWith('ACoA')) {
+    if (profileInput.startsWith('urn:li:fsd_profile:') || profileInput.startsWith('ACoA')) {
+      // Direct URN
       recipientUrn = profileInput.startsWith('urn:') ? profileInput : `urn:li:fsd_profile:${profileInput}`;
       displayName = recipientUrn;
       console.log(`Using URN directly: ${recipientUrn}`);
+    } else if (profileInput.startsWith('urn:li:msg_conversation:')) {
+      // Conversation URN — send as reply
+      recipientUrn = profileInput;
+      displayName = profileInput;
+      console.log(`Replying to conversation: ${recipientUrn}`);
     } else {
+      // Try vanity name resolution first, fall back to conversation search
       const vanityName = parseVanityName(profileInput);
       console.log(`Resolving ${vanityName}...`);
-      const profile = await resolveProfileUrn(auth, vanityName);
-      recipientUrn = profile.urn;
-      displayName = profile.name;
-      console.log(`Found: ${displayName} (${recipientUrn})`);
+      let profile;
+      try {
+        profile = await resolveProfileUrn(auth, vanityName);
+        recipientUrn = profile.urn;
+        displayName = profile.name;
+        console.log(`Found: ${displayName} (${recipientUrn})`);
+      } catch (err) {
+        console.log(`Profile API failed: ${err.message}`);
+        console.log(`Searching conversations for "${profileInput}"...`);
+        const match = await resolveProfileFromConversations(auth, profileInput);
+        if (match) {
+          recipientUrn = match.urn;
+          displayName = match.name;
+          console.log(`Found in conversations: ${displayName} (${recipientUrn})`);
+        } else {
+          console.error(`Could not resolve "${profileInput}" via profile API or conversation search.`);
+          console.error('Try: node linkedin-msg.mjs search "<name>" to find contacts');
+          process.exit(1);
+        }
+      }
     }
 
     const result = await sendMessage(auth, recipientUrn, message);
@@ -276,21 +470,119 @@ switch (command) {
     break;
   }
 
+  case 'inbox': {
+    const auth = getAuth();
+    const countFlag = args.find(a => a.startsWith('--count='));
+    const catFlag = args.find(a => a.startsWith('--category='));
+    const count = countFlag ? parseInt(countFlag.split('=')[1], 10) : 20;
+    const category = catFlag ? catFlag.split('=')[1] : 'PRIMARY_INBOX';
+
+    console.log(`Fetching ${count} conversations (${category})...`);
+    const conversations = await listConversations(auth, { count, category });
+
+    if (!conversations.length) {
+      console.log('No conversations found.');
+      break;
+    }
+
+    for (let i = 0; i < conversations.length; i++) {
+      const c = conversations[i];
+      const names = c.participants.map(p => p.name).join(', ');
+      const time = c.lastActivityAt ? new Date(c.lastActivityAt).toLocaleString() : 'unknown';
+      const preview = c.lastMessage?.text?.substring(0, 80) || '(no preview)';
+      const unread = c.unreadCount > 0 ? ` [${c.unreadCount} unread]` : '';
+      console.log(`\n${i + 1}. ${names}${unread}`);
+      console.log(`   ${time}`);
+      console.log(`   ${preview}`);
+      console.log(`   ${c.entityUrn}`);
+    }
+    console.log(`\nCached to: ${CONVERSATIONS_FILE}`);
+    break;
+  }
+
+  case 'messages': {
+    const auth = getAuth();
+    const [convInput] = args;
+    if (!convInput) {
+      console.error('Usage: node linkedin-msg.mjs messages <conversationUrn|index>');
+      console.error('  Use a conversation URN or numeric index from last "inbox" output');
+      process.exit(1);
+    }
+
+    const conversationUrn = resolveConversationUrn(convInput);
+    console.log(`Fetching messages for ${conversationUrn}...`);
+    const messages = await listMessages(auth, conversationUrn);
+
+    if (!messages.length) {
+      console.log('No messages found.');
+      break;
+    }
+
+    for (const m of messages) {
+      const time = m.deliveredAt ? new Date(m.deliveredAt).toLocaleString() : 'unknown';
+      console.log(`\n[${time}] ${m.sender}:`);
+      console.log(`  ${m.text}`);
+    }
+    console.log(`\n${messages.length} messages shown.`);
+    break;
+  }
+
+  case 'search': {
+    const auth = getAuth();
+    const query = args.join(' ');
+    if (!query) {
+      console.error('Usage: node linkedin-msg.mjs search <name>');
+      process.exit(1);
+    }
+
+    console.log(`Searching conversations for "${query}"...`);
+    const matches = await searchConversations(auth, query);
+
+    if (!matches.length) {
+      console.log('No matching conversations found.');
+      break;
+    }
+
+    for (const c of matches) {
+      const names = c.participants.map(p => p.name).join(', ');
+      const preview = c.lastMessage?.text?.substring(0, 80) || '(no preview)';
+      const time = c.lastActivityAt ? new Date(c.lastActivityAt).toLocaleString() : 'unknown';
+      console.log(`\n${names}`);
+      console.log(`  ${time} — ${preview}`);
+      console.log(`  ${c.entityUrn}`);
+      // Show URNs for participants matching the query
+      const q = query.toLowerCase();
+      for (const p of c.participants) {
+        if (p.name.toLowerCase().includes(q) && p.hostIdentityUrn) {
+          console.log(`  Profile URN: ${p.hostIdentityUrn}`);
+        }
+      }
+    }
+    console.log(`\n${matches.length} conversation(s) found.`);
+    break;
+  }
+
   default:
-    console.log(`linkedin-msg — Send LinkedIn messages from the terminal
+    console.log(`linkedin-msg — LinkedIn messaging from the terminal
 
 Commands:
   auth                              Authenticate via Chrome (one-time)
+  inbox [--count=20] [--category=PRIMARY_INBOX]
+                                    List conversations
+  messages <conversationUrn|index>  View messages in a conversation
+  search <name>                     Find contacts in conversations
   send <profile> <message>          Send a message
 
-Profile formats (all work):
-  https://linkedin.com/in/username
-  /in/username
-  username
-  urn:li:fsd_profile:ACoA...
-  ACoA...
+Profile formats for send:
+  https://linkedin.com/in/username  LinkedIn URL
+  username                          Vanity name
+  "First Last"                      Name (searches conversations as fallback)
+  urn:li:fsd_profile:ACoA...        Direct profile URN
+  ACoA...                           Profile URN ID
+  urn:li:msg_conversation:...       Reply to conversation
 
 Data: ${DATA_DIR}/
   session.json    Auth cookies & CSRF token
-  profiles.json   Cached vanity name -> URN mappings`);
+  profiles.json   Cached vanity name -> URN mappings
+  cache/          Conversation & message cache`);
 }
