@@ -496,6 +496,147 @@ async function fetchEasyApplyPreview(auth, jobId) {
 }
 
 // ---------------------------------------------------------------------------
+// Easy Apply submit
+// ---------------------------------------------------------------------------
+
+async function fetchEasyApplyForm(auth, jobId) {
+  const jobUrn = encodeURIComponent(`urn:li:fsd_jobPosting:${jobId}`);
+  const url = `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(jobPostingUrn:${jobUrn})&queryId=${APPLY_QUERY_ID}`;
+  const { data } = await apiFetch(auth, url);
+
+  const el = data.data?.jobsDashOnsiteApplyApplicationByJobPosting?.elements?.[0];
+  if (!el) throw new Error('Easy Apply not available for this job (may require external application).');
+  return el;
+}
+
+function extractFormResponses(formData, answers = {}) {
+  const responses = [];
+  const fileUploadResponses = [];
+  const unanswered = [];
+  const forms = formData.jobApplicationForms || [];
+
+  for (const form of forms) {
+    for (const group of (form.questionGroupings || [])) {
+      const type = group.questionGroupingType;
+
+      // Resume — use the first available resume
+      if (type === 'RESUME') {
+        const fus = group.customizedFormSection?.fileUploadFormSection;
+        const resumes = group.usedResumesResolutionResults || [];
+        if (resumes.length > 0 && fus?.fileUploadFormElement) {
+          const feUrn = fus.fileUploadFormElement.formElementUrn;
+          const resumeUrn = resumes[0].entityUrn;
+          if (feUrn && resumeUrn) {
+            fileUploadResponses.push({ inputUrn: resumeUrn, formElementUrn: feUrn });
+          }
+        }
+        continue;
+      }
+
+      if (type === 'TOP_CHOICE') continue;
+
+      const fs = group.formSection || group.customizedFormSection?.labelFormSection;
+      if (!fs) continue;
+
+      for (const g of (fs.formElementGroups || [])) {
+        // Skip empty template groups (e.g., blank work experience / education slots)
+        const groupElements = g.formElements || [];
+        const groupHasAnyValue = groupElements.some(fe => {
+          const ivs = fe.input?.formElementInputValuesResolutionResults || [];
+          return ivs.some(iv => iv.textInputValue || iv.entityInputValue || iv.urnInputValue);
+        });
+        if (!groupHasAnyValue && !group.prefilled) continue;
+
+        for (const fe of groupElements) {
+          const urn = fe.urn;
+          if (!urn) continue;
+
+          const label = fe.title?.text || '?';
+          const required = !!fe.required;
+          const inputVals = fe.input?.formElementInputValuesResolutionResults || [];
+
+          // Check if user provided an answer override
+          const answerKey = label.toLowerCase().trim();
+          const userAnswer = answers[answerKey] || answers[label] || answers[urn];
+
+          // Get pre-filled value
+          let prefilled = null;
+          let prefilledEntity = null;
+          for (const iv of inputVals) {
+            if (iv.textInputValue) prefilled = iv.textInputValue;
+            if (iv.entityInputValue) {
+              prefilledEntity = iv.entityInputValue;
+              prefilled = iv.entityInputValue.inputEntityName;
+            }
+            if (iv.urnInputValue) prefilled = iv.urnInputValue;
+          }
+
+          const finalValue = userAnswer || prefilled;
+
+          if (!finalValue && required) {
+            // Only flag as unanswered for custom questions, not pre-filled profile sections
+            if (!group.prefilled) {
+              unanswered.push({ label, urn, fieldType: fe.formComponentResolutionResult ? 'form' : 'text' });
+            }
+            continue;
+          }
+
+          if (!finalValue) continue; // skip optional empty fields
+
+          // Build the response entry — strip API metadata from entity values
+          const entry = { formElementUrn: urn, formElementInputValues: [] };
+          if (prefilledEntity && !userAnswer) {
+            const clean = { inputEntityName: prefilledEntity.inputEntityName };
+            if (prefilledEntity.inputEntityUrn) clean.inputEntityUrn = prefilledEntity.inputEntityUrn;
+            entry.formElementInputValues.push({ entityInputValue: clean });
+          } else if (urn.includes('multipleChoice') || urn.includes('phoneNumber~country')) {
+            entry.formElementInputValues.push({ entityInputValue: { inputEntityName: finalValue } });
+          } else {
+            entry.formElementInputValues.push({ textInputValue: String(finalValue) });
+          }
+          responses.push(entry);
+        }
+      }
+    }
+  }
+
+  return { responses, fileUploadResponses, unanswered };
+}
+
+function generateReferenceId() {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return btoa(String.fromCharCode(...bytes)).replace(/\+/g, '+').replace(/\//g, '/');
+}
+
+async function submitEasyApply(auth, jobId, answers = {}, { followCompany = true } = {}) {
+  const formData = await fetchEasyApplyForm(auth, jobId);
+  const { responses, fileUploadResponses, unanswered } = extractFormResponses(formData, answers);
+
+  if (unanswered.length > 0) {
+    const missing = unanswered.map(u => `  - ${u.label}`).join('\n');
+    throw new Error(`Missing required answers:\n${missing}\n\nProvide them with --answers='{"field name": "value"}'`);
+  }
+
+  const body = {
+    followCompany,
+    responses,
+    fileUploadResponses,
+    referenceId: generateReferenceId(),
+    trackingCode: 'd_flagship3_search_srp_jobs',
+  };
+
+  return await apiFetch(auth, 'https://www.linkedin.com/voyager/api/voyagerJobsDashOnsiteApplyApplication?action=submitApplication', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json; charset=utf-8',
+      'accept': 'application/vnd.linkedin.normalized+json+2.1',
+    },
+    body: JSON.stringify(body),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Saved jobs list
 // ---------------------------------------------------------------------------
 
@@ -777,6 +918,64 @@ Filters:
     break;
   }
 
+  case 'easy-apply': {
+    const { flags, positional } = parseFlags(args);
+    const jobId = parseJobId(positional[0]);
+    if (!jobId) {
+      console.error(`Usage: node linkedin-jobs.mjs easy-apply <jobId|url> [--answers='{"field":"value"}']
+
+  Submits an Easy Apply application using your profile data.
+  Pre-filled fields (contact info, resume, work experience, education)
+  are sent automatically. Custom questions need --answers.
+
+  Tip: Run easy-apply-preview first to see what questions are required.
+
+  Examples:
+    node linkedin-jobs.mjs easy-apply 4387993640
+    node linkedin-jobs.mjs easy-apply 4387993640 --answers='{"How many years...":"5"}'
+    node linkedin-jobs.mjs easy-apply 4387993640 --no-follow`);
+      process.exit(1);
+    }
+
+    const auth = getAuth();
+    let answers = {};
+    if (flags.answers) {
+      try { answers = JSON.parse(flags.answers); } catch {
+        console.error('Invalid --answers JSON. Use: --answers=\'{"question":"answer"}\'');
+        process.exit(1);
+      }
+    }
+    const followCompany = !('no-follow' in flags);
+
+    // First show preview so user sees what will be submitted
+    console.log(`Fetching Easy Apply form for ${jobId}...`);
+    let preview;
+    try {
+      preview = await fetchEasyApplyPreview(auth, jobId);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+
+    console.log(`\nEasy Apply — ${preview.totalPages} pages`);
+    for (const page of preview.pages) {
+      const filledCount = page.entries.reduce((sum, e) => sum + (e.fields?.filter(f => f.value)?.length || 0), 0);
+      const totalCount = page.entries.reduce((sum, e) => sum + (e.fields?.length || 0), 0);
+      console.log(`  ${page.pageTitle}${filledCount ? ` (${filledCount}/${totalCount} filled)` : ''}`);
+    }
+
+    console.log(`\nSubmitting application...`);
+    try {
+      await submitEasyApply(auth, jobId, answers, { followCompany });
+      console.log(`\nApplication submitted successfully for job ${jobId}!`);
+      console.log(`  https://www.linkedin.com/jobs/view/${jobId}/`);
+    } catch (e) {
+      console.error(`\nFailed to submit: ${e.message}`);
+      process.exit(1);
+    }
+    break;
+  }
+
   case 'save': {
     const jobId = parseJobId(args[0]);
     if (!jobId) {
@@ -841,6 +1040,7 @@ Commands:
   search --keywords="..." [filters]       Search for jobs
   details <jobId>                         Full job details + insights
   easy-apply-preview <jobId>               Preview Easy Apply form fields
+  easy-apply <jobId> [--answers='{...}']   Submit Easy Apply application
   save <jobId>                            Save a job
   unsave <jobId>                          Unsave a job
   saved [--tab=saved] [--count=25]         List saved/in-progress/applied/archived jobs
