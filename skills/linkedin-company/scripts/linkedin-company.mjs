@@ -111,8 +111,9 @@ function baseHeaders(auth) {
   };
 }
 
-async function apiFetch(auth, url) {
-  const resp = await fetch(url, { headers: baseHeaders(auth) });
+async function apiFetch(auth, url, options = {}) {
+  const resp = await fetch(url, { ...options, headers: { ...baseHeaders(auth), ...options.headers } });
+  if (resp.status === 204) return null;
   const text = await resp.text();
   let data;
   try { data = JSON.parse(text); } catch { data = text; }
@@ -131,7 +132,7 @@ async function apiFetch(auth, url) {
 
 function parseCompanyInput(input) {
   // LinkedIn URL: https://linkedin.com/company/google/ or /company/google
-  const urlMatch = input.match(/(?:linkedin\.com\/company\/|^\/company\/)([a-zA-Z0-9\-_%]+)\/?/);
+  const urlMatch = input.match(/(?:linkedin\.com\/company\/|^\/company\/)([^\s/]+)\/?/);
   if (urlMatch) return { universalName: decodeURIComponent(urlMatch[1]) };
 
   // Numeric ID
@@ -358,6 +359,20 @@ async function fetchDecisionMakers(auth, companyId) {
 }
 
 // ---------------------------------------------------------------------------
+// Follow / Unfollow
+// ---------------------------------------------------------------------------
+
+async function followCompany(auth, companyId, follow = true) {
+  const urn = `urn:li:fsd_followingState:urn:li:fsd_company:${companyId}`;
+  const url = `https://www.linkedin.com/voyager/api/feed/dash/followingStates/${encodeURIComponent(urn)}`;
+  return await apiFetch(auth, url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+    body: JSON.stringify({ patch: { $set: { following: follow } } }),
+  });
+}
+
+// ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
 
@@ -560,6 +575,44 @@ switch (command) {
     break;
   }
 
+  case 'follow': {
+    const input = args[0];
+    if (!input) {
+      console.error('Usage: node linkedin-company.mjs follow <company-name|url|id>');
+      process.exit(1);
+    }
+
+    const auth = getAuth();
+    console.log(`Fetching company: ${input}...`);
+    const company = await fetchCompany(auth, input);
+    const companyId = company.entityUrn?.match(/\d+$/)?.[0];
+    if (!companyId) throw new Error('Could not determine company ID');
+
+    console.log(`Following ${company.name}...`);
+    await followCompany(auth, companyId, true);
+    console.log(`Now following ${company.name}.`);
+    break;
+  }
+
+  case 'unfollow': {
+    const input = args[0];
+    if (!input) {
+      console.error('Usage: node linkedin-company.mjs unfollow <company-name|url|id>');
+      process.exit(1);
+    }
+
+    const auth = getAuth();
+    console.log(`Fetching company: ${input}...`);
+    const company = await fetchCompany(auth, input);
+    const companyId = company.entityUrn?.match(/\d+$/)?.[0];
+    if (!companyId) throw new Error('Could not determine company ID');
+
+    console.log(`Unfollowing ${company.name}...`);
+    await followCompany(auth, companyId, false);
+    console.log(`Unfollowed ${company.name}.`);
+    break;
+  }
+
   default:
     console.log(`linkedin-company — Fetch LinkedIn company page data
 
@@ -569,6 +622,8 @@ Commands:
   posts <company-name|url|id> [--count]   Fetch company posts
   jobs <company-name|url|id> [--count]    Fetch job listings
   people <company-name|url|id> [--count]  Fetch employees & decision makers
+  follow <company-name|url|id>            Follow a company
+  unfollow <company-name|url|id>          Unfollow a company
 
 Company input formats (all work):
   https://linkedin.com/company/google
