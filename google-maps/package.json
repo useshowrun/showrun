@@ -1,0 +1,14 @@
+{
+  "name": "google-maps-agent-skills",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Agent browser skills for scraping Google Maps business data",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^12.8.0",
+    "camoufox-js": "^0.9.2"
+  }
+}
