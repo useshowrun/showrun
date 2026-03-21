@@ -214,8 +214,20 @@ async function fetchJobDetails(auth, jobId) {
         result.title = tc.jobPostingTitle;
         result.company = tc.primaryDescription?.text;
         result.subtitle = tc.navigationBarSubtitle;
-        result.location = tc.secondaryDescription?.text;
-        result.salary = tc.tertiaryDescription?.text;
+        result.location = tc.jobPosting?.location?.defaultLocalizedName || tc.secondaryDescription?.text;
+        // Salary is in jobInsightsV2, not tertiaryDescription
+        const insights = tc.jobInsightsV2ResolutionResults || [];
+        for (const ins of insights) {
+          const descs = ins.jobInsightViewModel?.description || [];
+          for (const d of descs) {
+            const text = d.text?.text?.trim();
+            if (text && /\$|€|£|salary|yr|hr|mo/i.test(text)) {
+              result.salary = text;
+              break;
+            }
+          }
+          if (result.salary) break;
+        }
         result.companyUrn = tc.jobPosting?.companyDetails?.jobCompany?.company?.entityUrn;
         result.companyName = tc.jobPosting?.companyDetails?.jobCompany?.company?.name;
         result.companyUniversalName = tc.jobPosting?.companyDetails?.jobCompany?.company?.universalName;
@@ -401,6 +413,89 @@ async function unsaveJob(auth, jobId) {
 }
 
 // ---------------------------------------------------------------------------
+// Easy Apply preview
+// ---------------------------------------------------------------------------
+
+const APPLY_QUERY_ID = 'voyagerJobsDashOnsiteApplyApplication.a1ce7ed0aefd0c79e2f6a351d1c4907e';
+
+async function fetchEasyApplyPreview(auth, jobId) {
+  const jobUrn = encodeURIComponent(`urn:li:fsd_jobPosting:${jobId}`);
+  const url = `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(jobPostingUrn:${jobUrn})&queryId=${APPLY_QUERY_ID}`;
+  const { data } = await apiFetch(auth, url);
+
+  const el = data.data?.jobsDashOnsiteApplyApplicationByJobPosting?.elements?.[0];
+  if (!el) throw new Error('Easy Apply not available for this job (may require external application).');
+
+  const forms = el.jobApplicationForms || [];
+  const pages = [];
+
+  for (const form of forms) {
+    const groups = form.questionGroupings || [];
+    const pageTitle = form.title || null;
+    const pageEntries = []; // multiple groups on same page
+
+    for (const group of groups) {
+      const type = group.questionGroupingType;
+      const prefilled = group.prefilled;
+
+      // Resume page
+      if (type === 'RESUME') {
+        const resumes = (group.usedResumesResolutionResults || []).map(r => r.fileName || r.name).filter(Boolean);
+        pageEntries.push({ type: 'RESUME', title: 'Resume', prefilled: resumes.length > 0, resumes });
+        continue;
+      }
+
+      // Top choice (premium, optional)
+      if (type === 'TOP_CHOICE') continue; // Skip — optional premium feature
+
+      // Form sections (contact info, work experience, education, custom questions)
+      const fs = group.formSection || group.customizedFormSection?.labelFormSection;
+      if (!fs) continue;
+
+      const fields = [];
+      for (const g of (fs.formElementGroups || [])) {
+        for (const fe of (g.formElements || [])) {
+          const label = fe.title?.text || '?';
+          const required = !!fe.required;
+          const inputVals = fe.input?.formElementInputValuesResolutionResults || [];
+          let value = null;
+          for (const iv of inputVals) {
+            value = iv.textInputValue || iv.entityInputValue?.inputEntityName || iv.urnInputValue || value;
+          }
+          // Determine field type from formComponentResolutionResult
+          const fcr = fe.formComponentResolutionResult || {};
+          let fieldType = 'text';
+          if (fcr.dropdownFormComponent) fieldType = 'dropdown';
+          else if (fcr.textEntityListFormComponent) fieldType = 'select';
+          else if (fcr.multilineTextFormComponent) fieldType = 'textarea';
+          else if (fcr.checkboxFormComponent || fcr.nestedCheckboxFormComponent) fieldType = 'checkbox';
+          else if (fcr.toggleFormComponent) fieldType = 'toggle';
+          else if (fcr.numberInputFormComponent) fieldType = 'number';
+          else if (fcr.dateFormComponent) fieldType = 'date';
+          else if (fcr.mediaUploadFormComponent) fieldType = 'file';
+
+          fields.push({ label, required, fieldType, value, urn: fe.urn });
+        }
+      }
+
+      // Skip empty unfilled template slots (e.g., blank work experience / education entries)
+      const hasValues = fields.some(f => f.value);
+      if (!hasValues && !prefilled && fields.length > 0 && (pageTitle === 'Work experience' || pageTitle === 'Education')) continue;
+
+      if (fields.length > 0) {
+        pageEntries.push({ type: type || 'FORM', title: prefilled ? (pageTitle || 'Contact Info') : (pageTitle || 'Additional Questions'), prefilled, fields });
+      }
+    }
+
+    if (pageEntries.length > 0) {
+      pages.push({ pageTitle: pageTitle || pageEntries[0]?.title || '?', entries: pageEntries });
+    }
+  }
+
+  return { jobId, pages, totalPages: pages.length };
+}
+
+// ---------------------------------------------------------------------------
 // Saved jobs list
 // ---------------------------------------------------------------------------
 
@@ -452,6 +547,17 @@ async function listSavedJobs(auth, { tab = 'saved', count = 25, start = 0 } = {}
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
+
+function parseJobId(input) {
+  if (!input) return null;
+  // Accept: numeric ID, LinkedIn URL, or URN
+  const urlMatch = input.match(/jobs\/view\/(\d+)/);
+  if (urlMatch) return urlMatch[1];
+  const urnMatch = input.match(/jobPosting:(\d+)/);
+  if (urnMatch) return urnMatch[1];
+  if (/^\d+$/.test(input)) return input;
+  return input;
+}
 
 const [, , command, ...args] = process.argv;
 
@@ -549,10 +655,9 @@ Filters:
   }
 
   case 'details': {
-    const jobId = args[0];
+    const jobId = parseJobId(args[0]);
     if (!jobId) {
-      console.error('Usage: node linkedin-jobs.mjs details <jobId>');
-      console.error('  Get the jobId from search results or LinkedIn job URL');
+      console.error('Usage: node linkedin-jobs.mjs details <jobId|url>');
       process.exit(1);
     }
 
@@ -622,10 +727,60 @@ Filters:
     break;
   }
 
-  case 'save': {
-    const jobId = args[0];
+  case 'easy-apply-preview': {
+    const jobId = parseJobId(args[0]);
     if (!jobId) {
-      console.error('Usage: node linkedin-jobs.mjs save <jobId>');
+      console.error('Usage: node linkedin-jobs.mjs easy-apply-preview <jobId|url>');
+      process.exit(1);
+    }
+
+    const auth = getAuth();
+    console.log(`Fetching Easy Apply form for ${jobId}...`);
+    let preview;
+    try {
+      preview = await fetchEasyApplyPreview(auth, jobId);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
+
+    const outFile = resolve(CACHE_DIR, `easy-apply-${jobId}.json`);
+    saveJson(outFile, preview);
+
+    console.log(`\nEasy Apply — ${preview.totalPages} pages\n`);
+    for (let i = 0; i < preview.pages.length; i++) {
+      const page = preview.pages[i];
+      console.log(`  Page ${i + 1}: ${page.pageTitle}`);
+
+      for (const entry of page.entries) {
+        const status = entry.prefilled ? ' (pre-filled)' : '';
+        if (entry.type === 'RESUME') {
+          console.log(`    Resume${status}`);
+          if (entry.resumes?.length) {
+            console.log(`      Available: ${entry.resumes.join(', ')}`);
+          } else {
+            console.log(`      Upload required`);
+          }
+        } else if (entry.fields) {
+          if (entry.title !== page.pageTitle) console.log(`    ${entry.title}${status}`);
+          else if (status) console.log(`    ${status.trim()}`);
+          for (const f of entry.fields) {
+            const req = f.required ? ' *' : '';
+            const val = f.value ? ` = "${String(f.value).substring(0, 60)}${String(f.value).length > 60 ? '...' : ''}"` : '';
+            console.log(`      [${f.fieldType}] ${f.label}${req}${val}`);
+          }
+        }
+      }
+      console.log();
+    }
+    console.log(`Saved to: ${outFile}`);
+    break;
+  }
+
+  case 'save': {
+    const jobId = parseJobId(args[0]);
+    if (!jobId) {
+      console.error('Usage: node linkedin-jobs.mjs save <jobId|url>');
       process.exit(1);
     }
 
@@ -637,9 +792,9 @@ Filters:
   }
 
   case 'unsave': {
-    const jobId = args[0];
+    const jobId = parseJobId(args[0]);
     if (!jobId) {
-      console.error('Usage: node linkedin-jobs.mjs unsave <jobId>');
+      console.error('Usage: node linkedin-jobs.mjs unsave <jobId|url>');
       process.exit(1);
     }
 
@@ -685,6 +840,7 @@ Commands:
   auth                                    Authenticate via Chrome (one-time)
   search --keywords="..." [filters]       Search for jobs
   details <jobId>                         Full job details + insights
+  easy-apply-preview <jobId>               Preview Easy Apply form fields
   save <jobId>                            Save a job
   unsave <jobId>                          Unsave a job
   saved [--tab=saved] [--count=25]         List saved/in-progress/applied/archived jobs
