@@ -107,7 +107,7 @@ async function apiFetch(auth, url, options = {}) {
 // ---------------------------------------------------------------------------
 
 function parseVanityName(input) {
-  const match = input.match(/(?:linkedin\.com\/in\/|^\/in\/|^)([a-zA-Z0-9\-_%]+)\/?$/);
+  const match = input.match(/(?:linkedin\.com\/in\/|^\/in\/|^)([^\s/]+)\/?$/);
   return match ? decodeURIComponent(match[1]) : input;
 }
 
@@ -262,8 +262,8 @@ async function fetchComments(auth, activityUrn, { count = 10, start = 0 } = {}) 
 
   const comments = elements.map(el => ({
     commentUrn: el.entityUrn,
-    author: el.commenter?.name,
-    authorHeadline: el.commenter?.headline,
+    author: el.commenter?.title?.text,
+    authorHeadline: el.commenter?.subtitle,
     text: el.commentary?.text || '',
     likes: el.socialDetail?.totalSocialActivityCounts?.numLikes || 0,
     replies: el.socialDetail?.totalSocialActivityCounts?.numComments || 0,
@@ -278,19 +278,33 @@ async function fetchComments(auth, activityUrn, { count = 10, start = 0 } = {}) 
 
 const REACTIONS_QUERY_ID = 'voyagerSocialDashReactions.41ebf31a9f4c4a84e35a49d5abc9010b';
 
+async function resolveReactionsThreadUrn(auth, activityUrn) {
+  const encodedUrn = encodeURIComponent(activityUrn);
+  const { data } = await apiFetch(auth, `https://www.linkedin.com/voyager/api/feed/updates/${encodedUrn}`);
+  const update = data?.value?.['com.linkedin.voyager.feed.render.UpdateV2'] || data || {};
+  // socialDetail.entityUrn = "urn:li:fs_socialDetail:urn:li:ugcPost:..." or "urn:li:fs_socialDetail:urn:li:activity:..."
+  const sdUrn = update.socialDetail?.entityUrn;
+  if (sdUrn) {
+    const inner = sdUrn.replace('urn:li:fs_socialDetail:', '');
+    if (inner !== sdUrn) return inner;
+  }
+  return update.updateMetadata?.shareUrn || activityUrn;
+}
+
 async function fetchReactions(auth, activityUrn, { count = 10, start = 0 } = {}) {
-  const url = `https://www.linkedin.com/voyager/api/graphql?variables=(count:${count},start:${start},threadUrn:${encodeURIComponent(activityUrn)})&queryId=${REACTIONS_QUERY_ID}`;
+  const shareUrn = await resolveReactionsThreadUrn(auth, activityUrn);
+  const url = `https://www.linkedin.com/voyager/api/graphql?includeWebMetadata=true&variables=(count:${count},start:${start},threadUrn:${encodeURIComponent(shareUrn)})&queryId=${REACTIONS_QUERY_ID}`;
   const { data } = await apiFetch(auth, url);
 
-  const result = data?.data?.socialDashReactionsByReactedOnEntityAndReactionType || {};
+  const result = data?.data?.socialDashReactionsByReactionType || data?.data?.socialDashReactionsByReactedOnEntityAndReactionType || {};
   const elements = result.elements || [];
   const total = result.paging?.total || elements.length;
 
   const reactions = elements.map(el => ({
-    name: el.actor?.name?.text,
-    headline: el.actor?.headline?.text,
+    name: el.reactorLockup?.title?.text,
+    headline: el.reactorLockup?.subtitle?.text,
     type: el.reactionType,
-    profileUrn: el.actor?.entityUrn,
+    profileUrn: el.actorUrn,
   }));
 
   return { total, reactions };
@@ -300,12 +314,18 @@ async function fetchReactions(auth, activityUrn, { count = 10, start = 0 } = {})
 // Like / Unlike a post
 // ---------------------------------------------------------------------------
 
+const REACT_QUERY_ID = 'voyagerSocialDashReactions.b731222600772fd42464c0fe19bd722b';
+
 async function likePost(auth, activityUrn, reactionType = 'LIKE') {
-  const url = `https://www.linkedin.com/voyager/api/voyagerSocialDashReactions?threadUrn=${encodeURIComponent(activityUrn)}`;
+  const url = `https://www.linkedin.com/voyager/api/graphql?action=execute&queryId=${REACT_QUERY_ID}`;
   return await apiFetch(auth, url, {
     method: 'POST',
     headers: { 'content-type': 'application/json; charset=utf-8', 'accept': 'application/vnd.linkedin.normalized+json+2.1' },
-    body: JSON.stringify({ reactionType }),
+    body: JSON.stringify({
+      variables: { entity: { reactionType }, threadUrn: activityUrn },
+      queryId: REACT_QUERY_ID,
+      includeWebMetadata: true,
+    }),
   });
 }
 
@@ -340,8 +360,6 @@ async function commentOnPost(auth, activityUrn, text) {
 // Like / Unlike a comment
 // ---------------------------------------------------------------------------
 
-const COMMENT_REACT_QUERY_ID = 'voyagerSocialDashReactions.b731222600772fd42464c0fe19bd722b';
-
 function buildCommentThreadUrn(activityUrn, commentId) {
   const actId = activityUrn.replace('urn:li:activity:', '');
   return `urn:li:comment:(activity:${actId},${commentId})`;
@@ -349,13 +367,13 @@ function buildCommentThreadUrn(activityUrn, commentId) {
 
 async function likeComment(auth, activityUrn, commentId, reactionType = 'LIKE') {
   const threadUrn = buildCommentThreadUrn(activityUrn, commentId);
-  const url = `https://www.linkedin.com/voyager/api/graphql?action=execute&queryId=${COMMENT_REACT_QUERY_ID}`;
+  const url = `https://www.linkedin.com/voyager/api/graphql?action=execute&queryId=${REACT_QUERY_ID}`;
   return await apiFetch(auth, url, {
     method: 'POST',
     headers: { 'content-type': 'application/json; charset=utf-8', 'accept': 'application/vnd.linkedin.normalized+json+2.1' },
     body: JSON.stringify({
       variables: { entity: { reactionType }, threadUrn },
-      queryId: COMMENT_REACT_QUERY_ID,
+      queryId: REACT_QUERY_ID,
       includeWebMetadata: true,
     }),
   });
