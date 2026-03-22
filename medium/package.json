@@ -1,0 +1,10 @@
+{
+  "name": "medium-agent-skills",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Agent browser skills for scraping Medium blog posts by tag, author, or publication",
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
