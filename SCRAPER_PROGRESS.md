@@ -1304,7 +1304,7 @@ Built 1 skill: `shopify-products`, using Shopify's public JSON API.
 | 37 | Amazon Bestsellers Scraper | amazon.com | ✅ DONE | Stable selectors: img[alt] for title, aria-label for ratings. Supports books/electronics/toys/etc, movers&shakers, new releases, pagination up to 100. |
 | 38 | LinkedIn Ads Scraper | linkedin.com/ad-library | ❌ BLOCKED | Page loads but data API is blocked by Protechts.net bot detection. "Failed to load" error in browser. No public API. Needs residential proxy + anti-bot bypass. |
 | 39 | Product Hunt Scraper | producthunt.com | ✅ DONE | 2 skills: producthunt-daily (Atom feed, no browser) + producthunt-search (camoufox XHR intercept of Apollo GQL). No auth required. |
-| 40 | Substack Scraper | substack.com | ⏳ TODO | Newsletter/blog platform — public API + RSS |
+| 40 | Substack Scraper | substack.com | ✅ DONE | Pure HTTP (no browser). API: GET /api/v1/posts (public, no auth) on both .substack.com and custom domains. `substack-posts`: publication slug/domain → posts with title, type, date, authors, reactions, word_count, canonical_url, audio_url. Flags: --max, --offset, --type, --free-only, --include-body, --publication-info. `substack-search`: posts mode (paginates pub posts, keyword-match); publications mode limited (global Substack search requires browser session). Tested: simonw.substack.com (Simon Willison), astralcodexten.substack.com (Scott Alexander), stratechery.substack.com. |
 
 ### Product Hunt Scraper — ✅ DONE (2026-03-22)
 
