@@ -1499,3 +1499,65 @@ The Googlebot UA trick does NOT bypass Kasada on realtor.com. Needs residential 
 - Country code affects: pricing, availability, review language, and rating counts
 - `wrapperType: "software"` / `kind: "software"` distinguishes apps from songs/albums in lookup results
 - `averageUserRatingForCurrentVersion` is distinct from overall `averageUserRating` — both captured
+
+---
+
+### Google Play Store Scraper — ✅ DONE (2026-03-22)
+
+**Skills:**
+- `play-store-search` — search for Android apps by keyword
+- `play-store-app` — get full app details + reviews by package name or URL
+
+**Architecture:**
+- Pure HTTP — no browser, no auth, no bot protection
+- Data source: `google-play-scraper` npm package (reverse-engineered Google Play internal APIs)
+  - No API key needed — uses Google's own internal RPC/AJAX calls
+  - Package version: ~9.1.1
+- CommonJS module imported in ESM via `createRequire` (standard pattern for mixed module projects)
+- `gplay = require('google-play-scraper').default` — the package exports a `.default` object
+
+**Input flexibility:**
+- `play-store-app` accepts: package name (`com.Slack`), full Play Store URL (`https://play.google.com/store/apps/details?id=com.whatsapp`), URL without protocol
+
+**Data extracted:**
+- Search: appId, title, developer, developerId, score, scoreText, price, free, currency, priceText, summary, icon, url
+- App detail: all of the above + description, summary, developer{name, devId, email, website, address, legalName}, ratings, reviews count, histogram{1-5}, offersIAP, inAppProductPrice, genre, genreId, categories, headerImage, screenshots, video, videoImage, contentRating, contentRatingDescription, adSupported, released, updated (ISO), version, androidVersion, androidVersionText, installs, minInstalls, maxInstalls, available, privacyPolicy, recentChanges, preregister, reviewsList[]
+- Reviews: id, userName, userImage, score, thumbsUp, reviewCreatedVersion, at (ISO), replyDate (ISO), replyText, title, text, url
+
+**Pagination:**
+- Reviews use `nextPaginationToken` from Google's internal API — no hard page limit
+- Batch size up to 150 reviews per call, loops until maxReviews reached or no more token
+
+**Test results (2026-03-22):**
+- `play-store-search slack --max 5` → Slack, Slack for Intune, Teams, Signal, Zoom ✅
+- `play-store-search "photo editor" --max 3` → Picsart, Polish, Photoshop Express ✅
+- `play-store-search "fitness tracker" --max 3` → Google Fit, Fitbit, Hevy ✅
+- `play-store-app com.Slack --max-reviews 5` → full Slack metadata + 5 reviews ✅
+- `play-store-app com.instagram.android --max-reviews 3` → Instagram 167M ratings ✅
+- `play-store-app com.whatsapp --max-reviews 3` → WhatsApp 231M ratings ✅
+- `play-store-app https://play.google.com/store/apps/details?id=com.whatsapp --max-reviews 2` → URL input works ✅
+- `play-store-app com.definitely.notreal.xyzabc123` → clean `NOT_FOUND` error ✅
+- `play-store-app com.Slack --max-reviews 0` → skips reviews, metadata only ✅
+- `play-store-search "fotoğraf düzenle" --country tr --lang tr --max 3` → Turkish results, Turkish app titles ✅
+- `play-store-app com.Slack --country tr --lang tr --max-reviews 2` → Turkish description, localized installs format ✅
+
+**Files:**
+- `google-play-store/SKILL.md` ✅
+- `google-play-store/package.json` ✅ (with `google-play-scraper` dependency)
+- `google-play-store/node_modules/` ✅ (installed)
+- `google-play-store/lib/utils.mjs` ✅ (gplay import, output helpers, package ID extraction, normalization, reviews fetcher)
+- `google-play-store/play-store-search/SKILL.md` ✅
+- `google-play-store/play-store-search/scripts/play-store-search.mjs` ✅
+- `google-play-store/play-store-app/SKILL.md` ✅
+- `google-play-store/play-store-app/scripts/play-store-app.mjs` ✅
+
+**Session log — 2026-03-22 (scraper-skill-builder-playstore)**
+- `google-play-scraper` is the right tool — saves enormous complexity vs. parsing AF_initDataCallback JSON blobs
+- Package exports via `.default` in ESM (standard CJS→ESM interop pattern)
+- Score in app detail has 3 decimal precision (e.g. 4.666); scoreText is human-readable (e.g. "4.7")
+- `price: null` and `free: false` in search results (Play Store doesn't return price/currency in search)
+- `histogram` uses string keys "1" through "5" from the scraper — normalized to numeric output
+- Turkish locale works: descriptions translated, install counts localized (e.g. "10.000.000+" vs "10,000,000+")
+- Reviews sorted by newest by default (`sort: gplay.sort.NEWEST`)
+- `reviews` field on app detail is the *count* of reviews text; `reviewsList` is the actual fetched array
+- Invalid packages throw generic errors from google-play-scraper — caught and mapped to clean NOT_FOUND
