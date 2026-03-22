@@ -1669,3 +1669,40 @@ HTTP curl also fails (403). All API endpoints (/api/search, /gdm-api/...) also b
 - Issues endpoint returns PRs too — filtered via `!item.pull_request` check
 - Rate limit info surfaced via `X-RateLimit-Remaining` response headers
 - No external dependencies — pure Node.js built-ins (https, http, url modules)
+
+---
+
+### Fiverr Scraper — ❌ BLOCKED (2026-03-22)
+
+**Status:** Code complete, blocked by PerimeterX bot protection
+
+**Block reason:** PerimeterX (pxAppId: `PXK3bezZfO`) — all Fiverr pages return HTTP 403
+"It needs a human touch" from Turkish/datacenter IPs, even with camoufox headless Firefox.
+PerimeterX performs IP reputation scoring — requires real residential IP, not datacenter.
+Both headless=true and headless='virtual' camoufox modes fail. HTTP curl also fails (403).
+All API endpoints (`/api/v2/search/gigs`, `/api/v2/gigs/`) also blocked.
+
+**Files:**
+- `fiverr/SKILL.md` ✅ (documents blocked status and architecture)
+- `fiverr/package.json` ✅ (camoufox-js dependency)
+- `fiverr/node_modules/` ✅ (npm install completed)
+- `fiverr/lib/utils.mjs` ✅ (browser creation, PerimeterX detection, __NEXT_DATA__ extraction, XHR intercept, search/gig parsers)
+- `fiverr/fiverr-search/scripts/fiverr-search.mjs` ✅ (search skill with 4-strategy extraction chain)
+- `fiverr/fiverr-gig/scripts/fiverr-gig.mjs` ✅ (gig detail skill with __NEXT_DATA__ + XHR + DOM fallback)
+
+**Session log entry — 2026-03-22 (scraper-skill-builder-fiverr)**
+- Fiverr uses PerimeterX (not Cloudflare) — different from capterra/G2 but same outcome
+- pxAppId confirmed: PXK3bezZfO via HTML inspection of 403 page
+- "It needs a human touch" shown for all pages including homepage, search, API endpoints
+- camoufox with headless=true, humanize=1, virtual mode — all blocked
+- curl with full browser headers also blocked at HTTP level (403) before any JS execution
+- Bot protection fires immediately on IP connect — no JS execution needed to detect bots
+- Architecture confirmed via curl: Fiverr IS Next.js, would have __NEXT_DATA__ if unblocked
+- __NEXT_DATA__ extraction logic prepared for props.pageProps.componentProps.listings path
+- XHR intercept logic prepared for /api/v2/search/gigs and /api/v2/gigs/ endpoints
+- DOM fallback prepared using data-testid and aria attributes
+- normalizeSearchGig() handles price-in-cents (>1000 / 100) edge case
+- parsePackages() handles both packages[] array and basic/standard/premium key styles
+- Clean BOT_PROTECTION_BLOCKED error code with proxy guidance
+- Edge cases: invalid path → INVALID_INPUT, missing args → MISSING_ARG, all clean JSON
+- Code ready — set SOCKS5_PROXY=host:port to use residential proxy and retry

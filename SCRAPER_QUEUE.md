@@ -7,7 +7,6 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 
 | # | Service | Target Site | Notes |
 |---|---------|-------------|-------|
-| 49 | Fiverr Scraper | fiverr.com | Freelance gigs — search, gig details, seller info, reviews |
 | 50 | Goodreads Scraper | goodreads.com | Book metadata + reviews — title, author, rating, genres |
 | 51 | Medium Scraper | medium.com | Blog posts by tag/author — title, content, claps, published date |
 | 52 | Quora Scraper | quora.com | Q&A content — questions by topic, answers, upvotes |
@@ -29,6 +28,7 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 | 35 | Upwork | Cloudflare Turnstile on all search URLs |
 | 38 | LinkedIn Ads | Protechts.net bot detection |
 | 43 | Realtor.com | Kasada bot protection — blocks Googlebot UA (despite SSR strategy); needs residential proxy |
+| 49 | Fiverr Scraper | PerimeterX (pxAppId: PXK3bezZfO) — "It needs a human touch" on all pages from datacenter/Turkish IP. Code ready — set SOCKS5_PROXY=host:port. Data in __NEXT_DATA__ (Next.js SSR). |
 
 ## ✅ Done (42 skills)
 
