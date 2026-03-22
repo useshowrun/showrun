@@ -1561,3 +1561,55 @@ The Googlebot UA trick does NOT bypass Kasada on realtor.com. Needs residential 
 - Reviews sorted by newest by default (`sort: gplay.sort.NEWEST`)
 - `reviews` field on app detail is the *count* of reviews text; `reviewsList` is the actual fetched array
 - Invalid packages throw generic errors from google-play-scraper — caught and mapped to clean NOT_FOUND
+
+---
+
+### Capterra Scraper — ❌ BLOCKED (2026-03-22)
+
+**Skills (code written, blocked in production):**
+- `capterra-search` — search software products by keyword or category
+- `capterra-product` — get full product details + reviews
+
+**Architecture:**
+- camoufox-js fingerprinted Firefox browser (same as G2)
+- SOCKS5 proxy support via `SOCKS5_PROXY=host:port` env var
+- Primary data source: `__NEXT_DATA__` JSON (Next.js SSR) — contains all product/review data
+- Fallback chain: window.__STATE__ → JSON-LD SoftwareApplication → XHR interception → DOM (data-* attrs)
+- Review pagination: click Next button or URL-based page params (`?page=N`)
+- No brittle CSS class selectors — uses data-testid, data-*, aria-label, itemprop attrs
+
+**URL patterns:**
+- Search: `https://www.capterra.com/search/?query=<keyword>`
+- Category: `https://www.capterra.com/<category>-software/`
+- Product: `https://www.capterra.com/p/<id>/<slug>/`
+
+**Test results (2026-03-22):**
+- `capterra-search "CRM"`: Cloudflare 403 → clean BLOCKED error ❌
+- `capterra-search "project management" --category "project-management"`: Cloudflare 403 → clean BLOCKED error ❌
+- `capterra-product 26943/Slack`: Cloudflare 403 → clean BLOCKED error ❌
+- `capterra-product "not-a-valid-url"`: clean INVALID_ARG error ✅
+- Missing arg: clean MISSING_ARG error ✅
+
+**Block reason:** Cloudflare Managed Challenge — all Capterra pages (including API) return HTTP 403
+"Just a moment..." from Turkish/datacenter IPs, even with camoufox fingerprinted Firefox.
+The managed challenge requires: (1) real browser fingerprint (camoufox handles this), AND
+(2) residential IP reputation (not satisfied by datacenter/Turkish IPs).
+HTTP curl also fails (403). All API endpoints (/api/search, /gdm-api/...) also blocked.
+
+**Files:**
+- `capterra/SKILL.md` ✅
+- `capterra/package.json` ✅ (camoufox-js dependency)
+- `capterra/node_modules/` ✅ (npm install completed)
+- `capterra/lib/utils.mjs` ✅ (browser creation, extraction helpers, parsers)
+- `capterra/capterra-search/scripts/capterra-search.mjs` ✅ (5-strategy extraction chain)
+- `capterra/capterra-product/scripts/capterra-product.mjs` ✅ (full product + paginated reviews)
+
+**Session log entry — 2026-03-22 (scraper-skill-builder-capterra)**
+- Capterra owned by Gartner — shares Cloudflare protection infrastructure
+- HTTP 403 from curl with realistic headers — not a JS-only challenge
+- camoufox with headless=true, headless='virtual', humanize=0.5/1.0 all failed — Cloudflare rejects IP before JS
+- DataDome (G2's protection) at least lets search pages through; Cloudflare blocks everything
+- G2 code pattern reused (camoufox + multi-strategy extraction + SOCKS5)
+- Data in __NEXT_DATA__ confirmed via Capterra's technology stack (Next.js) — extraction ready for when proxy works
+- `checkCloudflareBlock()` fn detects: title="Just a moment", cf_chl in URL, cookie-required message
+- Both scripts emit clean `RESULT:{error, code, message}` JSON on block — no crashes or stack dumps

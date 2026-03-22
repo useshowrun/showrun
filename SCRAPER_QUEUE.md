@@ -7,7 +7,6 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 
 | # | Service | Target Site | Notes |
 |---|---------|-------------|-------|
-| 47 | Capterra Scraper | capterra.com | B2B software reviews — ratings, reviews, pricing, features |
 | 48 | GitHub Scraper | github.com | Repos (stars, forks, issues, topics, README), user profiles, search |
 | 49 | Fiverr Scraper | fiverr.com | Freelance gigs — search, gig details, seller info, reviews |
 | 50 | Goodreads Scraper | goodreads.com | Book metadata + reviews — title, author, rating, genres |
@@ -26,6 +25,7 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 | 19 | Zillow | PerimeterX from Turkish IP |
 | 26 | LinkedIn Posts | Requires LI_COOKIES |
 | 44 | G2 Scraper | DataDome bot protection on all pages from datacenter/Turkish IP. Visual CAPTCHA on product pages. Code ready — set SOCKS5_PROXY=host:port. |
+| 47 | Capterra Scraper | Cloudflare Managed Challenge on all pages from datacenter/Turkish IP. Code ready — set SOCKS5_PROXY=host:port. Data in __NEXT_DATA__ (Next.js SSR). |
 | 27 | Amazon Reviews | Requires AMZ_COOKIES |
 | 35 | Upwork | Cloudflare Turnstile on all search URLs |
 | 38 | LinkedIn Ads | Protechts.net bot detection |

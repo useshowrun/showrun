@@ -1,0 +1,13 @@
+{
+  "name": "capterra-agent-skills",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Agent browser skills for scraping Capterra.com B2B software reviews",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "camoufox-js": "^0.9.3"
+  }
+}
