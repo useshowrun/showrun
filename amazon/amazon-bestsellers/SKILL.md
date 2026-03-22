@@ -5,7 +5,7 @@ Scrapes the Top 100 bestselling products from any Amazon category.
 ## Usage
 
 ```bash
-cd /home/karacasoft/Documents/Work/showrun/agent-browser-skills/ecommerce
+cd /home/karacasoft/Documents/Work/showrun/agent-browser-skills/amazon
 
 # All departments bestsellers (top 30)
 node amazon-bestsellers/scripts/amazon-bestsellers.mjs --max 30

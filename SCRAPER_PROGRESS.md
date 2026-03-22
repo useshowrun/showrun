@@ -336,7 +336,7 @@ Track what was done each session so work can resume.
 - Key insight: Amazon.com from Turkish IP shows EUR prices (geo-detection); all selectors work correctly regardless of currency
 - Key insight: Amazon reviews page geo-blocks non-US IPs → redirect to sign-in page; workaround: extract inline reviews from product page (Amazon shows ~9 preview reviews inline)
 - No CSS class selectors used — all data from data attributes, aria-labels, semantic IDs, accessible price spans
-- Files: ecommerce/lib/utils.mjs, ecommerce/amazon-product/, ecommerce/amazon-search/, ecommerce/SKILL.md
+- Files: amazon/lib/utils.mjs, amazon/amazon-product/, amazon/amazon-search/, amazon/SKILL.md
 
 ### 2026-03-20 (continued)
 - Built Facebook Posts Scraper — 1 skill (facebook-posts), fully working

@@ -10,7 +10,7 @@ Run with: `/home/karacasoft/.nvm/versions/node/v24.13.1/bin/node`
 
 ### Install Dependencies
 ```bash
-cd ecommerce && npm install
+cd amazon && npm install
 ```
 
 ## Available Skills
