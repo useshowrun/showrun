@@ -7,7 +7,6 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 
 | # | Service | Target Site | Notes |
 |---|---------|-------------|-------|
-| 43 | Realtor.com Scraper | realtor.com | US real estate — search by location, price, beds/baths |
 | 44 | G2 Scraper | g2.com | Software reviews — product search, ratings, reviews, pricing |
 | 45 | Apple App Store Scraper | apps.apple.com | iOS app metadata + reviews |
 | 46 | Google Play Store Scraper | play.google.com | Android app metadata + reviews |
@@ -32,6 +31,7 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 | 27 | Amazon Reviews | Requires AMZ_COOKIES |
 | 35 | Upwork | Cloudflare Turnstile on all search URLs |
 | 38 | LinkedIn Ads | Protechts.net bot detection |
+| 43 | Realtor.com | Kasada bot protection — blocks Googlebot UA (despite SSR strategy); needs residential proxy |
 
 ## ✅ Done (36 skills)
 

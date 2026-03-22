@@ -1402,3 +1402,48 @@ Built 1 skill: `shopify-products`, using Shopify's public JSON API.
 - Embedded LD+JSON structured data is the key: Product schema with offers, geo, images
 - attrgroup parsing: must use full-HTML scan, not nested div regex (terminates early)
 - Title-match strategy avoids position misalignment between LD+JSON and HTML listing items
+
+---
+
+### Realtor.com Scraper — ❌ BLOCKED (2026-03-22)
+
+**Skills (code written, blocked in production):**
+- `realtor-search` — search listings by location, price, beds/baths/type, pagination
+- `realtor-listing` — get full property details from a single listing URL
+
+**Architecture:**
+- Pure HTTP requests using Googlebot/2.1 UA — no browser needed (theory: Realtor.com SSRs to Googlebot)
+- Custom SOCKS5 proxy support via `SOCKS5_PROXY` env var
+- Data source: `__NEXT_DATA__` JSON embedded in SSR HTML
+- Fallback: JSON-LD structured data
+- `checkBotBlock()` inlined in each script — detects Kasada, Cloudflare, CAPTCHA, Access Denied signals
+- Fixed bug in `lib/utils.mjs` redirect handler: relative redirect URLs now resolved against base URL
+
+**Why it was rewritten:**
+- Original scripts imported `camoufox-js` (browser automation) + non-existent utils functions:
+  `checkBotBlock`, `createRealtorBrowser`, `createRealtorContext`, `extractNextData`
+- `lib/utils.mjs` was already implemented as pure HTTP (Googlebot UA + SOCKS5 proxy)
+- Rewrote both scripts to use existing utils: `fetchUrl`, `extractNextDataFromHtml`, `buildSearchUrl`, etc.
+- Browser automation removed; pure HTTP approach is faster and doesn't require Playwright
+
+**Test results (2026-03-22):**
+- `realtor-search "Austin, TX" --max 3`: HTTP 200, Kasada bot protection detected ❌
+- `realtor-search "San Francisco, CA" --max 3`: HTTP 200, Kasada bot protection detected ❌
+- Kasada challenge is present even for Googlebot UA — SSR-to-Googlebot theory did NOT hold in practice
+- Realtor.com returns a 973KB+ page with Kasada JS challenge embedded regardless of UA
+
+**Block reason:** Kasada bot protection — returns HTTP 200 but page body contains Kasada JS challenge.
+The Googlebot UA trick does NOT bypass Kasada on realtor.com. Needs residential proxy to get real SSR content.
+
+**Files:**
+- `realtor/SKILL.md` ✅
+- `realtor/package.json` ✅
+- `realtor/lib/utils.mjs` ✅ (+ redirect bug fix)
+- `realtor/realtor-search/scripts/realtor-search.mjs` ✅ (pure HTTP, bot-block detection)
+- `realtor/realtor-listing/scripts/realtor-listing.mjs` ✅ (pure HTTP, bot-block detection)
+
+**Session log entry — 2026-03-22 (scraper-fix-realtor)**
+- Kasada runs server-side fingerprinting, not just JS challenges — Googlebot UA is not whitelisted
+- Both Austin TX and San Francisco CA return 200 with Kasada challenge page (~964-973KB)
+- Code is ready for residential proxy — just set `SOCKS5_PROXY=host:port` env var
+- `checkBotBlock()` function inlined directly in scripts (not in utils) — cleaner, no shared state needed
