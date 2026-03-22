@@ -1,0 +1,10 @@
+{
+  "name": "github-agent-skills",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Agent skills for scraping GitHub repositories, user profiles, and search results via the GitHub REST API",
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
