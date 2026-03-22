@@ -1,0 +1,12 @@
+{
+  "name": "google-maps-reviews",
+  "version": "1.0.0",
+  "description": "Scrapes paginated reviews for a Google Maps place via internal XHR interception",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/google-maps-reviews.mjs"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

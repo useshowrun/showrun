@@ -7,7 +7,6 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 
 | # | Service | Target Site | Notes |
 |---|---------|-------------|-------|
-| 41 | Google Maps Reviews Scraper | maps.google.com | Paginate all reviews for a place — go beyond the 10 inline |
 | 42 | Craigslist Scraper | craigslist.org | Listings by city+category, title/price/location/description/images |
 | 43 | Realtor.com Scraper | realtor.com | US real estate — search by location, price, beds/baths |
 | 44 | G2 Scraper | g2.com | Software reviews — product search, ratings, reviews, pricing |
