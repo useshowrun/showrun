@@ -8,14 +8,13 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 | # | Service | Target Site | Notes |
 |---|---------|-------------|-------|
 
-
-| 54 | Rightmove Scraper | rightmove.co.uk | UK real estate — property search, listings, details |
 | 55 | Zoopla Scraper | zoopla.co.uk | UK real estate — property search, price history |
 
 ## ✅ Done (recent)
 
 | # | Service | Skills |
 |---|---------|--------|
+| 54 | Rightmove Scraper | rightmove-search, rightmove-listing |
 | 50 | Goodreads Scraper | goodreads-search, goodreads-book |
 
 ## ❌ Blocked (need residential proxy or auth cookies)

@@ -1861,3 +1861,68 @@ Confirmed: all content (topic pages, question pages, RSS feeds) serves Cloudflar
 - Set `SOCKS5_PROXY=host:port` with a **US/EU residential proxy**
 - Verified services: Bright Data, Oxylabs, Smartproxy
 - Cloudflare Turnstile requires real browser fingerprint + residential IP to pass
+
+---
+
+## Session: #54 — Rightmove Scraper (2026-03-23)
+
+**Status: ✅ DONE**
+
+Built 2 pure-HTTP skills for Rightmove UK property listings:
+- `rightmove/rightmove-search/scripts/rightmove-search.mjs`
+- `rightmove/rightmove-listing/scripts/rightmove-listing.mjs`
+
+### Technical Approach
+
+**Pure HTTP throughout — no browser needed.** Rightmove serves SSR pages without aggressive bot protection.
+
+**Search pages** use Next.js SSR: `__NEXT_DATA__` JSON embedded in `<script id="__NEXT_DATA__">` tag.
+Path: `props.pageProps.searchResults.properties` — full listing data (25 per page).
+
+**Listing pages** use legacy SSR: `window.PAGE_MODEL = {...}` embedded in `<script>` tag.
+Contains all property details including description, images, floorplans, key features, tenure, stations, etc.
+
+**Location resolution:**
+- Simple slug approach: fetch `/property-for-sale/{City}.html` or `/property-to-rent/{City}.html`
+- Rightmove SSR resolves the slug to canonical location, embeds `locationIdentifier` in `__NEXT_DATA__`
+- Invalid locations → HTTP 307 redirect to `/page-not-found` → clean error
+- Returns `REGION^ID` format (e.g. `REGION^87490` for London inner area, `REGION^93917` for Greater London)
+
+**Pagination:** `?index=0,24,48,...` parameter — fetches until `--max` results collected.
+
+**Filter parameters:** `minPrice`, `maxPrice`, `minBedrooms`, `maxBedrooms`, `propertyTypes` (comma-separated).
+
+### Files Created
+
+```
+rightmove/
+├── package.json
+├── SKILL.md
+├── lib/utils.mjs                               — Shared HTTP, location resolution, data normalisers
+├── rightmove-search/
+│   ├── SKILL.md
+│   └── scripts/rightmove-search.mjs            — Search by location + filters
+└── rightmove-listing/
+    ├── SKILL.md
+    └── scripts/rightmove-listing.mjs           — Full details for a single listing
+```
+
+### Test Results
+
+| Test | Status | Notes |
+|------|--------|-------|
+| `rightmove-search.mjs London --max 5` | ✅ | 5 properties returned |
+| `rightmove-search.mjs Manchester --type rent --max-beds 2 --max-price 2000 --max 5` | ✅ | 5 rental properties |
+| `rightmove-search.mjs Edinburgh --min-beds 3 --max-price 600000 --max 3` | ✅ | 3 properties |
+| `rightmove-search.mjs London --max-beds 2 --min-beds 2 --max-price 400000 --max 30` | ✅ | 30 properties (paginated across 2 pages) |
+| `rightmove-listing.mjs 87729723` | ✅ | Full details: desc, 8 images, 2 floorplans, tenure, stations, agent |
+| `rightmove-listing.mjs 173301839` | ✅ | Wimbledon maisonette — EPC, brochures, council tax band |
+| `rightmove-listing.mjs "https://...173402690#/?channel=RES_LET"` | ✅ | Rental flat — Manchester |
+| `rightmove-search.mjs "NotARealPlace99999"` | ✅ | Clean LOCATION_NOT_FOUND error |
+| `rightmove-listing.mjs 00000001` | ✅ | Clean HTTP_ERROR (404) |
+
+### Data Extracted (Search)
+`propertyId`, `url`, `displayAddress`, `bedrooms`, `bathrooms`, `propertySubType`, `price` (amount/currency/frequency/displayPrice/qualifier), `listingUpdate` (reason/date), `thumbnailUrl`, `featuredProperty`, `isPremiumListing`, `addedDate`, `tenure`, `agent` (name/branchName/phone/branchUrl/logoUrl), `location` (lat/lng), `displaySize`, `channel`
+
+### Data Extracted (Listing Detail)
+All above + `description`, `keyFeatures[]`, `images[]`, `floorplans[]`, `virtualTourUrl`, `tenure` (type/yearsRemaining), `livingCosts` (councilTaxBand/groundRent/serviceCharge), `nearestStations[]`, `broadband`, `epcGraphs[]`, `listingHistory`, `sizings[]`, `agent` (full details incl. address, phone, logoUrl), `contact`, `brochures[]`, `features` (parking, garden, risks)
