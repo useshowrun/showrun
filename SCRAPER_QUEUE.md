@@ -7,7 +7,6 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 
 | # | Service | Target Site | Notes |
 |---|---------|-------------|-------|
-| 48 | GitHub Scraper | github.com | Repos (stars, forks, issues, topics, README), user profiles, search |
 | 49 | Fiverr Scraper | fiverr.com | Freelance gigs — search, gig details, seller info, reviews |
 | 50 | Goodreads Scraper | goodreads.com | Book metadata + reviews — title, author, rating, genres |
 | 51 | Medium Scraper | medium.com | Blog posts by tag/author — title, content, claps, published date |
@@ -31,11 +30,12 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 | 38 | LinkedIn Ads | Protechts.net bot detection |
 | 43 | Realtor.com | Kasada bot protection — blocks Googlebot UA (despite SSR strategy); needs residential proxy |
 
-## ✅ Done (39 skills)
+## ✅ Done (42 skills)
 
 Google Maps, Instagram, TikTok, Website Crawler, Facebook Posts/Comments/Pages/Ad Library/Marketplace,
 YouTube (channel/video/search/comments/transcript), Twitter/X, Amazon (product/search/bestsellers),
 LinkedIn (profile/company/jobs), Booking.com, Yelp, Tripadvisor, Airbnb, Trustpilot, Pinterest,
 Glassdoor, Etsy, Shopify, Telegram, Product Hunt, Hacker News, Substack, Google Search, Reddit (code ready, blocked),
 Craigslist (search + listing detail), Apple App Store (search + app detail + reviews),
-**Google Play Store (search + app detail + reviews)**
+**Google Play Store (search + app detail + reviews)**,
+**GitHub (search + repo detail + user/org profile)**

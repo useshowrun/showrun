@@ -1613,3 +1613,59 @@ HTTP curl also fails (403). All API endpoints (/api/search, /gdm-api/...) also b
 - Data in __NEXT_DATA__ confirmed via Capterra's technology stack (Next.js) — extraction ready for when proxy works
 - `checkCloudflareBlock()` fn detects: title="Just a moment", cf_chl in URL, cookie-required message
 - Both scripts emit clean `RESULT:{error, code, message}` JSON on block — no crashes or stack dumps
+
+---
+
+### GitHub Scraper — ✅ DONE (2026-03-22)
+
+**Skills built:**
+- `github-search` — search repos or users by keyword, with language filter, sort, and max results
+- `github-repo` — full repo metadata + optional README, open issues, releases, top contributors
+- `github-user` — user/org profile + optional public repos listing
+
+**Architecture:**
+- Pure HTTP via GitHub REST API v3 (`https://api.github.com`) — no browser needed
+- Shared `github/lib/utils.mjs` for HTTP helpers, normalizers, input parsers
+- `GITHUB_TOKEN` env var support for 5000 req/hour (60/hr unauthenticated)
+- Headers: `Accept: application/vnd.github+json`, `X-GitHub-Api-Version: 2022-11-28`
+- README decoded from base64, truncated to 5000 chars
+- Rate limit headers (`X-RateLimit-Remaining`, `X-RateLimit-Reset`) monitored; clean error on exhaustion
+
+**Input parsing:**
+- `github-repo`: accepts `owner/repo`, `https://github.com/owner/repo`, full URLs, `.git` suffixes
+- `github-user`: accepts username string or `https://github.com/username`
+- `github-search`: full GitHub search syntax supported (e.g. `"react stars:>1000 language:javascript"`)
+
+**Test results (2026-03-22):**
+- `github-search "react" --max 3`: returns freeCodeCamp, facebook/react, next.js ✅
+- `github-search "machine learning" --lang python --max 3`: huggingface/transformers, funNLP, scikit-learn ✅
+- `github-search "vim config" --sort updated --max 3`: recent dotfile repos ✅
+- `github-repo facebook/react --all`: stars=244134, README fetched, 6 issues, latest release v19.2.4, contributors listed ✅
+- `github-repo microsoft/vscode`: stars=182966, TypeScript ✅
+- `github-repo https://github.com/torvalds/linux`: stars=224577, forks=61121, C ✅
+- `github-user torvalds --include-repos --max-repos 5`: Linus Torvalds, 292K followers, linux/AudioNoise/GuitarPedal ✅
+- `github-user microsoft --include-repos`: Organization type, PowerToys/playwright/etc ✅
+- `github-user https://github.com/gaearon`: dan (gaearon), 90K followers ✅
+- Nonexistent repo → `RESULT:{error:true, code:"NOT_FOUND", ...}` ✅
+- Invalid input (no slash) → `RESULT:{error:true, code:"INVALID_INPUT", ...}` ✅
+- Nonexistent user → `RESULT:{error:true, code:"NOT_FOUND", ...}` ✅
+- Missing args → usage printed to stderr ✅
+
+**Files:**
+- `github/SKILL.md` ✅
+- `github/package.json` ✅
+- `github/lib/utils.mjs` ✅ (fetchUrl, fetchJson, getGitHubHeaders, parseOwnerRepo, parseUsername, normalizeRepo, normalizeIssue, normalizeRelease, normalizeContributor, normalizeUser)
+- `github/github-search/SKILL.md` ✅
+- `github/github-search/scripts/github-search.mjs` ✅
+- `github/github-repo/SKILL.md` ✅
+- `github/github-repo/scripts/github-repo.mjs` ✅
+- `github/github-user/SKILL.md` ✅
+- `github/github-user/scripts/github-user.mjs` ✅
+
+**Session log entry — 2026-03-22 (scraper-skill-builder-github)**
+- GitHub API is exceptionally well-designed — no bot protection, consistent JSON, excellent documentation
+- Topics endpoint works fine without special Accept header when fetching repo (included in main response)
+- Organizations require a separate `/orgs/{org}` call for full details (members, description, etc.)
+- Issues endpoint returns PRs too — filtered via `!item.pull_request` check
+- Rate limit info surfaced via `X-RateLimit-Remaining` response headers
+- No external dependencies — pure Node.js built-ins (https, http, url modules)
