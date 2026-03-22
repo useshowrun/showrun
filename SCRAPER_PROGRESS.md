@@ -94,6 +94,22 @@ cd google-maps/node_modules/better-sqlite3
 | 34 | Shopify Scraper | *.myshopify.com / custom domains | ✅ DONE | Public JSON API — /products.json, /collections.json, /products/<handle>.json. No auth needed. Browser fallback for Cloudflare stores. |
 | 35 | Upwork Job Scraper | upwork.com | ❌ BLOCKED | Cloudflare Turnstile (managed challenge, cType:managed) on all search/category URLs from datacenter IP. Homepage works but search doesn't. RSS/XML feeds gone (410). GraphQL requires auth. Needs residential proxy. |
 
+| 41 | Google Maps Reviews Scraper | maps.google.com | ⏳ TODO | Dedicated review scraper — go beyond the 10 inline reviews, paginate all reviews for a place |
+| 42 | Craigslist Scraper | craigslist.org | ⏳ TODO | Local classifieds — listings by city+category, title/price/location/description/images |
+| 43 | Realtor.com Scraper | realtor.com | ⏳ TODO | US real estate listings — search by location, property details, price, beds/baths |
+| 44 | G2 Scraper | g2.com | ⏳ TODO | Software reviews — product search, ratings, reviews, categories, pricing info |
+| 45 | Apple App Store Scraper | apps.apple.com | ⏳ TODO | iOS app metadata + reviews — name, rating, reviews, version, category, price |
+| 46 | Google Play Store Scraper | play.google.com | ⏳ TODO | Android app metadata + reviews — name, rating, installs, reviews, category |
+| 47 | Capterra Scraper | capterra.com | ⏳ TODO | B2B software reviews — product search, ratings, reviews, pricing, features |
+| 48 | GitHub Scraper | github.com | ⏳ TODO | Repos (stars, forks, issues, topics, README), user profiles, search |
+| 49 | Fiverr Scraper | fiverr.com | ⏳ TODO | Freelance gigs — search by keyword/category, gig details, seller info, reviews |
+| 50 | Goodreads Scraper | goodreads.com | ⏳ TODO | Book metadata + reviews — title, author, rating, genres, reviews, reading lists |
+| 51 | Medium Scraper | medium.com | ⏳ TODO | Blog posts by tag/author/publication — title, content, claps, author, published date |
+| 52 | Quora Scraper | quora.com | ⏳ TODO | Q&A content — questions by topic, answers, upvotes, author profiles |
+| 53 | Threads Scraper | threads.net | ⏳ TODO | Meta's Twitter alternative — profile, posts, replies, likes |
+| 54 | Rightmove Scraper | rightmove.co.uk | ⏳ TODO | UK real estate — property search by location, price, beds, full property details |
+| 55 | Zoopla Scraper | zoopla.co.uk | ⏳ TODO | UK real estate alternative — property search, listings, price history |
+
 ## Status Legend
 - ⏳ TODO — not started
 - 🔨 IN PROGRESS — being built
