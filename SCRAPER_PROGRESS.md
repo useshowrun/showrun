@@ -1303,5 +1303,36 @@ Built 1 skill: `shopify-products`, using Shopify's public JSON API.
 | 36 | Hacker News Scraper | news.ycombinator.com | ✅ DONE | Official HN Firebase API + Algolia search. No auth. top/new/best/ask/show/job feeds + keyword search + comments. |
 | 37 | Amazon Bestsellers Scraper | amazon.com | ✅ DONE | Stable selectors: img[alt] for title, aria-label for ratings. Supports books/electronics/toys/etc, movers&shakers, new releases, pagination up to 100. |
 | 38 | LinkedIn Ads Scraper | linkedin.com/ad-library | ❌ BLOCKED | Page loads but data API is blocked by Protechts.net bot detection. "Failed to load" error in browser. No public API. Needs residential proxy + anti-bot bypass. |
-| 39 | Product Hunt Scraper | producthunt.com | ⏳ TODO | Public GraphQL API available |
+| 39 | Product Hunt Scraper | producthunt.com | ✅ DONE | 2 skills: producthunt-daily (Atom feed, no browser) + producthunt-search (camoufox XHR intercept of Apollo GQL). No auth required. |
 | 40 | Substack Scraper | substack.com | ⏳ TODO | Newsletter/blog platform — public API + RSS |
+
+### Product Hunt Scraper — ✅ DONE (2026-03-22)
+
+**Skills:**
+- `producthunt-daily` — get top products for today or a specific date via Atom feed (no browser needed)
+- `producthunt-search` — search products by keyword via camoufox XHR intercept of Apollo GQL
+
+**Architecture:**
+- Daily: `producthunt.com/feed` Atom XML — no auth, no browser, pure HTTP. Supports `--date YYYY-MM-DD`, `--category`, `--max`
+- Search: camoufox headless Firefox navigates to `/search?q=keyword`, intercepts Apollo GQL POST requests to `api.producthunt.com/v2/api/graphql`, parses `productSearch` query response
+
+**Key insights:**
+- Product Hunt's public GraphQL API (api.producthunt.com/v2/api/graphql) requires OAuth tokens — skip it
+- The website is a React SPA — all search results loaded client-side via Apollo after page render
+- XHR intercept of Apollo GQL calls is the correct approach (same pattern as TikTok, YouTube, Yelp)
+- Atom feed at /feed works perfectly for daily products — no browser, no auth, fast
+
+**Test results:**
+- `producthunt-daily` → today's top ~50 products via feed ✅ (firstProduct: "SyFly", 10 edge results confirmed)
+- `producthunt-daily --date 2026-03-20` → products for specific date ✅
+- `producthunt-daily --category ai --max 10` → AI category products ✅
+- `producthunt-search "AI writing tools"` → results via Apollo GQL intercept ✅
+
+**Files:**
+- `product-hunt/SKILL.md` ✅
+- `product-hunt/package.json` ✅
+- `product-hunt/lib/utils.mjs` ✅
+- `product-hunt/producthunt-daily/SKILL.md` ✅
+- `product-hunt/producthunt-daily/scripts/producthunt-daily.mjs` ✅
+- `product-hunt/producthunt-search/SKILL.md` ✅
+- `product-hunt/producthunt-search/scripts/producthunt-search.mjs` ✅
