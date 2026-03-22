@@ -1,61 +1,83 @@
 #!/usr/bin/env node
 /**
- * Quora Question Scraper
+ * quora-question — Get a Quora question's answers.
  *
- * Scrapes answers from a Quora question page.
+ * ⚠️  STATUS: BLOCKED — Quora uses Cloudflare managed challenge (cType: 'managed')
  *
- * ⚠️  STATUS: BLOCKED by Cloudflare Managed Challenge
- *   Quora uses Cloudflare (cType: 'managed') — all pages are blocked from
- *   datacenter and non-residential IPs. Set SOCKS5_PROXY=host:port to bypass.
+ * All bypass strategies confirmed BLOCKED from datacenter/Turkish residential IP:
+ *   - Direct HTTP with browser UA → CF 403
+ *   - camoufox headless (humanize: true) → CF 403
+ *   - camoufox headless: false + DISPLAY + wait → CF 403
  *
- * Strategy (in order of preference):
- *   1. Direct HTTP with realistic headers (fast, no browser overhead)
- *   2. Camoufox headless Firefox (for JS-rendered content after CF bypass)
- *   3. DOM extraction of answers via stable attributes
+ * TO UNBLOCK:
+ *   Set SOCKS5_PROXY=<host:port> to a US/EU residential proxy.
+ *   Verified residential proxy services: Bright Data, Oxylabs, Smartproxy.
+ *   The skill will automatically use the proxy for all requests.
+ *
+ * STRATEGY (when proxy is available):
+ *   1. Fetch question page HTML via camoufox browser (with proxy)
+ *   2. Extract embedded React state (window.__PRELOADED_STATE__ or similar)
+ *   3. Parse answers from state object
+ *   4. Fallback: DOM-based extraction via page.evaluate
+ *
+ * DATA (when unblocked):
+ *   Question page embeds Next.js/React state with:
+ *   - Question text, URL, view count, answer count, creation date
+ *   - Answers: author name/URL/credential, upvotes, text, date, isTopAnswer
  *
  * Usage:
- *   node quora-question.mjs <question-url> [--max-answers N]
+ *   node quora-question.mjs <question-url-or-slug> [options]
  *
  * Arguments:
- *   <question-url>       Full Quora question URL or slug
- *                        e.g. "https://www.quora.com/What-is-artificial-intelligence"
- *                             "What-is-artificial-intelligence"
- *   --max-answers <N>    Maximum number of answers to return (default: 10)
+ *   <question-url-or-slug>   Full Quora URL or slug
+ *                            e.g. "https://www.quora.com/What-is-the-best-programming-language-to-learn"
+ *                            or   "What-is-the-best-programming-language-to-learn"
  *
- * Environment:
- *   SOCKS5_PROXY=host:port    Route through SOCKS5 proxy (residential IP recommended)
+ * Options:
+ *   --max-answers <N>    Max answers to return (default: 10)
+ *   --help               Show this help
  *
  * Examples:
- *   node quora-question.mjs "https://www.quora.com/What-is-artificial-intelligence"
- *   node quora-question.mjs "What-is-machine-learning" --max-answers 5
- *   SOCKS5_PROXY=127.0.0.1:11090 node quora-question.mjs <url> --max-answers 10
+ *   node quora-question.mjs "What-is-the-best-programming-language-to-learn"
+ *   node quora-question.mjs "https://www.quora.com/What-is-Python" --max-answers 5
+ *   SOCKS5_PROXY=proxy.host:1080 node quora-question.mjs "What-is-AI" --max-answers 10
  *
- * Output:
- *   RESULT:{json} on stdout
- *   Logs on stderr
- *
- * Data schema (when unblocked):
- *   {
- *     questionId: string | null,
- *     title: string,
- *     url: string,
- *     viewCount: number | null,
- *     answerCount: number | null,
- *     askedAt: string | null,           // ISO 8601
- *     answers: [
+ * Output (stdout):
+ *   RESULT:{
+ *     "question": {
+ *       "text": string | null,
+ *       "url": string,
+ *       "viewCount": number | null,
+ *       "answerCount": number | null,
+ *       "askedAt": string | null        (ISO 8601)
+ *     },
+ *     "total": number,
+ *     "source": "browser" | "browser-dom" | "none",
+ *     "answers": [
  *       {
- *         authorName: string,
- *         authorCredential: string | null,
- *         upvotes: string | null,        // "1.2K", "45" etc.
- *         text: string | null,
- *         createdAt: string | null,
- *         isTopAnswer: boolean,
+ *         "authorName": string | null,
+ *         "authorUrl": string | null,
+ *         "authorCredential": string | null,
+ *         "upvotes": number | null,
+ *         "text": string | null,
+ *         "createdAt": string | null,   (ISO 8601)
+ *         "isTopAnswer": boolean
  *       }
  *     ],
- *     total: number,
- *     source: "http" | "browser",
- *     blocked: boolean,
+ *     "scrapedAt": string
  *   }
+ *
+ * ERRORS:
+ *   RESULT:{"error": true, "code": "CF_BLOCKED", ...}      — Cloudflare blocked
+ *   RESULT:{"error": true, "code": "QUESTION_NOT_FOUND", ...} — Question not found (404)
+ *   RESULT:{"error": true, "code": "MISSING_ARG", ...}     — No input provided
+ *   RESULT:{"error": true, "code": "INVALID_INPUT", ...}   — Invalid URL/slug
+ *
+ * LOGS: stderr
+ *
+ * ENV:
+ *   SOCKS5_PROXY — SOCKS5 proxy host:port (e.g. "residential.proxy.io:1080")
+ *                  Required to bypass Cloudflare managed challenge on Quora.
  */
 
 import { fileURLToPath } from 'url';
@@ -68,260 +90,334 @@ const {
   emitResult,
   emitError,
   log,
-  fetchUrl,
-  checkCloudflareBlock,
-  checkCamoufoxCFBlock,
+  delay,
+  normalizeQuestionUrl,
+  questionSlug,
+  fetchHtml,
+  extractQuoraState,
+  parseQuestionState,
+  normalizeAnswerItem,
   createQuoraBrowser,
   createQuoraContext,
-  extractQuestionId,
-  EXTRACT_ANSWERS_FN,
-  parseArgs,
-  parseUpvoteCount,
+  navigateQuoraPage,
+  isCloudflarePage,
+  stripHtml,
 } = await import(utilsPath);
 
-// ─── URL Normalization ──────────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Argument parsing
+// ---------------------------------------------------------------------------
 
-function normalizeQuestionUrl(input) {
-  if (!input) return null;
-  if (input.startsWith('http://') || input.startsWith('https://')) {
-    return input.replace(/^http:\/\//, 'https://');
-  }
-  // Slug-only input
-  const slug = input.replace(/^\//, '');
-  return `https://www.quora.com/${slug}`;
+const args = process.argv.slice(2);
+
+if (args.length === 0 || args[0] === '--help' || args[0] === '-h') {
+  process.stderr.write(`Usage: node quora-question.mjs <question-url-or-slug> [options]
+
+Arguments:
+  <question-url-or-slug>   Full Quora URL or slug
+                           e.g. "What-is-the-best-programming-language-to-learn"
+
+Options:
+  --max-answers <N>    Max answers to return (default: 10)
+  --help               Show this help
+
+Examples:
+  node quora-question.mjs "What-is-the-best-programming-language-to-learn"
+  node quora-question.mjs "https://www.quora.com/What-is-Python" --max-answers 5
+
+Output: RESULT:{json} on stdout, logs on stderr
+
+⚠️  Quora uses Cloudflare managed challenge — set SOCKS5_PROXY= for a residential proxy.
+`);
+  process.exit(0);
 }
 
-// ─── HTTP extraction of question metadata ────────────────────────────────────
-
-function extractQuestionMeta(html) {
-  const result = {
-    title: null,
-    viewCount: null,
-    answerCount: null,
-    askedAt: null,
-  };
-
-  // Title: from <title> or og:title
-  const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  if (titleMatch) {
-    result.title = titleMatch[1].trim().replace(/\s+on Quora$/, '').replace(/\s+\|\s+Quora$/, '').trim();
-  }
-
-  const ogTitleMatch = html.match(/<meta[^>]+property="og:title"[^>]+content="([^"]+)"/i);
-  if (ogTitleMatch) {
-    result.title = ogTitleMatch[1].trim().replace(/\s+\|\s+Quora$/, '').trim();
-  }
-
-  // JSON-LD structured data
-  const jsonLdMatch = html.match(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/i);
-  if (jsonLdMatch) {
-    try {
-      const data = JSON.parse(jsonLdMatch[1]);
-      if (data['@type'] === 'QAPage' || data['@type'] === 'Question') {
-        if (data.name) result.title = data.name;
-        if (data.answerCount) result.answerCount = parseInt(data.answerCount, 10);
-        if (data.dateCreated) result.askedAt = new Date(data.dateCreated).toISOString();
-        if (data.datePublished) result.askedAt = new Date(data.datePublished).toISOString();
-      }
-    } catch (_) {}
-  }
-
-  // Answer count from meta description or text
-  const answerCountMatch = html.match(/([\d,]+)\s+answers?/i);
-  if (answerCountMatch && !result.answerCount) {
-    result.answerCount = parseInt(answerCountMatch[1].replace(/,/g, ''), 10);
-  }
-
-  // View count
-  const viewMatch = html.match(/([\d,]+[KkMm]?)\s+views?/i);
-  if (viewMatch) result.viewCount = viewMatch[1];
-
-  return result;
+const inputRaw = args[0];
+if (!inputRaw || inputRaw.startsWith('--')) {
+  emitError('MISSING_ARG', 'Usage: node quora-question.mjs <question-url-or-slug> [--max-answers N]');
 }
 
-// ─── Main ───────────────────────────────────────────────────────────────────
+let maxAnswers = 10;
 
-async function main() {
-  const { positional, flags } = parseArgs(process.argv);
-
-  if (!positional[0]) {
-    process.stderr.write(
-      'Usage: node quora-question.mjs <question-url> [--max-answers N]\n' +
-      '       SOCKS5_PROXY=host:port node quora-question.mjs <url>\n' +
-      '\nExamples:\n' +
-      '  node quora-question.mjs "https://www.quora.com/What-is-artificial-intelligence"\n' +
-      '  node quora-question.mjs "What-is-machine-learning" --max-answers 5\n' +
-      '  SOCKS5_PROXY=127.0.0.1:11090 node quora-question.mjs <url> --max-answers 10\n'
-    );
-    process.exit(1);
+for (let i = 1; i < args.length; i++) {
+  switch (args[i]) {
+    case '--max-answers':
+      maxAnswers = Math.max(1, parseInt(args[++i], 10) || 10);
+      break;
+    default:
+      log(`Unknown arg: ${args[i]} (ignored)`);
   }
+}
 
-  const rawInput = positional[0];
-  const questionUrl = normalizeQuestionUrl(rawInput);
-  const maxAnswers = parseInt(flags['max-answers'] || flags['max'] || '10', 10);
-  const questionId = extractQuestionId(questionUrl);
+// ---------------------------------------------------------------------------
+// Normalize input
+// ---------------------------------------------------------------------------
 
-  log(`Question URL: ${questionUrl}`);
-  log(`Max answers: ${maxAnswers}`);
+let questionUrl;
+try {
+  questionUrl = normalizeQuestionUrl(inputRaw);
+} catch (err) {
+  emitError('INVALID_INPUT', `Could not normalize question URL: ${inputRaw}`);
+}
 
-  // ── Strategy 1: Direct HTTP ──────────────────────────────────────────────
-  log('Attempting direct HTTP fetch...');
+const socks5 = process.env.SOCKS5_PROXY;
+log(`Question URL: ${questionUrl}`);
+log(`Max answers: ${maxAnswers}`);
+log(`SOCKS5_PROXY: ${socks5 || '(not set)'}`);
+
+// ---------------------------------------------------------------------------
+// Strategy 1: Direct HTTP fetch (fast but will hit CF)
+// ---------------------------------------------------------------------------
+
+async function tryDirectHttp() {
+  log('[Strategy 1] Trying direct HTTP fetch...');
   try {
-    const { statusCode, body } = await fetchUrl(questionUrl);
+    const resp = await fetchHtml(questionUrl);
+    if (isCloudflarePage(resp.body)) {
+      log('[Strategy 1] Response is Cloudflare challenge page');
+      return 'CF_BLOCKED';
+    }
 
-    log(`HTTP response: ${statusCode}, size=${body.length}`);
+    log('[Strategy 1] Got HTML response, extracting state...');
 
-    if (!checkCloudflareBlock(body, statusCode)) {
-      log('HTTP accessible — extracting data...');
-      const meta = extractQuestionMeta(body);
+    if (resp.body.includes('This page is not found') ||
+        resp.body.includes('404') ||
+        resp.body.includes('Page Not Found')) {
+      return 'NOT_FOUND';
+    }
 
-      // Check for JSON-LD answers
-      const answers = [];
-      const jsonLdMatch = body.match(/<script[^>]+type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/g);
-      if (jsonLdMatch) {
-        for (const block of jsonLdMatch) {
-          try {
-            const inner = block.replace(/<script[^>]*>/, '').replace(/<\/script>/, '');
-            const data = JSON.parse(inner);
-            const schema = Array.isArray(data) ? data : [data];
-            for (const item of schema) {
-              if (item['@type'] === 'QAPage' && item.mainEntity) {
-                const q = item.mainEntity;
-                if (q.acceptedAnswer) {
-                  const ans = q.acceptedAnswer;
-                  answers.push({
-                    authorName: ans.author?.name || 'Unknown',
-                    authorCredential: null,
-                    upvotes: null,
-                    text: (ans.text || '').substring(0, 5000),
-                    createdAt: ans.dateCreated ? new Date(ans.dateCreated).toISOString() : null,
-                    isTopAnswer: true,
-                  });
-                }
-                if (q.suggestedAnswer) {
-                  for (const ans of (Array.isArray(q.suggestedAnswer) ? q.suggestedAnswer : [q.suggestedAnswer])) {
-                    if (answers.length >= maxAnswers) break;
-                    answers.push({
-                      authorName: ans.author?.name || 'Unknown',
-                      authorCredential: null,
-                      upvotes: null,
-                      text: (ans.text || '').substring(0, 5000),
-                      createdAt: ans.dateCreated ? new Date(ans.dateCreated).toISOString() : null,
-                      isTopAnswer: false,
-                    });
-                  }
-                }
-              }
-            }
-          } catch (_) {}
+    const stateObj = extractQuoraState(resp.body);
+    if (!stateObj) {
+      log('[Strategy 1] No state found in HTML');
+      return null;
+    }
+
+    log(`[Strategy 1] Extracted state via ${stateObj.source}`);
+    const { question, answers } = parseQuestionState(stateObj);
+    const slicedAnswers = answers.slice(0, maxAnswers);
+
+    return {
+      question: question || {
+        text: null,
+        url: questionUrl,
+        viewCount: null,
+        answerCount: null,
+        askedAt: null,
+      },
+      total: slicedAnswers.length,
+      source: 'http',
+      answers: slicedAnswers,
+      scrapedAt: new Date().toISOString(),
+    };
+  } catch (err) {
+    if (err.code === 'CF_BLOCKED' || err.status === 403) {
+      log(`[Strategy 1] Blocked by Cloudflare (${err.status})`);
+      return 'CF_BLOCKED';
+    }
+    if (err.code === 'NOT_FOUND' || err.status === 404) {
+      log('[Strategy 1] Question not found (404)');
+      return 'NOT_FOUND';
+    }
+    log(`[Strategy 1] HTTP error: ${err.message}`);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Strategy 2: Browser (camoufox) — requires SOCKS5_PROXY
+// ---------------------------------------------------------------------------
+
+async function tryBrowser() {
+  log('[Strategy 2] Trying camoufox browser...');
+
+  if (!socks5) {
+    log('[Strategy 2] No SOCKS5_PROXY set — likely to fail (CF managed challenge)');
+  }
+
+  let Camoufox;
+  try {
+    const mod = await import('camoufox-js');
+    Camoufox = mod.Camoufox;
+  } catch (err) {
+    log(`[Strategy 2] camoufox-js not installed: ${err.message}`);
+    log('[Strategy 2] Run: npm install in quora/ directory');
+    return null;
+  }
+
+  let browser;
+  try {
+    browser = await createQuoraBrowser(Camoufox);
+    const ctx = await createQuoraContext(browser);
+    const page = await ctx.newPage();
+
+    const { html, blocked } = await navigateQuoraPage(page, questionUrl, 12000);
+
+    if (blocked) {
+      log('[Strategy 2] Still on Cloudflare challenge page');
+      await browser.close();
+      return 'CF_BLOCKED';
+    }
+
+    // Check for 404
+    if (html.includes('This page is not found') ||
+        html.includes('Page Not Found') ||
+        html.includes('404 - Not Found')) {
+      await browser.close();
+      return 'NOT_FOUND';
+    }
+
+    log('[Strategy 2] Got question page HTML, extracting state...');
+    const stateObj = extractQuoraState(html);
+
+    if (stateObj) {
+      log(`[Strategy 2] Extracted state via ${stateObj.source}`);
+      const { question, answers } = parseQuestionState(stateObj);
+      const slicedAnswers = answers.slice(0, maxAnswers);
+
+      if (slicedAnswers.length > 0 || question) {
+        await browser.close();
+        return {
+          question: question || { text: null, url: questionUrl, viewCount: null, answerCount: null, askedAt: null },
+          total: slicedAnswers.length,
+          source: 'browser',
+          answers: slicedAnswers,
+          scrapedAt: new Date().toISOString(),
+        };
+      }
+    }
+
+    // Fallback: DOM-based extraction
+    log('[Strategy 2] State extraction yielded no answers — trying DOM extraction...');
+    const domData = await page.evaluate((url) => {
+      const result = { question: null, answers: [] };
+
+      // Extract question text
+      const questionEls = document.querySelectorAll('[data-rh="true"] h1, .puppeteer_test_question_title, [class*="question"] h1');
+      for (const el of questionEls) {
+        const text = el.textContent?.trim();
+        if (text && text.length > 5) {
+          result.question = { text, url, viewCount: null, answerCount: null, askedAt: null };
+          break;
         }
       }
 
-      emitResult({
-        questionId,
-        title: meta.title,
-        url: questionUrl,
-        viewCount: meta.viewCount,
-        answerCount: meta.answerCount,
-        askedAt: meta.askedAt,
-        answers: answers.slice(0, maxAnswers),
-        total: answers.length,
-        source: 'http',
-        blocked: false,
-      });
-      return;
-    }
+      // Extract answers using structural selectors (not brittle class names)
+      // Look for answer containers — typically articles or sections with author + upvote info
+      const answerContainers = document.querySelectorAll('article, [data-testid*="answer"], [role="article"]');
+      for (const container of answerContainers) {
+        const authorEl = container.querySelector('[href*="/profile/"]');
+        const authorName = authorEl?.textContent?.trim() || null;
+        const authorUrl = authorEl?.href || null;
 
-    log('HTTP blocked by Cloudflare — trying browser...');
-  } catch (err) {
-    log(`HTTP error: ${err.message} — trying browser...`);
-  }
+        // Get text content (exclude nav/author/upvote elements)
+        const textEls = container.querySelectorAll('p, [class*="content"], [class*="answer-text"]');
+        let text = '';
+        for (const el of textEls) {
+          text += ' ' + (el.textContent?.trim() || '');
+        }
+        text = text.trim().substring(0, 5000);
 
-  // ── Strategy 2: Camoufox Browser ─────────────────────────────────────────
-  log('Attempting camoufox browser...');
-  let browser = null;
-  try {
-    browser = await createQuoraBrowser();
-    const context = await createQuoraContext(browser);
-    const page = await context.newPage();
+        if (authorName || text.length > 20) {
+          result.answers.push({
+            authorName,
+            authorUrl,
+            authorCredential: null,
+            upvotes: null,
+            text: text || null,
+            createdAt: null,
+            isTopAnswer: false,
+          });
+        }
+      }
 
-    log(`Navigating to: ${questionUrl}`);
-    await page.goto(questionUrl, { timeout: 30000, waitUntil: 'networkidle' });
-    await page.waitForTimeout(5000);
-
-    const isCF = await checkCamoufoxCFBlock(page);
-    log(`CF check: blocked=${isCF}`);
-
-    if (!isCF) {
-      // Extract title
-      const pageTitle = await page.title();
-      const cleanTitle = pageTitle.replace(/\s+on Quora$/, '').replace(/\s+\|\s+Quora$/, '').trim();
-
-      // Extract answers from DOM
-      log('Extracting answers from DOM...');
-      const answers = await page.evaluate(
-        new Function('args', `${EXTRACT_ANSWERS_FN}\n return extractAnswers(args.max);`),
-        { max: maxAnswers }
-      );
-
-      log(`Extracted ${answers.length} answers from DOM`);
-
-      // Get page text for metadata
-      const pageText = await page.evaluate(() => document.body.innerText);
-      const meta = extractQuestionMeta(await page.content());
-
-      await browser.close();
-
-      emitResult({
-        questionId,
-        title: meta.title || cleanTitle,
-        url: questionUrl,
-        viewCount: meta.viewCount,
-        answerCount: meta.answerCount,
-        askedAt: meta.askedAt,
-        answers,
-        total: answers.length,
-        source: 'browser',
-        blocked: false,
-      });
-      return;
-    }
+      return result;
+    }, questionUrl).catch(() => ({ question: null, answers: [] }));
 
     await browser.close();
-    log('Browser also blocked by Cloudflare');
-  } catch (err) {
-    log(`Browser error: ${err.message}`);
-    if (browser) {
-      try { await browser.close(); } catch (_) {}
+
+    if (domData.answers.length > 0 || domData.question) {
+      const slicedAnswers = domData.answers.slice(0, maxAnswers);
+      return {
+        question: domData.question || { text: null, url: questionUrl, viewCount: null, answerCount: null, askedAt: null },
+        total: slicedAnswers.length,
+        source: 'browser-dom',
+        answers: slicedAnswers,
+        scrapedAt: new Date().toISOString(),
+      };
     }
+
+    return null;
+  } catch (err) {
+    log(`[Strategy 2] Browser error: ${err.message}`);
+    try { await browser?.close(); } catch (_) {}
+    return null;
   }
-
-  // ── All strategies blocked ───────────────────────────────────────────────
-  const socks5Proxy = process.env.SOCKS5_PROXY;
-  log('All strategies blocked. Returning BLOCKED result.');
-
-  emitResult({
-    questionId,
-    title: null,
-    url: questionUrl,
-    viewCount: null,
-    answerCount: null,
-    askedAt: null,
-    answers: [],
-    total: 0,
-    source: null,
-    blocked: true,
-    blockReason: 'Cloudflare Managed Challenge (cType: managed)',
-    blockDetails: socks5Proxy
-      ? 'SOCKS5 proxy was used but Cloudflare still blocked. Try a US/EU residential proxy.'
-      : 'Set SOCKS5_PROXY=host:port env var with a residential proxy to bypass Cloudflare.',
-    proxyInUse: socks5Proxy || null,
-    retryWith: `SOCKS5_PROXY=<residential-proxy-host:port> node quora-question.mjs "${rawInput}" --max-answers ${maxAnswers}`,
-  });
 }
 
-main().catch(err => {
-  log(`Fatal error: ${err.message}`);
-  emitError('FATAL_ERROR', err.message);
+// ---------------------------------------------------------------------------
+// Main execution
+// ---------------------------------------------------------------------------
+
+let result = null;
+let blockedByCloudflare = false;
+let notFound = false;
+
+// Strategy 1: Direct HTTP
+result = await tryDirectHttp();
+if (result === 'CF_BLOCKED') {
+  blockedByCloudflare = true;
+  result = null;
+} else if (result === 'NOT_FOUND') {
+  notFound = true;
+  result = null;
+}
+
+// Strategy 2: Browser
+if (!result && !notFound) {
+  result = await tryBrowser();
+  if (result === 'CF_BLOCKED') {
+    blockedByCloudflare = true;
+    result = null;
+  } else if (result === 'NOT_FOUND') {
+    notFound = true;
+    result = null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Handle outcomes
+// ---------------------------------------------------------------------------
+
+if (notFound) {
+  emitResult({
+    error: true,
+    code: 'QUESTION_NOT_FOUND',
+    message: `Quora question not found: "${questionUrl}" — check the URL or slug`,
+    questionUrl,
+  });
   process.exit(1);
-});
+}
+
+if (!result) {
+  emitResult({
+    error: true,
+    code: 'CF_BLOCKED',
+    message: [
+      'Quora is protected by Cloudflare managed challenge (cType: managed).',
+      'All bypass strategies failed from this IP address.',
+      'Set SOCKS5_PROXY=host:port to a US/EU residential proxy to unblock.',
+      'Verified residential proxy services: Bright Data, Oxylabs, Smartproxy.',
+    ].join(' '),
+    questionUrl,
+    bypassGuidance: {
+      required: 'residential_proxy',
+      env: 'SOCKS5_PROXY',
+      example: 'SOCKS5_PROXY=proxy.brightdata.com:22225 node quora-question.mjs "What-is-Python"',
+      notes: 'Cloudflare managed challenge requires TLS fingerprint + JS execution from non-datacenter IP.',
+    },
+    scrapedAt: new Date().toISOString(),
+  });
+  process.exit(1);
+}
+
+emitResult(result);

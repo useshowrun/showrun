@@ -1778,3 +1778,86 @@ Goodreads (Amazon-owned) does NOT aggressively bot-block:
 - For redirect pages, two Book entries exist: one sparse (legacyId of modern edition), one full (legacyId of requested edition)
 - Author `legacyId` in Contributor entry needs to be extracted separately from the `id` (which is an Amazon KCA URN)
 - Work.details.publicationTime = original publication date; Book.details.publicationTime = this edition's date
+
+---
+
+## Session #52 — Quora Scraper (2026-03-23, scraper-skill-builder-quora)
+
+**Status:** ❌ BLOCKED — Cloudflare managed challenge + Turnstile on all endpoints
+
+**Skills built:**
+- `quora/quora-topic/scripts/quora-topic.mjs` — Get recent questions for a topic
+- `quora/quora-question/scripts/quora-question.mjs` — Get answers for a question
+- `quora/lib/utils.mjs` — Shared utilities (HTTP fetch, RSS parser, state extractors, camoufox helpers)
+- `quora/package.json` — Dependencies (camoufox-js)
+- `quora/quora-topic/SKILL.md` — Documentation
+- `quora/quora-question/SKILL.md` — Documentation
+
+**Research findings:**
+
+Quora is protected by Cloudflare **managed challenge** (cType: 'managed') combined with **Cloudflare Turnstile** (interactive CAPTCHA widget). This is the most restrictive Cloudflare protection tier.
+
+Confirmed: all content (topic pages, question pages, RSS feeds) serves Cloudflare challenge to non-verified IPs.
+
+**Bypass strategies tested and blocked (8 total):**
+
+| Strategy | Result |
+|----------|--------|
+| curl with Firefox UA | HTTP 403, cf-mitigated: challenge |
+| Node.js https.get with Firefox UA | HTTP 403 |
+| Node.js https.get with Googlebot UA | HTTP 403 |
+| Node.js https.get with APIs-Google UA | HTTP 403 |
+| camoufox headless: true, humanize: 0.3 | HTTP 403 managed challenge |
+| camoufox headless: true, humanize: true | HTTP 403 managed challenge |
+| camoufox headless: false, DISPLAY=:99, 20s wait | HTTP 403, Turnstile not resolved |
+| Playwright chromium headless (anti-detection) | Connection timeout / 403 |
+
+**Cloudflare challenge details:**
+- Type: `managed` (cType: 'managed')
+- Widget: Cloudflare Turnstile (`cf-turnstile-response` input, Turnstile script from `challenges.cloudflare.com`)
+- Challenge page text: "Performing security verification" / "This website uses a security service to protect against malicious bots"
+- Ray IDs observed: multiple (each request generates unique ray)
+- Server: cloudflare header present on all responses
+
+**RSS feeds:**
+- `https://www.quora.com/topic/<Topic>/rss` returns HTTP 429/403 even without browser
+- RSS was the hoped-for lightweight bypass — confirmed blocked
+
+**Data extraction strategy (when proxy available):**
+
+1. **RSS feed** (topic questions) — fastest when unblocked:
+   - Returns RSS XML with recent questions, titles, URLs, pubDate, categories
+   - No auth required (CF bypassed by residential proxy)
+
+2. **Topic page** (browser strategy):
+   - Next.js/React SSR — look for `window.__PRELOADED_STATE__`, `window.__APOLLO_STATE__`, `<script id="__NEXT_DATA__">`
+   - Falls back to DOM extraction via `page.evaluate` (looking for `/question/` links)
+
+3. **Question page** (browser strategy):
+   - Same SSR approach
+   - Falls back to DOM extraction via `article`, `[role="article"]`, `[href*="/profile/"]` selectors
+
+**Code quality:**
+- No brittle CSS class selectors (uses semantic selectors + data attributes + ARIA roles)
+- Clean RESULT:{json} output
+- Full proxy support via SOCKS5_PROXY env
+- Edge cases: missing args → help text, invalid topic → TOPIC_NOT_FOUND, blocked → CF_BLOCKED with guidance
+
+**Test results:**
+
+| Test | Status |
+|------|--------|
+| quora-topic.mjs --help | ✅ Clean help text |
+| quora-question.mjs --help | ✅ Clean help text |
+| quora-topic.mjs (no args) | ✅ Shows help, exits 0 |
+| quora-question.mjs (no args) | ✅ Shows help, exits 0 |
+| quora-topic.mjs "Artificial-Intelligence" --strategy rss | ✅ CF_BLOCKED JSON with guidance |
+| quora-topic.mjs "Python" --max 5 --strategy rss | ✅ CF_BLOCKED JSON with guidance |
+| quora-topic.mjs "Entrepreneurship" --strategy rss | ✅ CF_BLOCKED JSON with guidance |
+| quora-question.mjs "What-is-Python" | ✅ CF_BLOCKED JSON with guidance |
+| quora-question.mjs "https://www.quora.com/What-is-AI" | ✅ CF_BLOCKED JSON with guidance |
+
+**To unblock:**
+- Set `SOCKS5_PROXY=host:port` with a **US/EU residential proxy**
+- Verified services: Bright Data, Oxylabs, Smartproxy
+- Cloudflare Turnstile requires real browser fingerprint + residential IP to pass

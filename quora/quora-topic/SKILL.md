@@ -1,83 +1,100 @@
 # quora-topic
 
-**Status:** ❌ BLOCKED — Cloudflare Managed Challenge (needs residential proxy)
+**Status: ❌ BLOCKED**
 
-Scrapes a list of questions from a Quora topic page.
+Quora is protected by Cloudflare **managed challenge** (cType: 'managed') — the most aggressive tier.  
+All bypass strategies fail from datacenter/Turkish residential IPs.  
+Set `SOCKS5_PROXY=host:port` with a **US/EU residential proxy** to unblock.
+
+---
+
+Get recent questions for a Quora topic.
 
 ## Usage
 
 ```bash
-node scripts/quora-topic.mjs <topic> [--max N]
+node quora-topic.mjs <topic> [options]
 
-# With residential proxy
-SOCKS5_PROXY=host:port node scripts/quora-topic.mjs <topic> [--max N]
+# With residential proxy (required to bypass Cloudflare):
+SOCKS5_PROXY=proxy.host:1080 node quora-topic.mjs "Artificial-Intelligence" --max 20
 ```
 
 ## Arguments
 
-| Argument | Type | Default | Description |
-|----------|------|---------|-------------|
-| `<topic>` | string | required | Topic name (e.g. "Artificial Intelligence", "Python") |
-| `--max N` | number | 20 | Max questions to return |
+| Argument | Description |
+|----------|-------------|
+| `<topic>` | Topic slug or name. Spaces → hyphens. E.g. `"Artificial-Intelligence"`, `"Python programming language"` |
 
-## Environment Variables
+## Options
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--max <N>` | Max questions to return | 20 |
+| `--strategy rss\|browser\|auto` | Force strategy | auto |
+| `--help` | Show help | |
+
+## Strategy
+
+1. **RSS feed** — `https://www.quora.com/topic/<Topic>/rss` (fastest)
+2. **camoufox browser** — loads topic page, extracts React state
+3. **DOM fallback** — extracts question links from rendered DOM
+
+## Output
+
+```json
+{
+  "topic": "Artificial-Intelligence",
+  "topicUrl": "https://www.quora.com/topic/Artificial-Intelligence",
+  "rssUrl": "https://www.quora.com/topic/Artificial-Intelligence/rss",
+  "feedTitle": "Quora - Artificial Intelligence",
+  "total": 20,
+  "source": "rss",
+  "questions": [
+    {
+      "questionId": null,
+      "title": "What is the most advanced AI system?",
+      "url": "https://www.quora.com/What-is-the-most-advanced-AI-system",
+      "viewCount": null,
+      "answerCount": null,
+      "followCount": null,
+      "askedAt": "2026-03-20T12:00:00.000Z",
+      "topics": ["Artificial Intelligence", "Machine Learning"],
+      "author": "John Doe",
+      "description": "A brief excerpt of the question...",
+      "source": "rss"
+    }
+  ],
+  "scrapedAt": "2026-03-23T00:00:00.000Z"
+}
+```
+
+Note: `viewCount`, `answerCount`, `followCount` are only available via browser strategy (not RSS).
+
+## Error Codes
+
+| Code | Description |
+|------|-------------|
+| `CF_BLOCKED` | Cloudflare managed challenge — needs residential proxy |
+| `TOPIC_NOT_FOUND` | Topic slug doesn't exist on Quora |
+| `MISSING_ARG` | No topic provided |
+
+## Environment
 
 | Variable | Description |
 |----------|-------------|
-| `SOCKS5_PROXY` | SOCKS5 proxy `host:port` for residential IP routing |
+| `SOCKS5_PROXY` | **Required** to bypass Cloudflare. E.g. `proxy.brightdata.com:22225` |
 
-## Examples
+## Proxy Guidance
+
+Quora uses Cloudflare **managed challenge** which requires:
+- **Residential IP** (not datacenter/VPS)
+- **US or EU geolocation** preferred
+- Browser fingerprint that passes CF bot score
+
+Recommended services: **Bright Data**, **Oxylabs**, **Smartproxy**
 
 ```bash
-node scripts/quora-topic.mjs "Artificial Intelligence" --max 10
-node scripts/quora-topic.mjs Python --max 5
-node scripts/quora-topic.mjs "Machine Learning" --max 20
-SOCKS5_PROXY=127.0.0.1:11090 node scripts/quora-topic.mjs "AI" --max 20
+# Example with Bright Data residential proxy
+SOCKS5_PROXY=brd-customer-XXX-zone-residential:22225@brd.superproxy.io:22225 \
+  node quora-topic.mjs "Artificial-Intelligence" --max 20
 ```
-
-## Output Schema
-
-```json
-{
-  "topic": "Artificial-Intelligence",
-  "topicUrl": "https://www.quora.com/topic/Artificial-Intelligence",
-  "questions": [
-    {
-      "questionId": "What-is-artificial-intelligence",
-      "title": "What is artificial intelligence?",
-      "url": "https://www.quora.com/What-is-artificial-intelligence",
-      "viewCount": "1.2M",
-      "answerCount": 847,
-      "askedAt": "2014-03-15T00:00:00.000Z"
-    }
-  ],
-  "total": 20,
-  "source": "rss",
-  "blocked": false
-}
-```
-
-## Blocked Response
-
-When Cloudflare blocks all access:
-
-```json
-{
-  "topic": "Artificial-Intelligence",
-  "topicUrl": "https://www.quora.com/topic/Artificial-Intelligence",
-  "questions": [],
-  "total": 0,
-  "source": null,
-  "blocked": true,
-  "blockReason": "Cloudflare Managed Challenge (cType: managed)",
-  "blockDetails": "Set SOCKS5_PROXY=host:port env var with a residential proxy to bypass Cloudflare.",
-  "proxyInUse": null,
-  "retryWith": "SOCKS5_PROXY=<residential-proxy-host:port> node quora-topic.mjs \"Artificial Intelligence\" --max 20"
-}
-```
-
-## Extraction Strategy
-
-1. **RSS feed** — `https://www.quora.com/topic/<Topic>/rss` (fastest, when accessible)
-2. **Camoufox browser** — headless Firefox with fingerprinting + SOCKS5 proxy routing
-3. **DOM extraction** — `a[href]` links matching question slug pattern, upvote counts from nearby text

@@ -661,12 +661,18 @@ export async function createQuoraContext(browser) {
 
 /**
  * Check if the page is blocked by Cloudflare.
+ * Covers: managed challenge, turnstile, JS challenge, browser verification.
  */
 export function isCloudflarePage(html) {
   return html.includes('Just a moment') ||
     html.includes('cf-browser-verification') ||
     html.includes('Enable JavaScript and cookies to continue') ||
-    html.includes('_cf_chl_opt');
+    html.includes('_cf_chl_opt') ||
+    html.includes('cf-turnstile-response') ||
+    html.includes('challenge-platform') ||
+    html.includes('Performing security verification') ||
+    html.includes('cType: \'managed\'') ||
+    (html.includes('cloudflare') && html.includes('Verification successful'));
 }
 
 /**
