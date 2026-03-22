@@ -1,0 +1,8 @@
+{
+  "name": "@agent-browser-skills/camoufox",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "playwright-core": "^1.51.0"
+  }
+}
