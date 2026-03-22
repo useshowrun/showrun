@@ -98,7 +98,7 @@ cd google-maps/node_modules/better-sqlite3
 | 42 | Craigslist Scraper | craigslist.org | ⏳ TODO | Local classifieds — listings by city+category, title/price/location/description/images |
 | 43 | Realtor.com Scraper | realtor.com | ⏳ TODO | US real estate listings — search by location, property details, price, beds/baths |
 | 44 | G2 Scraper | g2.com | ⏳ TODO | Software reviews — product search, ratings, reviews, categories, pricing info |
-| 45 | Apple App Store Scraper | apps.apple.com | ⏳ TODO | iOS app metadata + reviews — name, rating, reviews, version, category, price |
+| 45 | Apple App Store Scraper | apps.apple.com | ✅ DONE | iOS app metadata + reviews — iTunes API (lookup + search) + reviews RSS JSON. Pure HTTP, no auth. |
 | 46 | Google Play Store Scraper | play.google.com | ⏳ TODO | Android app metadata + reviews — name, rating, installs, reviews, category |
 | 47 | Capterra Scraper | capterra.com | ⏳ TODO | B2B software reviews — product search, ratings, reviews, pricing, features |
 | 48 | GitHub Scraper | github.com | ⏳ TODO | Repos (stars, forks, issues, topics, README), user profiles, search |
@@ -1447,3 +1447,55 @@ The Googlebot UA trick does NOT bypass Kasada on realtor.com. Needs residential 
 - Both Austin TX and San Francisco CA return 200 with Kasada challenge page (~964-973KB)
 - Code is ready for residential proxy — just set `SOCKS5_PROXY=host:port` env var
 - `checkBotBlock()` function inlined directly in scripts (not in utils) — cleaner, no shared state needed
+
+---
+
+### Apple App Store Scraper — ✅ DONE (2026-03-22)
+
+**Skills:**
+- `app-store-search` — search for iOS apps by keyword
+- `app-store-app` — get full app details + reviews by app ID or URL
+
+**Architecture:**
+- Pure HTTP — no browser, no auth, no bot protection
+- Data sources:
+  - iTunes Search API: `https://itunes.apple.com/search?term=<query>&entity=software&country=<cc>&limit=<N>`
+  - iTunes Lookup API: `https://itunes.apple.com/lookup?id=<appId>&country=<cc>`
+  - Reviews RSS (JSON): `https://itunes.apple.com/<cc>/rss/customerreviews/id=<appId>/page=<n>/sortBy=mostRecent/json`
+- Zero external dependencies — built-in `https` module only
+- No CSS class selectors — all data from structured iTunes API JSON and reviews RSS JSON
+
+**Input flexibility:**
+- `app-store-app` accepts: numeric ID (`618783545`), full URL (`https://apps.apple.com/us/app/slack/id618783545`), URL without protocol, `id<digits>` prefix
+
+**Data extracted:**
+- Search: id, name, bundleId, developer, rating, ratingCount, price, currency, genre, iconUrl, url
+- App detail: all of the above + description, currentVersionRating, inAppPurchases, genres, artworkUrl, screenshotUrls, ipadScreenshotUrls, minimumOsVersion, fileSizeBytes, version, releaseNotes, releaseDate, currentVersionReleaseDate, contentAdvisoryRating, languagesISO2A, reviews[]
+- Reviews: id, rating, title, body, author, version, date, helpful
+
+**Test results (2026-03-22):**
+- `app-store-search slack --max 5` → 5 apps including Slack ★4.08, Instagram, Teams ✅
+- `app-store-search "photo editor" --max 5` → Lightroom, Picsart, etc. ✅
+- `app-store-search "fitness tracker" --max 5` → MyFitnessPal, Strong, etc. ✅
+- `app-store-app 618783545 --max-reviews 10` → Slack full metadata, 10 reviews ✅
+- `app-store-app 389801252 --max-reviews 10` → Instagram, 28.8M ratings ✅
+- `app-store-app https://apps.apple.com/us/app/whatsapp-messenger/id310633997 --max-reviews 10` → WhatsApp from URL ✅
+- `app-store-app 999999999999` → clean `NOT_FOUND` error ✅
+- `app-store-search slack --country tr` → Slack in TRY currency ✅
+- `app-store-app 618783545 --country tr --max-reviews 5` → Turkish reviews, TRY pricing, different rating count ✅
+
+**Files:**
+- `apple-app-store/SKILL.md` ✅
+- `apple-app-store/package.json` ✅
+- `apple-app-store/lib/utils.mjs` ✅ (HTTP fetch, ID extraction, app normalization, reviews fetcher)
+- `apple-app-store/app-store-search/SKILL.md` ✅
+- `apple-app-store/app-store-search/scripts/app-store-search.mjs` ✅
+- `apple-app-store/app-store-app/SKILL.md` ✅
+- `apple-app-store/app-store-app/scripts/app-store-app.mjs` ✅
+
+**Session log — 2026-03-22 (scraper-skill-builder-appstore)**
+- iTunes API is fast, reliable, and completely open — ideal pure-HTTP scraper
+- Reviews RSS JSON feed: 50 reviews/page, pages 1–10 (max 500), stops early if page < 50 entries
+- Country code affects: pricing, availability, review language, and rating counts
+- `wrapperType: "software"` / `kind: "software"` distinguishes apps from songs/albums in lookup results
+- `averageUserRatingForCurrentVersion` is distinct from overall `averageUserRating` — both captured

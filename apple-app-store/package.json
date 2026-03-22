@@ -1,0 +1,10 @@
+{
+  "name": "apple-app-store-agent-skills",
+  "version": "1.0.0",
+  "type": "module",
+  "private": true,
+  "description": "Agent browser skills for scraping iOS app metadata and reviews from the Apple App Store",
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}
