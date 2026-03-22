@@ -7,12 +7,18 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 
 | # | Service | Target Site | Notes |
 |---|---------|-------------|-------|
-| 50 | Goodreads Scraper | goodreads.com | Book metadata + reviews — title, author, rating, genres |
+| 51 | Medium Scraper | medium.com | Blog posts by tag/author — title, content, claps, published date |
 | 51 | Medium Scraper | medium.com | Blog posts by tag/author — title, content, claps, published date |
 | 52 | Quora Scraper | quora.com | Q&A content — questions by topic, answers, upvotes |
 | 53 | Threads Scraper | threads.net | Profile, posts, replies, likes |
 | 54 | Rightmove Scraper | rightmove.co.uk | UK real estate — property search, listings, details |
 | 55 | Zoopla Scraper | zoopla.co.uk | UK real estate — property search, price history |
+
+## ✅ Done (recent)
+
+| # | Service | Skills |
+|---|---------|--------|
+| 50 | Goodreads Scraper | goodreads-search, goodreads-book |
 
 ## ❌ Blocked (need residential proxy or auth cookies)
 

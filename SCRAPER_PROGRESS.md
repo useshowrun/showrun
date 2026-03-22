@@ -1706,3 +1706,75 @@ All API endpoints (`/api/v2/search/gigs`, `/api/v2/gigs/`) also blocked.
 - Clean BOT_PROTECTION_BLOCKED error code with proxy guidance
 - Edge cases: invalid path → INVALID_INPUT, missing args → MISSING_ARG, all clean JSON
 - Code ready — set SOCKS5_PROXY=host:port to use residential proxy and retry
+
+---
+
+## Session #50 — Goodreads Scraper (2026-03-22, scraper-skill-builder-goodreads)
+
+**Status:** ✅ DONE
+
+**Skills built:**
+- `goodreads/goodreads-search/scripts/goodreads-search.mjs` — Search books by title/author/ISBN
+- `goodreads/goodreads-book/scripts/goodreads-book.mjs` — Full book details + reviews
+- `goodreads/lib/utils.mjs` — Shared utilities (HTTP fetch, parsers, normalizers)
+- `goodreads/package.json` — Dependencies (camoufox-js)
+- `goodreads/goodreads-search/SKILL.md` — Documentation
+- `goodreads/goodreads-book/SKILL.md` — Documentation
+
+**Research findings:**
+
+Goodreads (Amazon-owned) does NOT aggressively bot-block:
+- Book pages (`/book/show/<id>`) return HTTP 200 with full data to standard Firefox UA
+- Search pages (`/search?q=<query>&search_type=books`) also return HTTP 200 with microdata
+- **No browser/camoufox needed for basic scraping** — direct HTTPS `https` module works
+
+**Data extraction strategy:**
+
+1. **Book pages** — Next.js SSR with Apollo GraphQL state embedded in `<script id="__NEXT_DATA__">`
+   - Apollo cache contains `Book:*`, `Work:*`, `Contributor:*`, `Series:*`, `Review:*` entries
+   - Book entry: title, description, imageUrl, bookGenres, bookSeries, details (isbn, isbn13, asin, format, numPages, publisher, language, publicationTime), primaryContributorEdge, secondaryContributorEdges
+   - Work entry: originalTitle, stats (averageRating, ratingsCount, ratingsCountDist, textReviewsCount), choiceAwards, details (awardsWon, places, characters)
+   - **30 reviews pre-embedded** in Apollo state — full reviewer data, text, rating, likes, shelves
+   - Multiple Book entries may exist (redirect editions) — pick the most complete one (highest key count + has title + description)
+   - JSON-LD `Book` schema available as fallback for basic metadata
+
+2. **Search pages** — Legacy Rails HTML with `schema.org/Book` microdata
+   - 10 results per page, paginated via `?page=N`
+   - Pattern: `<tr itemscope itemtype="http://schema.org/Book">` wraps each result
+   - Rating text format: `4.25 avg rating &mdash; 1,234,567 ratings` (HTML entity, not literal dash)
+   - Pagination info: `showing X-Y of Z books`
+
+3. **Extended reviews (>30)** — camoufox browser + XHR intercept
+   - Goodreads uses Apollo GraphQL for lazy-loaded reviews
+   - XHR intercept captures responses from `/graphql` or `/query` endpoints
+   - 30 embedded reviews sufficient for most use cases
+
+**Edge cases handled:**
+- Invalid book ID (HTTP 200 with empty Apollo state) → PARSE_ERROR
+- Book not found (rare 404) → NOT_FOUND  
+- Empty search → returns `{ books: [] }`
+- Legacy dotted URL format (3.Harry_Potter_...) → follows redirect, picks full Book entry
+- Multiple Book entries in Apollo state → scored by completeness (title+description+key count)
+- HTML entities in titles (`&apos;`, `&amp;`) → decoded via `decodeHtmlEntities()`
+
+**Test results:**
+
+| Test | Status |
+|------|--------|
+| goodreads-search "dune" --max 5 | ✅ 5 books with ratings, authors, covers |
+| goodreads-search "harry potter" --max 3 | ✅ 3 HP books, 11,911 total results |
+| goodreads-search "clean code" --max 3 | ✅ Robert C. Martin books found |
+| goodreads-search nonexistent query | ✅ Empty array, totalResults: 0 |
+| goodreads-book 44767458-dune --max-reviews 5 | ✅ Full Dune data, 5 reviews |
+| goodreads-book 3.Harry_Potter... --max-reviews 2 | ✅ HP data via redirect, originalTitle, 30 awards |
+| goodreads-book 61431922-fourth-wing --max-reviews 3 | ✅ Fourth Wing data, rating dist, awards |
+| goodreads-book 999999999999 (invalid) | ✅ Clean PARSE_ERROR JSON |
+
+**Key discoveries:**
+- `ratingsCountDist` in Apollo Work.stats is 0-indexed array: [1star, 2star, 3star, 4star, 5star]
+- `publicationTime` in Book.details is milliseconds timestamp (not seconds)
+- Goodreads `isbn` field in Apollo is the ISBN-10; JSON-LD `isbn` is 13-digit ISBN-13
+- Rating text in search HTML uses `&mdash;` (not literal em dash) — regex must match HTML entity
+- For redirect pages, two Book entries exist: one sparse (legacyId of modern edition), one full (legacyId of requested edition)
+- Author `legacyId` in Contributor entry needs to be extracted separately from the `id` (which is an Amazon KCA URN)
+- Work.details.publicationTime = original publication date; Book.details.publicationTime = this edition's date
