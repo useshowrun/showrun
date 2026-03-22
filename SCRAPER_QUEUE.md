@@ -7,7 +7,6 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 
 | # | Service | Target Site | Notes |
 |---|---------|-------------|-------|
-| 44 | G2 Scraper | g2.com | Software reviews — product search, ratings, reviews, pricing |
 | 45 | Apple App Store Scraper | apps.apple.com | iOS app metadata + reviews |
 | 46 | Google Play Store Scraper | play.google.com | Android app metadata + reviews |
 | 47 | Capterra Scraper | capterra.com | B2B software reviews — ratings, reviews, pricing, features |
@@ -28,6 +27,7 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 | 18 | Indeed | Cloudflare managed challenge from Turkish IP |
 | 19 | Zillow | PerimeterX from Turkish IP |
 | 26 | LinkedIn Posts | Requires LI_COOKIES |
+| 44 | G2 Scraper | DataDome bot protection on all pages from datacenter/Turkish IP. Visual CAPTCHA on product pages. Code ready — set SOCKS5_PROXY=host:port. |
 | 27 | Amazon Reviews | Requires AMZ_COOKIES |
 | 35 | Upwork | Cloudflare Turnstile on all search URLs |
 | 38 | LinkedIn Ads | Protechts.net bot detection |
