@@ -7,7 +7,6 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 
 | # | Service | Target Site | Notes |
 |---|---------|-------------|-------|
-| 42 | Craigslist Scraper | craigslist.org | Listings by city+category, title/price/location/description/images |
 | 43 | Realtor.com Scraper | realtor.com | US real estate — search by location, price, beds/baths |
 | 44 | G2 Scraper | g2.com | Software reviews — product search, ratings, reviews, pricing |
 | 45 | Apple App Store Scraper | apps.apple.com | iOS app metadata + reviews |
@@ -34,9 +33,10 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 | 35 | Upwork | Cloudflare Turnstile on all search URLs |
 | 38 | LinkedIn Ads | Protechts.net bot detection |
 
-## ✅ Done (34 skills)
+## ✅ Done (36 skills)
 
 Google Maps, Instagram, TikTok, Website Crawler, Facebook Posts/Comments/Pages/Ad Library/Marketplace,
 YouTube (channel/video/search/comments/transcript), Twitter/X, Amazon (product/search/bestsellers),
 LinkedIn (profile/company/jobs), Booking.com, Yelp, Tripadvisor, Airbnb, Trustpilot, Pinterest,
-Glassdoor, Etsy, Shopify, Telegram, Product Hunt, Hacker News, Substack, Google Search, Reddit (code ready, blocked)
+Glassdoor, Etsy, Shopify, Telegram, Product Hunt, Hacker News, Substack, Google Search, Reddit (code ready, blocked),
+**Craigslist (search + listing detail)**

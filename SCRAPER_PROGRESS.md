@@ -1352,3 +1352,53 @@ Built 1 skill: `shopify-products`, using Shopify's public JSON API.
 - `product-hunt/producthunt-daily/scripts/producthunt-daily.mjs` ✅
 - `product-hunt/producthunt-search/SKILL.md` ✅
 - `product-hunt/producthunt-search/scripts/producthunt-search.mjs` ✅
+
+### Craigslist Scraper — ✅ DONE (2026-03-22)
+
+**Skills:**
+- `craigslist-search` — search listings by city + category + optional keyword/price range
+- `craigslist-listing` — get full details for a single listing URL
+
+**Architecture:**
+- Pure HTTP requests — no browser needed (Craigslist is not heavily bot-protected)
+- gzip decompression handled via Node.js `zlib` module
+- Two data sources per search page:
+  1. `<li>` anchor tags: title, price, location, listing URL (extracted by regex)
+  2. `<script id="ld_searchpage_results">` LD+JSON: images, lat/lng (indexed by title for accurate matching)
+  3. Merged by title-matching (positional alignment is unreliable — some items missing from LD+JSON)
+- For listing detail: single LD+JSON Product block + attrgroup div parsing
+
+**Key insights:**
+- Craigslist HTML changed — new layout uses `<ul>` with `<li>` items containing `<div class="title">` and `<div class="price">`, not the old `.result-row` pattern
+- LD+JSON (`ld_searchpage_results`) has up to 328 items but may omit some listings — match by title, not by position
+- Attribute parsing requires scanning full HTML (not nested div regex) because outer `<div class="attrgroup">` regex terminates at first inner `</div>`
+- Attribute types: labeled (`labl`/`valu` spans), unlabeled (query param key from link href), important summary spans
+- `postedAt` extracted from `<time datetime="...">` elements (1st = posted, last = updated if different)
+- Images upscaled from 600x450 to 1200x900 by replacing size suffix in URL
+
+**Test results (2026-03-22):**
+- `sfbay sss --query bicycle --max 5`: 5 listings with title/price/location/images/lat-lng ✅
+- `newyork hhh --query apartment --max 3`: 3 NYC housing listings with prices ✅
+- `chicago jjj --query developer --max 3`: 3 job listings (price=0, no photos as expected) ✅
+- Listing detail (bicycle): title, price, location, description, 2 images, bicycle_type/condition/make/model attrs ✅
+- Listing detail (housing): title, price, description, 4 images, housing_type/laundry/parking/summary attrs ✅
+- Listing detail (job): title, description, compensation/employment_type/job_title attrs ✅
+- Edge case (invalid city): `FETCH_FAILED` with ENOTFOUND ✅
+- Edge case (empty results): `{"totalFound": 0, "listings": []}` ✅
+- Edge case (expired/missing listing): `{"error": true, "code": "NOT_FOUND"}` on 404 ✅
+
+**Files:**
+- `craigslist/SKILL.md` ✅
+- `craigslist/package.json` ✅
+- `craigslist/lib/utils.mjs` ✅
+- `craigslist/craigslist-search/SKILL.md` ✅
+- `craigslist/craigslist-search/scripts/craigslist-search.mjs` ✅ (pure HTTP, no browser)
+- `craigslist/craigslist-listing/SKILL.md` ✅
+- `craigslist/craigslist-listing/scripts/craigslist-listing.mjs` ✅ (pure HTTP, no browser)
+
+**Session log entry — 2026-03-22 (scraper-skill-builder-craigslist)**
+- Craigslist serves plain HTML (gzip) — no Cloudflare, no JS-required rendering
+- JSON feed endpoint (`.json` suffix) returns 404 — HTML is the only data source
+- Embedded LD+JSON structured data is the key: Product schema with offers, geo, images
+- attrgroup parsing: must use full-HTML scan, not nested div regex (terminates early)
+- Title-match strategy avoids position misalignment between LD+JSON and HTML listing items
