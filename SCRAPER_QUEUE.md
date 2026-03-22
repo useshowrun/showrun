@@ -9,7 +9,6 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 |---|---------|-------------|-------|
 
 
-| 53 | Threads Scraper | threads.net | Profile, posts, replies, likes |
 | 54 | Rightmove Scraper | rightmove.co.uk | UK real estate — property search, listings, details |
 | 55 | Zoopla Scraper | zoopla.co.uk | UK real estate — property search, price history |
 
@@ -22,6 +21,7 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 ## ❌ Blocked (need residential proxy or auth cookies)
 
 | # | Service | Reason |
+| 53 | Threads | Requires authenticated session cookie — redirects all requests to login. Set THREADS_COOKIE env var. |
 | 52 | Quora | Cloudflare managed challenge on ALL endpoints incl. RSS feeds. 8 bypass strategies tried (curl, Node https, Googlebot UA, camoufox headless/non-headless, Playwright). Needs residential proxy. Code ready — set SOCKS5_PROXY=host:port. |
 |---|---------|--------|
 | 11 | Reddit | IP-blocked by Cloudflare — needs residential proxy |
