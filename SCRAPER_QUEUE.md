@@ -7,8 +7,8 @@ Full history and session logs are in SCRAPER_PROGRESS.md.
 
 | # | Service | Target Site | Notes |
 |---|---------|-------------|-------|
-| 51 | Medium Scraper | medium.com | Blog posts by tag/author — title, content, claps, published date |
-| 51 | Medium Scraper | medium.com | Blog posts by tag/author — title, content, claps, published date |
+
+
 | 52 | Quora Scraper | quora.com | Q&A content — questions by topic, answers, upvotes |
 | 53 | Threads Scraper | threads.net | Profile, posts, replies, likes |
 | 54 | Rightmove Scraper | rightmove.co.uk | UK real estate — property search, listings, details |
