@@ -1,85 +1,73 @@
 # ShowRun Skills
 
-Terminal-based automation skills for data platforms. Each skill provides CLI commands that interact with platform APIs directly — no browser needed after initial auth.
+Terminal automation skills for web use. Each skill provides CLI commands that interact with platform APIs directly -- no browser needed for most after initial auth.
 
 ## Prerequisites
 
 - Node.js 22+
-- Chrome with remote debugging (only for one-time auth per platform)
 
-## Getting Started
+## Setup
 
-### 1. Login
-
-```bash
-node showrun.mjs login you@example.com
-```
-
-You'll receive an email with a magic link and a 6-digit code. Paste either one when prompted:
-
-```
-Paste magic link or OTP code: 482910
-```
-
-Your API key is saved to `${XDG_CONFIG_HOME:-$HOME/.config}/showrun/config.json`.
-
-**Headless (agent with email access):** The agent can extract the OTP or magic link token from the email and pass it non-interactively:
+Check if already set up:
 
 ```bash
-node showrun.mjs verify you@example.com 482910
+cat "${XDG_CONFIG_HOME:-$HOME/.config}/showrun/config.json" 2>/dev/null
 ```
 
-### 2. Sync skills
+If the file exists and contains `api_key`, skip to **Using a Skill**.
+
+Otherwise, one-time setup -- download the helper script and authenticate:
+
+```bash
+curl -sO https://showrun.co/showrun.mjs
+node showrun.mjs login your@email.com
+```
+
+Paste the OTP code from your email when prompted, then sync all skills:
 
 ```bash
 node showrun.mjs sync
 ```
 
-Downloads all available skills to the local `skills/` directory.
+Skills are downloaded to the local `skills/` directory next to `showrun.mjs`.
 
-### 3. Use a skill
+## Platforms
 
-Read the skill's `SKILL.md` for setup and usage instructions, then run its script:
-
-```bash
-cat skills/linkedin/legacy/profile/SKILL.md
-node skills/linkedin/legacy/profile/scripts/linkedin-profile.mjs view johndoe
+```
+skills/
+  linkedin/legacy/      profiles, companies, jobs, messaging, posts
+  linkedin/salesnav/    lead search, account search, lists, messaging
+  crunchbase/           companies, people, investors, funding rounds, events
+  yahoofinance/         quotes, financials, screener, options, markets, sectors
+  similarweb/           website analysis, keywords, backlinks, market research
+  seekingalpha/         symbol data, news, analysis, screener, portfolio
 ```
 
-## Navigating Skills
+## Using a Skill
 
-Skills are organized as **Platform / App / Skill**:
+Browse platforms, read a skill's docs, run its script:
 
 ```bash
-ls skills/                              # list platforms
-ls skills/linkedin/                     # list apps (legacy, salesnav)
-ls skills/linkedin/salesnav/            # list skills in an app
-ls skills/crunchbase/                   # flat platforms list skills directly
-```
+ls skills/                                    # list platforms
+ls skills/crunchbase/                         # list skills
+cat skills/crunchbase/companies/SKILL.md      # read usage docs
 
-Platforms with multiple products (like LinkedIn) have sub-apps. Others list skills directly under the platform folder.
+node skills/crunchbase/companies/scripts/crunchbase-companies.mjs search "AI startups"
+```
 
 Each skill is self-contained:
+
 ```
 skills/<platform>/<skill>/
-├── SKILL.md                # usage docs, prerequisites, examples
-└── scripts/<name>.mjs      # the executable script
+  SKILL.md              usage docs, prerequisites, examples
+  scripts/<name>.mjs    the executable script
 ```
 
-## Checking for Updates
+## Updating
+
+Check for and pull updates periodically:
 
 ```bash
-node showrun.mjs check
-```
-
-Shows new, updated, and removed skills since your last sync.
-
-## Commands Reference
-
-```
-showrun.mjs login <email>           Request access (sends magic link + OTP)
-showrun.mjs verify <email> <code>   Verify with OTP code or magic link token
-showrun.mjs sync [path]             Download/update skills (optionally filter by platform or skill)
-showrun.mjs check                   Show available updates
-showrun.mjs whoami                  Show current user info
+node showrun.mjs check    # see what changed
+node showrun.mjs sync     # pull updates
 ```
