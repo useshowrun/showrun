@@ -127,16 +127,19 @@ async function hnWebFetch(path, auth) {
     headers: { 'cookie': auth.cookie, 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' },
     signal: AbortSignal.timeout(15000),
   };
-  try {
-    const resp = await fetch(url, opts);
-    return { status: resp.status, ok: resp.ok, text: await resp.text() };
-  } catch (e) {
-    if (e.name === 'TimeoutError' || e.cause?.code === 'ETIMEDOUT') {
-      // Retry once on timeout (HN can be slow)
-      const resp = await fetch(url, { ...opts, signal: AbortSignal.timeout(20000) });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const timeout = attempt === 0 ? 15000 : 25000;
+      const resp = await fetch(url, { ...opts, signal: AbortSignal.timeout(timeout) });
       return { status: resp.status, ok: resp.ok, text: await resp.text() };
+    } catch (e) {
+      if (attempt === 0 && (e.name === 'TimeoutError' || e.cause?.code === 'ETIMEDOUT')) {
+        console.error('HN timed out, retrying...');
+        continue;
+      }
+      console.error(`HN request failed: ${e.cause?.code || e.message}`);
+      return { status: 0, ok: false, text: '' };
     }
-    throw e;
   }
 }
 
@@ -213,7 +216,7 @@ async function fetchFeed(label, endpoint, limit, offset) {
   for (let i = 0; i < sliced.length; i += 10) {
     const batch = sliced.slice(i, i + 10);
     const results = await Promise.all(batch.map(id => firebaseFetch(`/item/${id}.json`)));
-    items.push(...results.filter(r => r.ok).map(r => r.data));
+    items.push(...results.filter(r => r.ok && r.data).map(r => r.data));
   }
 
   return { items, total: ids.length, offset, limit };
@@ -281,6 +284,7 @@ function displayFeed(label, result) {
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
+    if (!item) continue;
     const rank = offset + i + 1;
     const title = item.title || '(untitled)';
     const url = item.url || '(text post)';

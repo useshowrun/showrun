@@ -125,15 +125,19 @@ async function hnWebFetch(path, auth) {
     headers: { 'cookie': auth.cookie, 'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36' },
     signal: AbortSignal.timeout(15000),
   };
-  try {
-    const resp = await fetch(url, opts);
-    return { status: resp.status, ok: resp.ok, data: await resp.text() };
-  } catch (e) {
-    if (e.name === 'TimeoutError' || e.cause?.code === 'ETIMEDOUT') {
-      const resp = await fetch(url, { ...opts, signal: AbortSignal.timeout(20000) });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const timeout = attempt === 0 ? 15000 : 25000;
+      const resp = await fetch(url, { ...opts, signal: AbortSignal.timeout(timeout) });
       return { status: resp.status, ok: resp.ok, data: await resp.text() };
+    } catch (e) {
+      if (attempt === 0 && (e.name === 'TimeoutError' || e.cause?.code === 'ETIMEDOUT')) {
+        console.error('HN timed out, retrying...');
+        continue;
+      }
+      console.error(`HN request failed: ${e.cause?.code || e.message}`);
+      return { status: 0, ok: false, data: '' };
     }
-    throw e;
   }
 }
 
@@ -384,6 +388,7 @@ function displayItems(items, label) {
 const [, , command, ...args] = process.argv;
 const { flags, positional } = parseFlags(args);
 
+try {
 switch (command) {
   case 'auth': {
     await doAuth();
@@ -517,4 +522,8 @@ Authenticated commands (run 'auth' first):
 Data: ${DATA_DIR}/
   session.json     Auth cookies
   cache/           Cached API responses`);
+}
+} catch (err) {
+  console.error(`Error: ${err.message}`);
+  process.exit(1);
 }
