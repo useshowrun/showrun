@@ -98,6 +98,11 @@ function prompt(question) {
   });
 }
 
+function lockVersion(entry) {
+  if (!entry) return null;
+  return typeof entry === 'string' ? entry : entry.version;
+}
+
 // --- Auto-update ---
 
 async function autoUpdate() {
@@ -120,7 +125,7 @@ async function autoUpdate() {
     const localPaths = new Set(Object.keys(lock));
 
     const hasUpdates =
-      [...remotePaths].some((p) => !localPaths.has(p) || lock[p] !== remoteSkills[p]);
+      [...remotePaths].some((p) => !localPaths.has(p) || lockVersion(lock[p]) !== remoteSkills[p]);
 
     if (hasUpdates) {
       console.log('Updates available, syncing...');
@@ -207,7 +212,7 @@ async function cmdCheck() {
   const added = [...remotePaths].filter((p) => !localPaths.has(p));
   const removed = [...localPaths].filter((p) => !remotePaths.has(p));
   const updated = [...remotePaths].filter(
-    (p) => localPaths.has(p) && lock[p] !== remoteSkills[p]
+    (p) => localPaths.has(p) && lockVersion(lock[p]) !== remoteSkills[p]
   );
 
   if (!added.length && !removed.length && !updated.length) {
@@ -241,9 +246,14 @@ async function cmdSync(filter, silent = false) {
   let skipped = 0;
 
   for (const skillPath of paths) {
-    if (!filter && lock[skillPath] === remoteSkills[skillPath]) {
-      // Verify SKILL.md actually exists before skipping
-      if (existsSync(join(skillsDir, skillPath, 'SKILL.md'))) {
+    const lockEntry = lock[skillPath];
+    if (!filter && lockEntry && lockVersion(lockEntry) === remoteSkills[skillPath]) {
+      // Verify all expected files actually exist on disk
+      const hasSkillMd = existsSync(join(skillsDir, skillPath, 'SKILL.md'));
+      const expectedScript = typeof lockEntry === 'object' ? lockEntry.script_name : null;
+      const hasScript = !expectedScript ||
+        existsSync(join(skillsDir, skillPath, 'scripts', expectedScript));
+      if (hasSkillMd && hasScript) {
         skipped++;
         continue;
       }
@@ -270,7 +280,7 @@ async function cmdSync(filter, silent = false) {
       }
     }
 
-    lock[skillPath] = remoteSkills[skillPath];
+    lock[skillPath] = { version: remoteSkills[skillPath], script_name: skill.script_name || null };
     synced++;
   }
 
