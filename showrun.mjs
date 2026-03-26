@@ -5,6 +5,8 @@ import { join, dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 
 const API_URL = 'https://api.showrun.co';
+const SHOWRUN_URL = 'https://showrun.co/showrun.mjs';
+const VERSION = 2;
 const DEFAULT_CHECK_INTERVAL_HOURS = 24;
 
 // --- Config ---
@@ -103,6 +105,27 @@ function lockVersion(entry) {
   return typeof entry === 'string' ? entry : entry.version;
 }
 
+// --- Self-update ---
+
+async function selfUpdate() {
+  try {
+    const res = await fetch(SHOWRUN_URL);
+    if (!res.ok) return;
+    const remote = await res.text();
+    const match = remote.match(/^const VERSION = (\d+);/m);
+    if (!match) return;
+    const remoteVersion = parseInt(match[1], 10);
+    if (remoteVersion <= VERSION) return;
+
+    const selfPath = new URL(import.meta.url).pathname;
+    writeFileSync(selfPath, remote);
+    console.log(`showrun.mjs updated (v${VERSION} → v${remoteVersion}). Please re-run your command.`);
+    process.exit(0);
+  } catch {
+    // Silent failure — don't block the user's command
+  }
+}
+
 // --- Auto-update ---
 
 async function autoUpdate() {
@@ -116,6 +139,8 @@ async function autoUpdate() {
   const now = new Date();
 
   if (lastCheck && (now - lastCheck) < interval * 60 * 60 * 1000) return;
+
+  await selfUpdate();
 
   try {
     const lock = loadLock();
