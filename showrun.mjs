@@ -3,10 +3,10 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { createInterface } from 'node:readline';
+import { createHash } from 'node:crypto';
 
 const API_URL = 'https://api.showrun.co';
 const SHOWRUN_URL = 'https://showrun.co/showrun.mjs';
-const VERSION = 2;
 const DEFAULT_CHECK_INTERVAL_HOURS = 24;
 
 // --- Config ---
@@ -109,17 +109,19 @@ function lockVersion(entry) {
 
 async function selfUpdate() {
   try {
+    const selfPath = new URL(import.meta.url).pathname;
+    const localContent = readFileSync(selfPath, 'utf8');
+    const localHash = createHash('sha256').update(localContent).digest('hex');
+
     const res = await fetch(SHOWRUN_URL);
     if (!res.ok) return;
-    const remote = await res.text();
-    const match = remote.match(/^const VERSION = (\d+);/m);
-    if (!match) return;
-    const remoteVersion = parseInt(match[1], 10);
-    if (remoteVersion <= VERSION) return;
+    const remoteContent = await res.text();
+    const remoteHash = createHash('sha256').update(remoteContent).digest('hex');
 
-    const selfPath = new URL(import.meta.url).pathname;
-    writeFileSync(selfPath, remote);
-    console.log(`showrun.mjs updated (v${VERSION} → v${remoteVersion}). Please re-run your command.`);
+    if (localHash === remoteHash) return;
+
+    writeFileSync(selfPath, remoteContent);
+    console.log('showrun.mjs updated. Please re-run your command.');
     process.exit(0);
   } catch {
     // Silent failure — don't block the user's command
