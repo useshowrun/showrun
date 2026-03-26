@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 
@@ -242,8 +242,15 @@ async function cmdSync(filter, silent = false) {
 
   for (const skillPath of paths) {
     if (!filter && lock[skillPath] === remoteSkills[skillPath]) {
-      skipped++;
-      continue;
+      // Verify files actually exist before skipping
+      const localDir = join(skillsDir, skillPath);
+      const hasSkillMd = existsSync(join(localDir, 'SKILL.md'));
+      const hasScript = existsSync(join(localDir, 'scripts')) &&
+        readdirSync(join(localDir, 'scripts')).some((f) => f.endsWith('.mjs'));
+      if (hasSkillMd && hasScript) {
+        skipped++;
+        continue;
+      }
     }
 
     const skill = await apiAuth(`/skills/${skillPath}`);
