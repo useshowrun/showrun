@@ -37,6 +37,7 @@ Skills are downloaded to the local `skills/` directory next to `showrun.mjs`.
 skills/
   linkedin/legacy/      profiles, companies, jobs, messaging, posts
   linkedin/salesnav/    lead search, account search, lists, messaging
+  groundnews/           feed, interests, user
   crunchbase/           companies, people, investors, funding rounds, events
   yahoofinance/         quotes, financials, screener, options, markets, sectors
   similarweb/           website analysis, keywords, backlinks, market research
