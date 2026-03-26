@@ -89,9 +89,8 @@ async function apiAuth(path, opts = {}) {
 // --- Prompt helper ---
 
 function prompt(question) {
-  return new Promise((resolve, reject) => {
-    const rl = createInterface({ input: process.stdin, output: process.stdout });
-    rl.on('close', () => reject(new Error('Input cancelled')));
+  return new Promise((resolve) => {
+    const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: false });
     rl.question(question, (answer) => {
       rl.close();
       resolve(answer.trim());
