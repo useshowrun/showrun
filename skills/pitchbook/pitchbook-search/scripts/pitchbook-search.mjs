@@ -1,68 +1,98 @@
 #!/usr/bin/env node
 
 /**
- * Search Pitchbook for a company by domain, name, or any search term.
+ * Search Pitchbook for companies by domain, name, or any search term.
  *
  * Usage:
- *   node pitchbook-search.mjs <query>
+ *   node pitchbook-search.mjs auth                 # capture session from Chrome
+ *   node pitchbook-search.mjs search <query>        # search companies
+ *   node pitchbook-search.mjs search <query> --limit=10
  */
 
+import { resolve } from 'path';
 import {
-  loadSession,
-  isSessionValid,
+  CACHE_DIR,
+  getAuth,
+  checkCurl,
+  doCdpAuth,
   curlPost,
-  SessionExpiredError,
-  emitResult,
-  emitError,
-  log,
-} from "../../lib/utils.mjs";
+  saveJson,
+  parseFlags,
+} from '../../lib/utils.mjs';
 
 // ---------------------------------------------------------------------------
-// Parse args
+// Search
 // ---------------------------------------------------------------------------
 
-const query = process.argv[2];
-if (!query) {
-  emitError("MISSING_ARG", "Usage: node pitchbook-search.mjs <query>");
-}
-
-// ---------------------------------------------------------------------------
-// Main
-// ---------------------------------------------------------------------------
-
-function main() {
-  const session = loadSession();
-  if (!isSessionValid(session)) {
-    emitError("SESSION_EXPIRED", "No valid session. Run login/capture-headers first.");
-  }
-
-  log("Searching Pitchbook for:", query);
+function doSearch(query, limit = 5) {
+  const auth = getAuth();
+  checkCurl();
+  console.log(`Searching Pitchbook for: ${query}`);
 
   const payload = {
-    searchRequest: {
-      limit: 5,
-      offset: 0,
-      query,
-    },
-    timeZoneOffset: "+00:00",
+    searchRequest: { limit, offset: 0, query },
+    timeZoneOffset: '+00:00',
     excludeProhibitedWords: true,
   };
 
-  try {
-    const result = curlPost(
-      "https://my.pitchbook.com/web-api/general-search/search/mixed",
-      session,
-      payload,
-      "https://my.pitchbook.com/dashboard/private"
-    );
+  const result = curlPost(
+    'https://my.pitchbook.com/web-api/general-search/search/mixed',
+    auth,
+    payload,
+    'https://my.pitchbook.com/dashboard/private',
+  );
 
-    emitResult(result);
-  } catch (err) {
-    if (err instanceof SessionExpiredError) {
-      emitError("SESSION_EXPIRED", err.message);
+  const outFile = resolve(CACHE_DIR, `search-${query.replace(/[^a-zA-Z0-9.-]/g, '_')}.json`);
+  saveJson(outFile, result);
+  console.log(`Results saved to: ${outFile}`);
+
+  // Print summary
+  const items = result.items || [];
+  console.log(`\nFound ${items.length} result(s):`);
+  for (const item of items) {
+    const pr = item.value?.profileResult;
+    if (pr) {
+      console.log(`  ${pr.name || '?'} — ID: ${pr.id || '?'} (${item.matchParams?.matchType || '?'})`);
     }
-    throw err;
   }
+
+  return result;
 }
 
-main();
+// ---------------------------------------------------------------------------
+// CLI
+// ---------------------------------------------------------------------------
+
+const [,, command, ...args] = process.argv;
+const { flags, positional } = parseFlags(args);
+
+switch (command) {
+  case 'auth': {
+    const cdpUrl = flags['cdp-url'] || process.env.CHROME_CDP_URL || 'http://localhost:9222';
+    await doCdpAuth(cdpUrl);
+    break;
+  }
+  case 'search': {
+    const query = positional[0];
+    if (!query) {
+      console.error('Usage: node pitchbook-search.mjs search <query> [--limit=5]');
+      process.exit(1);
+    }
+    const limit = parseInt(flags.limit || '5', 10);
+    doSearch(query, limit);
+    break;
+  }
+  default:
+    console.log(`pitchbook-search
+
+Search Pitchbook for companies by domain, name, or keyword.
+
+Commands:
+  auth                          Capture session from Chrome via CDP
+  search <query> [--limit=5]    Search companies
+
+Examples:
+  node pitchbook-search.mjs search openai.com
+  node pitchbook-search.mjs search "Stripe Inc" --limit=10
+  node pitchbook-search.mjs search anthropic`);
+}

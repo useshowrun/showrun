@@ -4,102 +4,128 @@
  * Fetch a full Pitchbook company profile (6 endpoints).
  *
  * Usage:
- *   node pitchbook-company.mjs <companyId>
+ *   node pitchbook-company.mjs auth                          # capture session
+ *   node pitchbook-company.mjs get <companyId>                # fetch all sections
+ *   node pitchbook-company.mjs get <companyId> --sections=generalInfo,dealHistory
  */
 
+import { resolve } from 'path';
 import {
-  loadSession,
-  isSessionValid,
+  CACHE_DIR,
+  getAuth,
+  checkCurl,
+  doCdpAuth,
   curlGet,
-  SessionExpiredError,
+  saveJson,
   delay,
-  emitResult,
-  emitError,
-  log,
-} from "../../lib/utils.mjs";
-
-// ---------------------------------------------------------------------------
-// Parse args
-// ---------------------------------------------------------------------------
-
-const companyId = process.argv[2];
-if (!companyId) {
-  emitError("MISSING_ARG", "Usage: node pitchbook-company.mjs <companyId>");
-}
+  parseFlags,
+} from '../../lib/utils.mjs';
 
 // ---------------------------------------------------------------------------
 // Endpoints
 // ---------------------------------------------------------------------------
 
-const BASE = "https://my.pitchbook.com";
-const REFERER = `${BASE}/profile/${companyId}/company/profile`;
+const BASE = 'https://my.pitchbook.com';
 const DELAY_MS = 6_000;
 
-const ENDPOINTS = [
-  {
-    key: "generalInfo",
-    url: `${BASE}/web-api/profiles/${companyId}/company/general-info`,
-  },
-  {
-    key: "dealHistory",
-    url: `${BASE}/web-api/deal-debt-experience-bff/companies/${companyId}/deal-history`,
-  },
-  {
-    key: "currentTeam",
-    url: `${BASE}/web-api/profiles/${companyId}/company/executives/current?page=1&pageSize=100`,
-  },
-  {
-    key: "formerTeam",
-    url: `${BASE}/web-api/profiles/${companyId}/company/executives/former?page=1&pageSize=100`,
-  },
-  {
-    key: "currentBoardMembers",
-    url: `${BASE}/web-api/profiles/${companyId}/company/board-members/current?page=1&pageSize=100`,
-  },
-  {
-    key: "formerBoardMembers",
-    url: `${BASE}/web-api/profiles/${companyId}/company/board-members/former?page=1&pageSize=100`,
-  },
-];
+function endpoints(companyId) {
+  return [
+    { key: 'generalInfo', url: `${BASE}/web-api/profiles/${companyId}/company/general-info` },
+    { key: 'dealHistory', url: `${BASE}/web-api/deal-debt-experience-bff/companies/${companyId}/deal-history` },
+    { key: 'currentTeam', url: `${BASE}/web-api/profiles/${companyId}/company/executives/current?page=1&pageSize=100` },
+    { key: 'formerTeam', url: `${BASE}/web-api/profiles/${companyId}/company/executives/former?page=1&pageSize=100` },
+    { key: 'currentBoardMembers', url: `${BASE}/web-api/profiles/${companyId}/company/board-members/current?page=1&pageSize=100` },
+    { key: 'formerBoardMembers', url: `${BASE}/web-api/profiles/${companyId}/company/board-members/former?page=1&pageSize=100` },
+  ];
+}
+
+const ALL_SECTIONS = ['generalInfo', 'dealHistory', 'currentTeam', 'formerTeam', 'currentBoardMembers', 'formerBoardMembers'];
 
 // ---------------------------------------------------------------------------
-// Main
+// Fetch company
 // ---------------------------------------------------------------------------
 
-async function main() {
-  const session = loadSession();
-  if (!isSessionValid(session)) {
-    emitError("SESSION_EXPIRED", "No valid session. Run login/capture-headers first.");
-  }
+async function doGet(companyId, sections) {
+  const auth = getAuth();
+  checkCurl();
+  const referer = `${BASE}/profile/${companyId}/company/profile`;
+  const selected = sections.length > 0 ? sections : ALL_SECTIONS;
+  const eps = endpoints(companyId).filter(ep => selected.includes(ep.key));
 
-  log(`Fetching company profile for ${companyId} (6 endpoints, ~${ENDPOINTS.length * 6}s)`);
+  console.log(`Fetching company ${companyId} (${eps.length} endpoint(s), ~${eps.length * 6}s)`);
 
   const company = { companyId };
 
-  for (let i = 0; i < ENDPOINTS.length; i++) {
-    const { key, url } = ENDPOINTS[i];
+  for (let i = 0; i < eps.length; i++) {
+    const { key, url } = eps[i];
 
     if (i > 0) {
-      log(`Waiting ${DELAY_MS / 1000}s before next request...`);
+      console.log(`Waiting ${DELAY_MS / 1000}s...`);
       await delay(DELAY_MS);
     }
 
-    log(`Fetching ${key}...`);
-
+    console.log(`Fetching ${key}...`);
     try {
-      company[key] = curlGet(url, session, REFERER);
+      company[key] = curlGet(url, auth, referer);
     } catch (err) {
-      if (err instanceof SessionExpiredError) {
-        emitError("SESSION_EXPIRED", `Session expired while fetching ${key}: ${err.message}`);
-      }
-      log(`Error fetching ${key}: ${err.message}`);
-      company[key] = null;
+      console.error(`Error fetching ${key}: ${err.message}`);
+      company[key] = { error: err.message };
     }
   }
 
-  emitResult(company);
+  const outFile = resolve(CACHE_DIR, `company-${companyId}.json`);
+  saveJson(outFile, company);
+  console.log(`\nCompany saved to: ${outFile}`);
+
+  // Print summary
+  if (company.generalInfo && !company.generalInfo.error) {
+    const gi = company.generalInfo;
+    const name = gi.companyName || gi.name || companyId;
+    console.log(`  Name: ${name}`);
+    if (gi.website) console.log(`  Website: ${gi.website}`);
+    if (gi.description) console.log(`  Description: ${gi.description.substring(0, 120)}...`);
+  }
+
+  return company;
 }
 
-main().catch((err) => {
-  emitError("UNEXPECTED_ERROR", err.message);
-});
+// ---------------------------------------------------------------------------
+// CLI
+// ---------------------------------------------------------------------------
+
+const [,, command, ...args] = process.argv;
+const { flags, positional } = parseFlags(args);
+
+switch (command) {
+  case 'auth': {
+    const cdpUrl = flags['cdp-url'] || process.env.CHROME_CDP_URL || 'http://localhost:9222';
+    await doCdpAuth(cdpUrl);
+    break;
+  }
+  case 'get': {
+    const companyId = positional[0];
+    if (!companyId) {
+      console.error('Usage: node pitchbook-company.mjs get <companyId> [--sections=generalInfo,dealHistory]');
+      process.exit(1);
+    }
+    const sections = flags.sections ? flags.sections.split(',').map(s => s.trim()) : [];
+    await doGet(companyId, sections);
+    break;
+  }
+  default:
+    console.log(`pitchbook-company
+
+Fetch a full company profile from Pitchbook by company ID.
+
+Commands:
+  auth                                          Capture session from Chrome via CDP
+  get <companyId> [--sections=s1,s2,...]        Fetch company profile
+
+Available sections:
+  generalInfo, dealHistory, currentTeam, formerTeam,
+  currentBoardMembers, formerBoardMembers
+
+Examples:
+  node pitchbook-company.mjs get 123456-78
+  node pitchbook-company.mjs get 123456-78 --sections=generalInfo,dealHistory`);
+}

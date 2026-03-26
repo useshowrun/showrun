@@ -4,102 +4,121 @@ Scrape financial data from Pitchbook (company profiles, deal history, team membe
 
 ## Prerequisites
 
-### curl
-Must support HTTP/2 and TLS v1.3. Verify with:
+- Node.js 22+ (uses built-in `WebSocket`)
+- `curl` with HTTP/2 support (used for all API requests)
+- Chrome (for `auth` and `curl` session capture methods)
+
+### curl with HTTP/2
+
+All API requests use `curl` with `--http2` and `--tlsv1.3` for TLS fingerprint compatibility. Verify your curl supports HTTP/2:
+
 ```bash
-curl --version
-```
-Look for `HTTP2` and `TLSv1.3` in features/protocols. On macOS, the system curl may lack HTTP/2 — use Homebrew curl (`/opt/homebrew/opt/curl/bin/curl`). Set `CURL_BINARY` env var if curl is not at the default path.
-
-### Node.js 22+
-Required for built-in `WebSocket` (used by CDP scripts). Check with `node --version`.
-
-### Chrome/Chromium
-Required for CDP header capture (preferred login method). Launch with:
-```bash
-google-chrome --remote-debugging-port=9222
-# or on macOS:
-/Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome --remote-debugging-port=9222
+curl --version   # look for "HTTP2" in the features list
 ```
 
-### Environment Variables
+If HTTP/2 is missing, install an updated curl:
 
-| Variable | Required For | Description |
-|----------|-------------|-------------|
-| `PITCHBOOK_EMAIL` | Automated login | Login email |
-| `PITCHBOOK_PASSWORD` | Automated login | Password |
-| `PITCHBOOK_OTP_SECRET` | Automated login | TOTP base32 secret |
-| `PITCHBOOK_USERNAME` | Automated login | Display name (for verification) |
-| `CURL_BINARY` | Optional | Path to curl binary (default: `curl`) |
-| `CHROME_CDP_URL` | Optional | CDP endpoint (default: `http://localhost:9222`) |
+- **macOS (Homebrew):** `brew install curl` — then `export CURL_BINARY=/opt/homebrew/opt/curl/bin/curl`
+- **Debian/Ubuntu:** `sudo apt-get install -y curl`
+- **Fedora/RHEL:** `sudo dnf install -y curl`
+- **Arch:** `sudo pacman -S curl`
 
-### Install Dependencies
-```bash
-cd pitchbook && npm install
-```
+Set `CURL_BINARY` env var if the correct curl is not at the default path. The scripts will check for HTTP/2 support at startup and print install instructions if missing. If running without sudo, the agent should attempt to install curl using the appropriate package manager. On macOS, Homebrew does not require sudo.
 
-## Available Skills
+## Setup
 
-| Skill | Script | Description |
-|-------|--------|-------------|
-| [Login — CDP Capture](pitchbook-login/SKILL.md) | `pitchbook-login/scripts/pitchbook-capture-headers.mjs` | Capture headers from running Chrome (preferred, ~10s) |
-| [Login — Automated](pitchbook-login/SKILL.md) | `pitchbook-login/scripts/pitchbook-login.mjs` | Full automated login via camoufox (~60-90s) |
-| [Search](pitchbook-search/SKILL.md) | `pitchbook-search/scripts/pitchbook-search.mjs` | Search companies by domain/name |
-| [Company](pitchbook-company/SKILL.md) | `pitchbook-company/scripts/pitchbook-company.mjs` | Fetch full company profile (6 endpoints) |
+One-time authentication — three methods available (fastest first):
 
-## Typical Workflow
+### Method 1: Copy as cURL (easiest)
 
-```
-1. Capture headers    →  node pitchbook-login/scripts/pitchbook-capture-headers.mjs
-2. Search company     →  node pitchbook-search/scripts/pitchbook-search.mjs openai.com
-3. Fetch profile      →  node pitchbook-company/scripts/pitchbook-company.mjs <companyId>
-```
+1. Open `https://my.pitchbook.com` in Chrome and log in
+2. Open DevTools (F12) → Network tab
+3. Right-click any request to `my.pitchbook.com` → **Copy** → **Copy as cURL**
+4. Save to a file and run:
+   ```bash
+   pbpaste > /tmp/pb-curl.txt                                    # macOS
+   node pitchbook-login/scripts/pitchbook-login.mjs curl /tmp/pb-curl.txt
+   ```
+   Or pipe directly:
+   ```bash
+   pbpaste | node pitchbook-login/scripts/pitchbook-login.mjs curl -    # macOS
+   xclip -o | node pitchbook-login/scripts/pitchbook-login.mjs curl -   # Linux
+   ```
 
-## Session Management & Logout Handling
+**Agent guidance:** When the user needs to authenticate, suggest this method first. Ask the user to copy a request as cURL from their browser DevTools and paste it. The agent can save the pasted string to a temp file and run the `curl` subcommand.
 
-Pitchbook aggressively manages sessions and may log users out at any time. Captured headers expire after ~30 minutes.
+### Method 2: CDP capture (~10s)
 
-**If any script returns `SESSION_EXPIRED`:**
-1. First try `pitchbook-capture-headers.mjs` — re-capture from running Chrome (fast, ~10s)
-2. If the browser session is also dead, fall back to `pitchbook-login.mjs` (automated re-login, ~90s)
-3. Max 2 re-login attempts per workflow
-
-**Rate limiting:** Wait 6 seconds between API requests (enforced automatically in company script).
-
-## Chrome CDP Setup
-
-The preferred way to maintain a Pitchbook session:
-
-1. Launch Chrome with CDP enabled:
+1. Launch Chrome with CDP:
    ```bash
    google-chrome --remote-debugging-port=9222
    ```
 2. Log into Pitchbook manually at `https://my.pitchbook.com`
-3. Keep Chrome open — the capture script will grab headers from the live session
-4. On session expiry, re-login in Chrome and re-run the capture script
+3. Run:
+   ```bash
+   node pitchbook-login/scripts/pitchbook-login.mjs auth
+   ```
 
-## MongoDB Storage (Recommendation)
+### Method 3: Automated login (~60-90s)
 
-For persisting scraped data, save to a `pitchbook.companies` collection with this schema:
+Requires npm packages installed in the data directory and env vars set. See [pitchbook-login/SKILL.md](pitchbook-login/SKILL.md) for details.
 
-```json
-{
-  "name": "Company Name",
-  "domain": "company.com",
-  "pb_id": "123456-78",
-  "search_result": { },
-  "general_info": { },
-  "deal_history": { "content": [], "total": 0 },
-  "current_team": { },
-  "former_team": { },
-  "current_board_members": { },
-  "former_board_members": { },
-  "last_updated": "2026-03-18T12:00:00.000Z"
-}
+### Environment variables
+
+| Variable | Required For | Description |
+|----------|-------------|-------------|
+| `CURL_BINARY` | Optional | Path to curl binary (default: `curl`) |
+| `CHROME_CDP_URL` | Optional | CDP endpoint (default: `http://localhost:9222`) |
+| `PITCHBOOK_EMAIL` | Automated login | Login email |
+| `PITCHBOOK_PASSWORD` | Automated login | Password |
+| `PITCHBOOK_OTP_SECRET` | Automated login | TOTP base32 secret |
+| `PITCHBOOK_USERNAME` | Automated login | Display name (for verification) |
+
+## Available skills
+
+| Skill | Script | Description |
+|-------|--------|-------------|
+| [Login](pitchbook-login/SKILL.md) | `pitchbook-login/scripts/pitchbook-login.mjs` | Authenticate via cURL import, CDP, or automated login |
+| [Search](pitchbook-search/SKILL.md) | `pitchbook-search/scripts/pitchbook-search.mjs` | Search companies by domain/name |
+| [Company](pitchbook-company/SKILL.md) | `pitchbook-company/scripts/pitchbook-company.mjs` | Fetch full company profile (6 endpoints) |
+
+## Typical workflow
+
+```
+1. Capture session   →  node pitchbook-login/scripts/pitchbook-login.mjs curl /tmp/pb-curl.txt
+2. Search company    →  node pitchbook-search/scripts/pitchbook-search.mjs search openai.com
+3. Fetch profile     →  node pitchbook-company/scripts/pitchbook-company.mjs get <companyId>
 ```
 
-Use a 24-hour cache TTL: skip re-fetching if `last_updated` is less than 24 hours ago. This is a recommendation — the agent should implement the save logic as needed.
+## Data storage
 
-## Output Format
+```
+~/.local/share/showrun/data/pitchbook/
+├── session.json              # Auth headers & cookies
+└── cache/
+    ├── search-<query>.json   # Search results
+    └── company-<id>.json     # Full company profiles
+```
 
-All scripts write structured output to stdout as `RESULT:{json}`. Logs go to stderr. Parse results by reading lines starting with `RESULT:` from stdout.
+## Output handling (important for agents)
+
+**Pitchbook API responses are large.** A single company profile can be 500KB+ of JSON across 6 endpoints. To preserve context window space:
+
+1. **Always redirect script output to a file** — never let raw JSON fill the conversation:
+   ```bash
+   node pitchbook-search/scripts/pitchbook-search.mjs search openai.com > /tmp/pb-search.json 2>&1
+   node pitchbook-company/scripts/pitchbook-company.mjs get 123456-78 > /tmp/pb-company.json 2>&1
+   ```
+2. **Read cached results from disk with truncation** — scripts automatically save structured output to `~/.local/share/showrun/data/pitchbook/cache/`. Read only the first ~100 lines to get an overview, then target specific keys:
+   ```bash
+   head -100 ~/.local/share/showrun/data/pitchbook/cache/company-123456-78.json
+   ```
+3. **Use `--sections` to limit what you fetch** — only request the sections you actually need:
+   ```bash
+   node pitchbook-company/scripts/pitchbook-company.mjs get 123456-78 --sections=generalInfo
+   ```
+4. **Never dump full API responses into the conversation.** Summarize findings in your own words and reference the cache file path so the user can inspect the raw data if needed.
+
+## Session expiry
+
+Captured headers expire after ~30 minutes. If you see `Session expired`, re-authenticate using any method above. The `curl` import method is the fastest way to refresh — just copy a fresh request from the browser.
