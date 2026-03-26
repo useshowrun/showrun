@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 
@@ -242,12 +242,8 @@ async function cmdSync(filter, silent = false) {
 
   for (const skillPath of paths) {
     if (!filter && lock[skillPath] === remoteSkills[skillPath]) {
-      // Verify files actually exist before skipping
-      const localDir = join(skillsDir, skillPath);
-      const hasSkillMd = existsSync(join(localDir, 'SKILL.md'));
-      const hasScript = existsSync(join(localDir, 'scripts')) &&
-        readdirSync(join(localDir, 'scripts')).some((f) => f.endsWith('.mjs'));
-      if (hasSkillMd && hasScript) {
+      // Verify SKILL.md actually exists before skipping
+      if (existsSync(join(skillsDir, skillPath, 'SKILL.md'))) {
         skipped++;
         continue;
       }
@@ -255,18 +251,22 @@ async function cmdSync(filter, silent = false) {
 
     const skill = await apiAuth(`/skills/${skillPath}`);
     const destDir = join(skillsDir, skillPath);
-    const scriptsDir = join(destDir, 'scripts');
-    mkdirSync(scriptsDir, { recursive: true });
+    mkdirSync(destDir, { recursive: true });
 
     writeFileSync(join(destDir, 'SKILL.md'), skill.skill_md);
 
     if (skill.script_name) {
+      const scriptsDir = join(destDir, 'scripts');
+      mkdirSync(scriptsDir, { recursive: true });
       const scriptRes = await fetch(`${getApiUrl()}/skills/${skillPath}/script`, {
         headers: { Authorization: `Bearer ${getApiKey()}` },
       });
       if (scriptRes.ok) {
-        const scriptContent = await scriptRes.text();
-        writeFileSync(join(scriptsDir, skill.script_name), scriptContent);
+        writeFileSync(join(scriptsDir, skill.script_name), await scriptRes.text());
+      } else {
+        // Script download failed — don't mark as synced
+        synced++;
+        continue;
       }
     }
 
