@@ -9,7 +9,7 @@
 //   node yahoofinance-options.mjs chain AAPL
 //   node yahoofinance-options.mjs chain AAPL --date=2026-04-17
 //
-// Requires Node 22+ (built-in fetch).
+// All API requests are routed through Chrome CDP (no direct HTTP).
 
 import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
@@ -55,108 +55,100 @@ function cdp(...args) {
   return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
 }
 
+function findYahooTab() {
+  const list = cdp('list');
+  for (const pref of ['finance.yahoo.com', 'yahoo.com/quote', 'yahoo.com']) {
+    for (const line of list.split('\n')) {
+      if (line.includes(pref)) return line.trim().split(/\s+/)[0];
+    }
+  }
+  return null;
+}
+
+function cdpFetch(tabId, url, options = {}) {
+  const method = options.method || 'GET';
+  const hdrs = options.headers ? `,headers:${JSON.stringify(options.headers)}` : '';
+  const bodyPart = options.body ? `,body:${JSON.stringify(String(options.body))}` : '';
+  const result = cdp('eval', tabId,
+    `(async()=>{const r=await fetch('${url}',{method:'${method}',credentials:'include'${hdrs}${bodyPart}});return r.status+'|||'+(await r.text())})()`);
+  const sepIdx = result.indexOf('|||');
+  const status = parseInt(result.substring(0, sepIdx), 10);
+  const body = result.substring(sepIdx + 3);
+  return { status, body };
+}
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
 const BASE_URL = 'https://query2.finance.yahoo.com';
 const CRUMB_URL = 'https://query1.finance.yahoo.com/v1/test/getcrumb';
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
 
 // ---------------------------------------------------------------------------
-// Auth: extract A3 cookie from Chrome, then fetch crumb
+// Auth: fetch crumb via Chrome CDP
 // ---------------------------------------------------------------------------
 
-async function doAuth() {
+function doAuth() {
   console.log('Finding Yahoo Finance tab...');
-  const list = cdp('list');
-  let target;
-  for (const pref of ['finance.yahoo.com', 'yahoo.com']) {
-    for (const line of list.split('\n')) {
-      if (line.includes(pref)) {
-        target = line.trim().split(/\s+/)[0];
-        break;
-      }
-    }
-    if (target) break;
-  }
-  if (!target) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
+  const tabId = findYahooTab();
+  if (!tabId) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
 
-  console.log(`Using tab: ${target}`);
-
-  // Extract cookies via CDP
-  const raw = cdp('evalraw', target, 'Network.getCookies',
-    JSON.stringify({ urls: ['https://finance.yahoo.com', 'https://query2.finance.yahoo.com'] }));
-  const { cookies } = JSON.parse(raw);
-
-  // Build cookie string from .yahoo.com domain cookies
-  const yahooCookies = cookies.filter(c => c.domain.includes('yahoo.com'));
-  if (!yahooCookies.length) throw new Error('No Yahoo cookies found. Are you logged in to Yahoo Finance?');
-
-  const cookieStr = yahooCookies.map(c => `${c.name}=${c.value}`).join('; ');
-
-  // Check for A3 cookie specifically
-  const a3 = yahooCookies.find(c => c.name === 'A3');
-  if (!a3) console.warn('Warning: A3 cookie not found. Auth may not work for all endpoints.');
-
-  // Fetch crumb using the cookies
+  console.log(`Using tab: ${tabId}`);
   console.log('Fetching crumb...');
-  const crumbResp = await fetch(CRUMB_URL, {
-    headers: {
-      'cookie': cookieStr,
-      'user-agent': USER_AGENT,
-    },
-  });
-  if (!crumbResp.ok) throw new Error(`Failed to fetch crumb (HTTP ${crumbResp.status})`);
-  const crumb = await crumbResp.text();
-  if (!crumb || crumb.includes('<html>')) throw new Error('Invalid crumb response. Try refreshing Yahoo Finance in Chrome.');
 
+  const { status, body } = cdpFetch(tabId, CRUMB_URL);
+  if (status !== 200 || !body || body.includes('<html>')) {
+    throw new Error(`Failed to fetch crumb (HTTP ${status}). Try refreshing Yahoo Finance in Chrome.`);
+  }
+
+  const crumb = body.trim();
   console.log(`Crumb: ${crumb}`);
 
   saveJson(SESSION_FILE, {
-    cookie: cookieStr,
     crumb,
-    extractedAt: new Date().toISOString(),
+    capturedAt: new Date().toISOString(),
   });
   console.log(`Auth saved to: ${SESSION_FILE}`);
 }
 
 // ---------------------------------------------------------------------------
-// HTTP helpers
+// Session helpers
 // ---------------------------------------------------------------------------
 
-function getAuth() {
-  const auth = loadJson(SESSION_FILE);
-  if (!auth.cookie || !auth.crumb) {
+function getSession() {
+  const session = loadJson(SESSION_FILE);
+  if (!session.crumb) {
     console.error('No auth found. Run: node yahoofinance-options.mjs auth');
     process.exit(1);
   }
-  return auth;
+  return session;
 }
 
-async function yahooGet(auth, url) {
+function yahooGet(session, url) {
   const sep = url.includes('?') ? '&' : '?';
-  const fullUrl = `${url}${sep}crumb=${encodeURIComponent(auth.crumb)}`;
-  const resp = await fetch(fullUrl, {
-    headers: {
-      'cookie': auth.cookie,
-      'user-agent': USER_AGENT,
-      'accept': 'application/json',
-    },
-  });
-  if (resp.status === 401 || resp.status === 403) {
+  const fullUrl = `${url}${sep}crumb=${encodeURIComponent(session.crumb)}`;
+
+  const tabId = findYahooTab();
+  if (!tabId) {
+    console.error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
+    process.exit(1);
+  }
+
+  const { status, body } = cdpFetch(tabId, fullUrl);
+
+  if (status === 401 || status === 403) {
     console.error('Session expired or unauthorized. Run: node yahoofinance-options.mjs auth');
     process.exit(1);
   }
-  if (resp.status === 429) {
+  if (status === 429) {
     console.error('Rate limited by Yahoo Finance. Wait a moment and try again.');
     process.exit(1);
   }
-  if (!resp.ok) {
-    const text = await resp.text();
-    throw new Error(`HTTP ${resp.status}: ${text.substring(0, 200)}`);
+  if (status < 200 || status >= 300) {
+    throw new Error(`HTTP ${status}: ${body.substring(0, 200)}`);
   }
-  return resp.json();
+
+  return JSON.parse(body);
 }
 
 // ---------------------------------------------------------------------------
@@ -199,16 +191,16 @@ function formatOption(opt) {
 // Commands
 // ---------------------------------------------------------------------------
 
-async function fetchOptions(auth, symbol, date) {
+function fetchOptions(session, symbol, date) {
   let url = `${BASE_URL}/v7/finance/options/${encodeURIComponent(symbol.toUpperCase())}`;
   if (date != null) {
     url += `?date=${date}`;
   }
-  return yahooGet(auth, url);
+  return yahooGet(session, url);
 }
 
-async function cmdExpirations(auth, symbol) {
-  const data = await fetchOptions(auth, symbol);
+function cmdExpirations(session, symbol) {
+  const data = fetchOptions(session, symbol);
   const result = data?.optionChain?.result?.[0];
   if (!result) {
     console.error(`No options data found for ${symbol.toUpperCase()}.`);
@@ -233,13 +225,13 @@ async function cmdExpirations(auth, symbol) {
   console.log(JSON.stringify(output, null, 2));
 }
 
-async function cmdChain(auth, symbol, dateStr) {
+function cmdChain(session, symbol, dateStr) {
   let unixDate;
   if (dateStr) {
     unixDate = dateToUnix(dateStr);
   }
 
-  const data = await fetchOptions(auth, symbol, unixDate);
+  const data = fetchOptions(session, symbol, unixDate);
   const result = data?.optionChain?.result?.[0];
   if (!result) {
     console.error(`No options data found for ${symbol.toUpperCase()}.`);
@@ -305,7 +297,7 @@ function parseFlags(args) {
 
 switch (command) {
   case 'auth': {
-    await doAuth();
+    doAuth();
     break;
   }
 
@@ -315,8 +307,8 @@ switch (command) {
       console.error('Usage: node yahoofinance-options.mjs expirations <symbol>');
       process.exit(1);
     }
-    const auth = getAuth();
-    await cmdExpirations(auth, symbol);
+    const session = getSession();
+    cmdExpirations(session, symbol);
     break;
   }
 
@@ -327,8 +319,8 @@ switch (command) {
       console.error('Usage: node yahoofinance-options.mjs chain <symbol> [--date=YYYY-MM-DD]');
       process.exit(1);
     }
-    const auth = getAuth();
-    await cmdChain(auth, symbol, flags.date || null);
+    const session = getSession();
+    cmdChain(session, symbol, flags.date || null);
     break;
   }
 
@@ -347,6 +339,6 @@ Examples:
   node yahoofinance-options.mjs chain AAPL --date=2026-04-17
 
 Data: ${DATA_DIR}/
-  session.json     Auth cookie & crumb
+  session.json     Auth crumb
   cache/           Cached API responses`);
 }

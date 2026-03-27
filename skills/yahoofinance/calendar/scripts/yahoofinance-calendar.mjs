@@ -22,7 +22,6 @@ import { homedir } from 'os';
 const QUERY1_URL = 'https://query1.finance.yahoo.com';
 const VIZ_URL = `${QUERY1_URL}/v1/finance/visualization`;
 const CRUMB_URL = `${QUERY1_URL}/v1/test/getcrumb`;
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
 
 // Calendar type configs (from yfinance calendars.py PREDEFINED_CALENDARS)
 const CALENDAR_CONFIGS = {
@@ -70,38 +69,46 @@ function cdp(...args) {
   return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
 }
 
+function findYahooTab() {
+  const list = cdp('list');
+  for (const pref of ['finance.yahoo.com', 'yahoo.com/quote', 'yahoo.com']) {
+    for (const line of list.split('\n')) {
+      if (line.includes(pref)) return line.trim().split(/\s+/)[0];
+    }
+  }
+  return null;
+}
+
+function cdpFetch(tabId, url, options = {}) {
+  const method = options.method || 'GET';
+  const hdrs = options.headers ? `,headers:${JSON.stringify(options.headers)}` : '';
+  const bodyPart = options.body ? `,body:${JSON.stringify(String(options.body))}` : '';
+  const result = cdp('eval', tabId,
+    `(async()=>{const r=await fetch('${url}',{method:'${method}',credentials:'include'${hdrs}${bodyPart}});return r.status+'|||'+(await r.text())})()`);
+  const sepIdx = result.indexOf('|||');
+  const status = parseInt(result.substring(0, sepIdx), 10);
+  const body = result.substring(sepIdx + 3);
+  return { status, body };
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
-async function doAuth() {
+function doAuth() {
   console.log('Finding Yahoo Finance tab...');
-  const list = cdp('list');
-  let target;
-  for (const pref of ['finance.yahoo.com', 'yahoo.com/quote', 'yahoo.com']) {
-    for (const line of list.split('\n')) {
-      if (line.includes(pref)) { target = line.trim().split(/\s+/)[0]; break; }
-    }
-    if (target) break;
-  }
-  if (!target) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
-  console.log(`Using tab: ${target}`);
-
-  const raw = cdp('evalraw', target, 'Network.getCookies',
-    JSON.stringify({ urls: ['https://finance.yahoo.com', 'https://www.yahoo.com', 'https://query1.finance.yahoo.com'] }));
-  const { cookies } = JSON.parse(raw);
-  const cookieStr = cookies.filter(c => c.domain.includes('yahoo.com')).map(c => `${c.name}=${c.value}`).join('; ');
-  if (!cookieStr) throw new Error('No Yahoo cookies found.');
-
-  let userAgent = USER_AGENT;
-  try { const ua = cdp('eval', target, 'navigator.userAgent'); if (ua && ua.length > 10) userAgent = ua; } catch {}
+  const tabId = findYahooTab();
+  if (!tabId) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
+  console.log(`Using tab: ${tabId}`);
 
   console.log('Fetching crumb...');
-  const crumbResp = await fetch(CRUMB_URL, { headers: { 'Cookie': cookieStr, 'User-Agent': userAgent }, redirect: 'follow' });
-  if (!crumbResp.ok) throw new Error(`Failed to fetch crumb: HTTP ${crumbResp.status}`);
-  const crumb = await crumbResp.text();
-  if (!crumb || crumb.includes('<html>') || crumb.includes('Too Many Requests')) throw new Error(`Invalid crumb: ${crumb.substring(0, 100)}`);
+  const resp = cdpFetch(tabId, CRUMB_URL);
+  const crumb = resp.body.trim();
+  if (resp.status !== 200 || !crumb || crumb.includes('<html>')) {
+    throw new Error(`Failed to fetch crumb: HTTP ${resp.status} — ${crumb.substring(0, 100)}`);
+  }
+  console.log('  Got crumb via Chrome CDP.');
 
-  const session = { cookies: cookieStr, crumb, userAgent, capturedAt: new Date().toISOString() };
+  const session = { crumb, capturedAt: new Date().toISOString() };
   saveJson(SESSION_FILE, session);
   console.log(`Auth saved to: ${SESSION_FILE}`);
   console.log(`Crumb: ${crumb}`);
@@ -112,25 +119,23 @@ async function doAuth() {
 // ---------------------------------------------------------------------------
 function getSession() {
   const s = loadJson(SESSION_FILE);
-  if (!s || !s.cookies || !s.crumb) { console.error('No auth. Run: node yahoofinance-calendar.mjs auth'); process.exit(1); }
+  if (!s || !s.crumb) { console.error('No auth. Run: node yahoofinance-calendar.mjs auth'); process.exit(1); }
   return s;
 }
 
-async function vizPost(session, body) {
+function vizPost(session, body) {
+  const tabId = findYahooTab();
+  if (!tabId) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
   const url = `${VIZ_URL}?lang=en-US&region=US&crumb=${encodeURIComponent(session.crumb)}`;
-  const resp = await fetch(url, {
+  const resp = cdpFetch(tabId, url, {
     method: 'POST',
-    headers: {
-      'Cookie': session.cookies,
-      'User-Agent': session.userAgent || USER_AGENT,
-      'Content-Type': 'application/json',
-      'Accept': 'application/json',
-    },
+    headers: { 'Accept': 'application/json', 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
   if (resp.status === 401 || resp.status === 403) { console.error(`Auth expired (${resp.status}). Run: node yahoofinance-calendar.mjs auth`); process.exit(1); }
-  if (resp.status === 429) { console.error('Rate limited (429). Wait and retry.'); process.exit(1); }
-  const data = await resp.json();
+  if (resp.status === 429) { console.error('Rate limited (HTTP 429). Wait and try again.'); process.exit(1); }
+  if (resp.status !== 200) { console.error(`HTTP ${resp.status}: ${resp.body.substring(0, 200)}`); process.exit(1); }
+  const data = JSON.parse(resp.body);
   if (data?.finance?.error) { console.error('API error:', JSON.stringify(data.finance.error)); process.exit(1); }
   return data;
 }
@@ -165,7 +170,7 @@ function defaultDates(opts) {
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
-async function cmdEarnings(args) {
+function cmdEarnings(args) {
   const opts = parseArgs(args);
   const { start, end } = defaultDates(opts);
   const limit = parseInt(opts.count || '50', 10);
@@ -193,14 +198,14 @@ async function cmdEarnings(args) {
     },
   };
 
-  const data = await vizPost(session, body);
+  const data = vizPost(session, body);
   const { columns, rows } = parseVizResponse(data);
   ensureDir(CACHE_DIR);
   saveJson(resolve(CACHE_DIR, `earnings-${start}-${end}.json`), { columns, rows });
   console.log(JSON.stringify({ columns, rows, count: rows.length }, null, 2));
 }
 
-async function cmdEarningsTicker(symbol, args) {
+function cmdEarningsTicker(symbol, args) {
   const opts = parseArgs(args);
   const limit = parseInt(opts.count || '25', 10);
   const session = getSession();
@@ -214,14 +219,14 @@ async function cmdEarningsTicker(symbol, args) {
     includeFields: ['startdatetime', 'timeZoneShortName', 'epsestimate', 'epsactual', 'epssurprisepct', 'eventtype'],
   };
 
-  const data = await vizPost(session, body);
+  const data = vizPost(session, body);
   const { columns, rows } = parseVizResponse(data);
   ensureDir(CACHE_DIR);
   saveJson(resolve(CACHE_DIR, `earnings-${symbol}.json`), { columns, rows });
   console.log(JSON.stringify({ columns, rows, count: rows.length }, null, 2));
 }
 
-async function cmdIpos(args) {
+function cmdIpos(args) {
   const opts = parseArgs(args);
   const { start, end } = defaultDates(opts);
   const limit = parseInt(opts.count || '50', 10);
@@ -245,14 +250,14 @@ async function cmdIpos(args) {
     },
   };
 
-  const data = await vizPost(session, body);
+  const data = vizPost(session, body);
   const { columns, rows } = parseVizResponse(data);
   ensureDir(CACHE_DIR);
   saveJson(resolve(CACHE_DIR, `ipos-${start}-${end}.json`), { columns, rows });
   console.log(JSON.stringify({ columns, rows, count: rows.length }, null, 2));
 }
 
-async function cmdSplits(args) {
+function cmdSplits(args) {
   const opts = parseArgs(args);
   const { start, end } = defaultDates(opts);
   const limit = parseInt(opts.count || '50', 10);
@@ -275,14 +280,14 @@ async function cmdSplits(args) {
     },
   };
 
-  const data = await vizPost(session, body);
+  const data = vizPost(session, body);
   const { columns, rows } = parseVizResponse(data);
   ensureDir(CACHE_DIR);
   saveJson(resolve(CACHE_DIR, `splits-${start}-${end}.json`), { columns, rows });
   console.log(JSON.stringify({ columns, rows, count: rows.length }, null, 2));
 }
 
-async function cmdEconomic(args) {
+function cmdEconomic(args) {
   const opts = parseArgs(args);
   const { start, end } = defaultDates(opts);
   const limit = parseInt(opts.count || '50', 10);
@@ -305,7 +310,7 @@ async function cmdEconomic(args) {
     },
   };
 
-  const data = await vizPost(session, body);
+  const data = vizPost(session, body);
   const { columns, rows } = parseVizResponse(data);
   ensureDir(CACHE_DIR);
   saveJson(resolve(CACHE_DIR, `economic-${start}-${end}.json`), { columns, rows });
@@ -349,17 +354,17 @@ if (!cmd) { printHelp(); process.exit(0); }
 
 try {
   switch (cmd) {
-    case 'auth': await doAuth(); break;
-    case 'earnings': await cmdEarnings(rest); break;
+    case 'auth': doAuth(); break;
+    case 'earnings': cmdEarnings(rest); break;
     case 'earnings-ticker': {
       const sym = rest[0]?.toUpperCase();
       if (!sym || sym.startsWith('--')) { console.error('Usage: earnings-ticker <symbol> [--count=25]'); process.exit(1); }
-      await cmdEarningsTicker(sym, rest.slice(1));
+      cmdEarningsTicker(sym, rest.slice(1));
       break;
     }
-    case 'ipos': await cmdIpos(rest); break;
-    case 'splits': await cmdSplits(rest); break;
-    case 'economic': await cmdEconomic(rest); break;
+    case 'ipos': cmdIpos(rest); break;
+    case 'splits': cmdSplits(rest); break;
+    case 'economic': cmdEconomic(rest); break;
     default: console.error(`Unknown command: ${cmd}`); printHelp(); process.exit(1);
   }
 } catch (e) { console.error(`Error: ${e.message}`); process.exit(1); }

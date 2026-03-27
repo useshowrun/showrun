@@ -301,8 +301,7 @@ async function cmdSync(filter, silent = false) {
       if (scriptRes.ok) {
         writeFileSync(join(scriptsDir, skill.script_name), await scriptRes.text());
       } else {
-        // Script download failed — don't mark as synced
-        synced++;
+        console.error(`  ✗ Failed to download script for ${skillPath} (HTTP ${scriptRes.status})`);
         continue;
       }
     }

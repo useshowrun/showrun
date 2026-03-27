@@ -8,7 +8,7 @@
 //   node yahoofinance-search.mjs search "Apple" [--quotes=8] [--news=8]
 //   node yahoofinance-search.mjs lookup "AAPL" [--type=all] [--count=25]
 //
-// Requires Node 22+ (built-in fetch).
+// Requires Chrome with Yahoo Finance open for all API requests.
 
 import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
@@ -45,9 +45,6 @@ const QUERY1_URL = 'https://query1.finance.yahoo.com';
 const QUERY2_URL = 'https://query2.finance.yahoo.com';
 const CRUMB_URL = `${QUERY1_URL}/v1/test/getcrumb`;
 
-const USER_AGENT =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
-
 const LOOKUP_TYPES = ['all', 'equity', 'mutualfund', 'etf', 'index', 'future', 'currency', 'cryptocurrency'];
 
 // ---------------------------------------------------------------------------
@@ -67,89 +64,72 @@ function cdp(...args) {
   return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
 }
 
-// ---------------------------------------------------------------------------
-// Auth: extract A3 cookie from Chrome, then fetch crumb
-// ---------------------------------------------------------------------------
-
-async function doAuth() {
-  console.log('Finding Yahoo Finance tab...');
+function findYahooTab() {
   const list = cdp('list');
-  let target;
-  for (const pref of ['finance.yahoo.com', 'yahoo.com']) {
+  for (const pref of ['finance.yahoo.com', 'yahoo.com/quote', 'yahoo.com']) {
     for (const line of list.split('\n')) {
-      if (line.includes(pref)) {
-        target = line.trim().split(/\s+/)[0];
-        break;
-      }
+      if (line.includes(pref)) return line.trim().split(/\s+/)[0];
     }
-    if (target) break;
   }
-  if (!target) throw new Error('No Yahoo Finance tab found. Open https://finance.yahoo.com in Chrome first.');
+  return null;
+}
 
-  console.log(`Using tab: ${target}`);
+function cdpFetch(tabId, url, options = {}) {
+  const method = options.method || 'GET';
+  const hdrs = options.headers ? `,headers:${JSON.stringify(options.headers)}` : '';
+  const bodyPart = options.body ? `,body:${JSON.stringify(String(options.body))}` : '';
+  const result = cdp('eval', tabId,
+    `(async()=>{const r=await fetch('${url}',{method:'${method}',credentials:'include'${hdrs}${bodyPart}});return r.status+'|||'+(await r.text())})()`);
+  const sepIdx = result.indexOf('|||');
+  const status = parseInt(result.substring(0, sepIdx), 10);
+  const body = result.substring(sepIdx + 3);
+  return { status, body };
+}
 
-  const raw = cdp('evalraw', target, 'Network.getCookies',
-    JSON.stringify({ urls: ['https://finance.yahoo.com', 'https://query1.finance.yahoo.com'] }));
-  const { cookies } = JSON.parse(raw);
+// ---------------------------------------------------------------------------
+// Auth: fetch crumb via Chrome CDP
+// ---------------------------------------------------------------------------
 
-  // Build cookie string from all yahoo.com domain cookies
-  const yahooCookies = cookies.filter(c => c.domain.includes('yahoo.com'));
-  if (!yahooCookies.length) throw new Error('No Yahoo cookies found. Are you logged in / have you visited Yahoo Finance?');
+function doAuth() {
+  console.log('Finding Yahoo Finance tab...');
+  const tabId = findYahooTab();
+  if (!tabId) throw new Error('No Yahoo Finance tab found. Open https://finance.yahoo.com in Chrome first.');
 
-  const cookieStr = yahooCookies.map(c => `${c.name}=${c.value}`).join('; ');
+  console.log(`Using tab: ${tabId}`);
+  console.log('Fetching crumb via Chrome CDP...');
 
-  // Fetch crumb using these cookies
-  console.log('Fetching crumb...');
-  const crumbResp = await fetch(CRUMB_URL, {
-    headers: {
-      'cookie': cookieStr,
-      'user-agent': USER_AGENT,
-    },
-  });
+  const { status, body } = cdpFetch(tabId, CRUMB_URL);
+  const crumb = body.trim();
 
-  if (!crumbResp.ok) {
-    throw new Error(`Failed to fetch crumb (HTTP ${crumbResp.status}). Try refreshing Yahoo Finance in Chrome.`);
-  }
-
-  const crumb = await crumbResp.text();
-  if (!crumb || crumb.includes('<html>') || crumb.includes('Too Many Requests')) {
-    throw new Error(`Invalid crumb response: ${crumb.substring(0, 100)}. Try again later.`);
+  if (status !== 200 || !crumb || crumb.includes('<html>') || crumb.includes('Too Many Requests')) {
+    throw new Error(`Failed to fetch crumb (HTTP ${status}): ${crumb.substring(0, 100)}. Try refreshing Yahoo Finance in Chrome.`);
   }
 
   console.log(`Crumb: ${crumb}`);
 
   saveJson(SESSION_FILE, {
-    cookie: cookieStr,
     crumb,
-    extractedAt: new Date().toISOString(),
+    capturedAt: new Date().toISOString(),
   });
   console.log(`Auth saved to: ${SESSION_FILE}`);
 }
 
 // ---------------------------------------------------------------------------
-// HTTP helpers
+// API fetch via Chrome CDP
 // ---------------------------------------------------------------------------
 
-function getAuth() {
-  const auth = loadJson(SESSION_FILE);
-  if (!auth.cookie || !auth.crumb) {
+function getSession() {
+  const session = loadJson(SESSION_FILE);
+  if (!session.crumb) {
     console.error('No auth found. Run: node yahoofinance-search.mjs auth');
     process.exit(1);
   }
-  return auth;
+  return session;
 }
 
-function baseHeaders(auth) {
-  return {
-    'cookie': auth.cookie,
-    'user-agent': USER_AGENT,
-    'accept': 'application/json',
-  };
-}
-
-async function apiFetch(auth, url, params = {}) {
+function apiFetch(session, url, params = {}) {
   // Always append crumb
-  params.crumb = auth.crumb;
+  params.crumb = session.crumb;
 
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(params)) {
@@ -158,28 +138,29 @@ async function apiFetch(auth, url, params = {}) {
 
   const fullUrl = `${url}?${qs.toString()}`;
 
-  const resp = await fetch(fullUrl, {
-    headers: baseHeaders(auth),
-  });
+  const tabId = findYahooTab();
+  if (!tabId) throw new Error('No Yahoo Finance tab found. Open https://finance.yahoo.com in Chrome first.');
 
-  const text = await resp.text();
+  const { status, body } = cdpFetch(tabId, fullUrl);
 
-  if (!resp.ok) {
-    if (resp.status === 401 || resp.status === 403) {
-      console.error('Session expired or invalid crumb. Run: node yahoofinance-search.mjs auth');
-    }
-    throw new Error(`API request failed (HTTP ${resp.status}): ${text.substring(0, 200)}`);
+  if (status === 401 || status === 403) {
+    console.error('Session expired or invalid crumb. Run: node yahoofinance-search.mjs auth');
+    throw new Error(`API request failed (HTTP ${status}): ${body.substring(0, 200)}`);
   }
 
-  if (text.includes('Will be right back')) {
+  if (status !== 200) {
+    throw new Error(`API request failed (HTTP ${status}): ${body.substring(0, 200)}`);
+  }
+
+  if (body.includes('Will be right back')) {
     throw new Error('Yahoo Finance is currently down. Try again later.');
   }
 
   let data;
   try {
-    data = JSON.parse(text);
+    data = JSON.parse(body);
   } catch {
-    throw new Error(`Invalid JSON response: ${text.substring(0, 200)}`);
+    throw new Error(`Invalid JSON response: ${body.substring(0, 200)}`);
   }
 
   return data;
@@ -189,7 +170,7 @@ async function apiFetch(auth, url, params = {}) {
 // Search: symbol/quote/news search
 // ---------------------------------------------------------------------------
 
-async function doSearch(auth, query, { quotesCount = 8, newsCount = 8 } = {}) {
+function doSearch(session, query, { quotesCount = 8, newsCount = 8 } = {}) {
   const url = `${QUERY2_URL}/v1/finance/search`;
   const params = {
     q: query,
@@ -206,7 +187,7 @@ async function doSearch(auth, query, { quotesCount = 8, newsCount = 8 } = {}) {
     recommendedCount: 8,
   };
 
-  const data = await apiFetch(auth, url, params);
+  const data = apiFetch(session, url, params);
 
   // Filter quotes to only include entries with a symbol
   const quotes = (data.quotes || []).filter(q => q.symbol).map(q => ({
@@ -233,7 +214,7 @@ async function doSearch(auth, query, { quotesCount = 8, newsCount = 8 } = {}) {
 // Lookup: ticker/symbol lookup by type
 // ---------------------------------------------------------------------------
 
-async function doLookup(auth, query, { type = 'all', count = 25 } = {}) {
+function doLookup(session, query, { type = 'all', count = 25 } = {}) {
   if (!LOOKUP_TYPES.includes(type)) {
     throw new Error(`Invalid lookup type "${type}". Valid types: ${LOOKUP_TYPES.join(', ')}`);
   }
@@ -250,7 +231,7 @@ async function doLookup(auth, query, { type = 'all', count = 25 } = {}) {
     region: 'US',
   };
 
-  const data = await apiFetch(auth, url, params);
+  const data = apiFetch(session, url, params);
 
   // Check for errors
   const error = data?.finance?.error;
@@ -292,7 +273,7 @@ function parseFlags(args) {
 
 switch (command) {
   case 'auth': {
-    await doAuth();
+    doAuth();
     break;
   }
 
@@ -304,12 +285,12 @@ switch (command) {
       process.exit(1);
     }
 
-    const auth = getAuth();
+    const session = getSession();
     const quotesCount = parseInt(flags.quotes || '8', 10);
     const newsCount = parseInt(flags.news || '8', 10);
 
     console.log(`Searching Yahoo Finance for: "${query}" (quotes=${quotesCount}, news=${newsCount})`);
-    const result = await doSearch(auth, query, { quotesCount, newsCount });
+    const result = doSearch(session, query, { quotesCount, newsCount });
 
     // Cache result
     const cacheFile = resolve(CACHE_DIR, `search-${query.replace(/[^a-zA-Z0-9]/g, '_')}.json`);
@@ -351,12 +332,12 @@ switch (command) {
       process.exit(1);
     }
 
-    const auth = getAuth();
+    const session = getSession();
     const type = flags.type || 'all';
     const count = parseInt(flags.count || '25', 10);
 
     console.log(`Looking up: "${query}" (type=${type}, count=${count})`);
-    const results = await doLookup(auth, query, { type, count });
+    const results = doLookup(session, query, { type, count });
 
     // Cache result
     const cacheFile = resolve(CACHE_DIR, `lookup-${query.replace(/[^a-zA-Z0-9]/g, '_')}-${type}.json`);
@@ -397,6 +378,6 @@ Examples:
   node yahoofinance-search.mjs lookup "Bitcoin" --type=cryptocurrency --count=10
 
 Data: ${DATA_DIR}/
-  session.json     Auth cookies & crumb
+  session.json     Auth crumb
   cache/           Cached search/lookup results`);
 }

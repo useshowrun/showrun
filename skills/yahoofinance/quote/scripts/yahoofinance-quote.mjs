@@ -32,7 +32,6 @@ const ROOT_URL = 'https://finance.yahoo.com';
 const QUOTE_SUMMARY_URL = `${QUERY2_URL}/v10/finance/quoteSummary`;
 const CRUMB_URL = `${QUERY1_URL}/v1/test/getcrumb`;
 
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
 
 // ---------------------------------------------------------------------------
 // Data directory
@@ -73,74 +72,54 @@ function cdp(...args) {
   return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
 }
 
-// ---------------------------------------------------------------------------
-// Auth: extract cookies from Chrome via CDP, fetch crumb
-// ---------------------------------------------------------------------------
-
-async function doAuth() {
-  console.log('Finding Yahoo Finance tab...');
+function findYahooTab() {
   const list = cdp('list');
-  let target;
   for (const pref of ['finance.yahoo.com', 'yahoo.com/quote', 'yahoo.com']) {
     for (const line of list.split('\n')) {
-      if (line.includes(pref)) {
-        target = line.trim().split(/\s+/)[0];
-        break;
-      }
+      if (line.includes(pref)) return line.trim().split(/\s+/)[0];
     }
-    if (target) break;
   }
-  if (!target) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
+  return null;
+}
 
+// ---------------------------------------------------------------------------
+// Chrome CDP fetch — all Yahoo API requests go through Chrome's browser context
+// to avoid TLS fingerprinting and IP-level rate limits
+// ---------------------------------------------------------------------------
+
+function cdpFetch(tabId, url, options = {}) {
+  const method = options.method || 'GET';
+  const hdrs = options.headers ? `,headers:${JSON.stringify(options.headers)}` : '';
+  const bodyPart = options.body ? `,body:${JSON.stringify(String(options.body))}` : '';
+
+  const result = cdp('eval', tabId,
+    `(async()=>{const r=await fetch('${url}',{method:'${method}',credentials:'include'${hdrs}${bodyPart}});return r.status+'|||'+(await r.text())})()`);
+
+  const sepIdx = result.indexOf('|||');
+  const status = parseInt(result.substring(0, sepIdx), 10);
+  const body = result.substring(sepIdx + 3);
+  return { status, body };
+}
+
+// ---------------------------------------------------------------------------
+// Auth: extract crumb from Chrome via CDP
+// ---------------------------------------------------------------------------
+
+function doAuth() {
+  console.log('Finding Yahoo Finance tab...');
+  const target = findYahooTab();
+  if (!target) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
   console.log(`Using tab: ${target}`);
 
-  // Extract cookies via CDP Network.getCookies
-  const raw = cdp('evalraw', target, 'Network.getCookies',
-    JSON.stringify({ urls: ['https://finance.yahoo.com', 'https://www.yahoo.com', 'https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'] }));
-  const { cookies } = JSON.parse(raw);
-
-  // Build cookie string from all yahoo.com domain cookies
-  const cookieStr = cookies
-    .filter(c => c.domain.includes('yahoo.com'))
-    .map(c => `${c.name}=${c.value}`)
-    .join('; ');
-
-  if (!cookieStr) throw new Error('No Yahoo cookies found. Make sure you are on finance.yahoo.com.');
-
-  // Extract User-Agent from browser
-  let userAgent = USER_AGENT;
-  try {
-    const uaResult = cdp('eval', target, 'navigator.userAgent');
-    if (uaResult && uaResult.length > 10) userAgent = uaResult;
-  } catch { /* use default */ }
-
+  // Fetch crumb via Chrome's fetch
   console.log('Fetching crumb...');
-
-  // Fetch crumb using extracted cookies
-  const crumbResp = await fetch(CRUMB_URL, {
-    headers: {
-      'Cookie': cookieStr,
-      'User-Agent': userAgent,
-    },
-    redirect: 'follow',
-  });
-
-  if (!crumbResp.ok) {
-    throw new Error(`Failed to fetch crumb: HTTP ${crumbResp.status} ${crumbResp.statusText}`);
+  const { status, body: crumb } = cdpFetch(target, CRUMB_URL);
+  if (status !== 200 || !crumb || crumb.includes('<html>') || crumb.includes('Too Many Requests')) {
+    throw new Error(`Failed to fetch crumb: HTTP ${status}`);
   }
+  console.log('Crumb fetched via Chrome.');
 
-  const crumb = await crumbResp.text();
-  if (!crumb || crumb.includes('<html>') || crumb.includes('Too Many Requests')) {
-    throw new Error(`Invalid crumb response: ${crumb.substring(0, 100)}`);
-  }
-
-  const session = {
-    cookies: cookieStr,
-    crumb,
-    userAgent,
-    capturedAt: new Date().toISOString(),
-  };
-
+  const session = { crumb, capturedAt: new Date().toISOString() };
   saveJson(SESSION_FILE, session);
   console.log(`Auth saved to: ${SESSION_FILE}`);
   console.log(`Crumb: ${crumb}`);
@@ -152,50 +131,44 @@ async function doAuth() {
 
 function getSession() {
   const session = loadJson(SESSION_FILE);
-  if (!session || !session.cookies || !session.crumb) {
+  if (!session || !session.crumb) {
     console.error('No auth found. Run: node yahoofinance-quote.mjs auth');
     process.exit(1);
   }
   return session;
 }
 
-function baseHeaders(session) {
-  return {
-    'Cookie': session.cookies,
-    'User-Agent': session.userAgent || USER_AGENT,
-    'Accept': 'application/json',
-  };
-}
-
 // ---------------------------------------------------------------------------
-// HTTP helpers with error handling
+// API fetch — all requests routed through Chrome's browser context
 // ---------------------------------------------------------------------------
 
-async function apiFetch(session, url, options = {}) {
-  const resp = await fetch(url, {
-    ...options,
-    headers: { ...baseHeaders(session), ...options.headers },
-  });
-
-  if (resp.status === 401 || resp.status === 403) {
-    console.error(`Auth expired (HTTP ${resp.status}). Run: node yahoofinance-quote.mjs auth`);
-    process.exit(1);
-  }
-  if (resp.status === 429) {
-    console.error('Rate limited (HTTP 429). Wait a few minutes and try again.');
-    process.exit(1);
-  }
-  if (resp.status === 404) {
-    console.error(`Not found (HTTP 404). Check the symbol and try again.`);
+function apiFetch(session, url, options = {}) {
+  const target = findYahooTab();
+  if (!target) {
+    console.error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome.');
     process.exit(1);
   }
 
-  const text = await resp.text();
+  const { status, body } = cdpFetch(target, url, options);
+
+  if (status === 401 || status === 403) {
+    console.error(`Auth expired (HTTP ${status}). Run: node yahoofinance-quote.mjs auth`);
+    process.exit(1);
+  }
+  if (status === 429) {
+    console.error('Rate limited (HTTP 429). Try again in a few minutes.');
+    process.exit(1);
+  }
+  if (status === 404) {
+    console.error('Not found (HTTP 404). Check the symbol and try again.');
+    process.exit(1);
+  }
+
   let data;
-  try { data = JSON.parse(text); } catch { data = text; }
+  try { data = JSON.parse(body); } catch { data = body; }
 
-  if (!resp.ok) {
-    console.error(`HTTP ${resp.status}: ${typeof data === 'string' ? data.substring(0, 200) : JSON.stringify(data).substring(0, 200)}`);
+  if (status < 200 || status >= 300) {
+    console.error(`HTTP ${status}: ${typeof data === 'string' ? data.substring(0, 200) : JSON.stringify(data).substring(0, 200)}`);
     process.exit(1);
   }
 

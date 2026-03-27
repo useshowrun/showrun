@@ -10,7 +10,7 @@
 //   node yahoofinance-sectors.mjs view technology
 //   node yahoofinance-sectors.mjs industry technology/software-application
 //
-// Requires Node 22+ (built-in fetch).
+// Requires Node 22+ and Chrome with finance.yahoo.com open.
 
 import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
@@ -25,8 +25,6 @@ const QUERY1_URL = 'https://query1.finance.yahoo.com';
 const SECTORS_URL = `${QUERY1_URL}/v1/finance/sectors`;
 const INDUSTRIES_URL = `${QUERY1_URL}/v1/finance/industries`;
 const CRUMB_URL = `${QUERY1_URL}/v1/test/getcrumb`;
-
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
 
 const SECTOR_KEYS = [
   'technology',
@@ -81,77 +79,52 @@ function cdp(...args) {
   return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
 }
 
-// ---------------------------------------------------------------------------
-// Auth: extract cookies from Chrome via CDP, fetch crumb
-// ---------------------------------------------------------------------------
-
-async function doAuth() {
-  console.log('Finding Yahoo Finance tab...');
+function findYahooTab() {
   const list = cdp('list');
-  let target;
   for (const pref of ['finance.yahoo.com', 'yahoo.com/quote', 'yahoo.com']) {
     for (const line of list.split('\n')) {
-      if (line.includes(pref)) {
-        target = line.trim().split(/\s+/)[0];
-        break;
-      }
+      if (line.includes(pref)) return line.trim().split(/\s+/)[0];
     }
-    if (target) break;
   }
-  if (!target) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
+  return null;
+}
 
-  console.log(`Using tab: ${target}`);
+function cdpFetch(tabId, url, options = {}) {
+  const method = options.method || 'GET';
+  const hdrs = options.headers ? `,headers:${JSON.stringify(options.headers)}` : '';
+  const bodyPart = options.body ? `,body:${JSON.stringify(String(options.body))}` : '';
+  const result = cdp('eval', tabId,
+    `(async()=>{const r=await fetch('${url}',{method:'${method}',credentials:'include'${hdrs}${bodyPart}});return r.status+'|||'+(await r.text())})()`);
+  const sepIdx = result.indexOf('|||');
+  const status = parseInt(result.substring(0, sepIdx), 10);
+  const body = result.substring(sepIdx + 3);
+  return { status, body };
+}
 
-  // Extract cookies via CDP Network.getCookies
-  const raw = cdp('evalraw', target, 'Network.getCookies',
-    JSON.stringify({ urls: ['https://finance.yahoo.com', 'https://www.yahoo.com', 'https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'] }));
-  const { cookies } = JSON.parse(raw);
+// ---------------------------------------------------------------------------
+// Auth: fetch crumb from Chrome via CDP
+// ---------------------------------------------------------------------------
 
-  // Build cookie string from all yahoo.com domain cookies
-  const cookieStr = cookies
-    .filter(c => c.domain.includes('yahoo.com'))
-    .map(c => `${c.name}=${c.value}`)
-    .join('; ');
-
-  if (!cookieStr) throw new Error('No Yahoo cookies found. Make sure you are on finance.yahoo.com.');
-
-  // Extract User-Agent from browser
-  let userAgent = USER_AGENT;
-  try {
-    const uaResult = cdp('eval', target, 'navigator.userAgent');
-    if (uaResult && uaResult.length > 10) userAgent = uaResult;
-  } catch { /* use default */ }
+function doAuth() {
+  console.log('Finding Yahoo Finance tab...');
+  const tabId = findYahooTab();
+  if (!tabId) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
+  console.log(`Using tab: ${tabId}`);
 
   console.log('Fetching crumb...');
-
-  // Fetch crumb using extracted cookies
-  const crumbResp = await fetch(CRUMB_URL, {
-    headers: {
-      'Cookie': cookieStr,
-      'User-Agent': userAgent,
-    },
-    redirect: 'follow',
-  });
-
-  if (!crumbResp.ok) {
-    throw new Error(`Failed to fetch crumb: HTTP ${crumbResp.status} ${crumbResp.statusText}`);
-  }
-
-  const crumb = await crumbResp.text();
-  if (!crumb || crumb.includes('<html>') || crumb.includes('Too Many Requests')) {
-    throw new Error(`Invalid crumb response: ${crumb.substring(0, 100)}`);
+  const { status, body } = cdpFetch(tabId, CRUMB_URL);
+  if (status !== 200 || !body || body.length < 4 || body.includes('<html>')) {
+    throw new Error(`Failed to fetch crumb: HTTP ${status} — ${body.substring(0, 100)}`);
   }
 
   const session = {
-    cookies: cookieStr,
-    crumb,
-    userAgent,
+    crumb: body,
     capturedAt: new Date().toISOString(),
   };
 
   saveJson(SESSION_FILE, session);
   console.log(`Auth saved to: ${SESSION_FILE}`);
-  console.log(`Crumb: ${crumb}`);
+  console.log(`Crumb: ${body}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -160,50 +133,44 @@ async function doAuth() {
 
 function getSession() {
   const session = loadJson(SESSION_FILE);
-  if (!session || !session.cookies || !session.crumb) {
+  if (!session || !session.crumb) {
     console.error('No auth found. Run: node yahoofinance-sectors.mjs auth');
     process.exit(1);
   }
   return session;
 }
 
-function baseHeaders(session) {
-  return {
-    'Cookie': session.cookies,
-    'User-Agent': session.userAgent || USER_AGENT,
-    'Accept': 'application/json',
-  };
-}
-
 // ---------------------------------------------------------------------------
-// HTTP helpers with error handling
+// Chrome CDP fetch for all API requests
 // ---------------------------------------------------------------------------
 
-async function apiFetch(session, url, options = {}) {
-  const resp = await fetch(url, {
-    ...options,
-    headers: { ...baseHeaders(session), ...options.headers },
-  });
+function apiFetch(session, url) {
+  const tabId = findYahooTab();
+  if (!tabId) {
+    console.error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
+    process.exit(1);
+  }
 
-  if (resp.status === 401 || resp.status === 403) {
-    console.error(`Auth expired (HTTP ${resp.status}). Run: node yahoofinance-sectors.mjs auth`);
+  const { status, body } = cdpFetch(tabId, url);
+
+  if (status === 401 || status === 403) {
+    console.error(`Auth expired (HTTP ${status}). Run: node yahoofinance-sectors.mjs auth`);
     process.exit(1);
   }
-  if (resp.status === 429) {
-    console.error('Rate limited (HTTP 429). Wait a few minutes and try again.');
+  if (status === 429) {
+    console.error('Rate limited (HTTP 429). Try again shortly.');
     process.exit(1);
   }
-  if (resp.status === 404) {
+  if (status === 404) {
     console.error('Not found (HTTP 404). Check the sector/industry key and try again.');
     process.exit(1);
   }
 
-  const text = await resp.text();
   let data;
-  try { data = JSON.parse(text); } catch { data = text; }
+  try { data = JSON.parse(body); } catch { data = body; }
 
-  if (!resp.ok) {
-    console.error(`HTTP ${resp.status}: ${typeof data === 'string' ? data.substring(0, 200) : JSON.stringify(data).substring(0, 200)}`);
+  if (status < 200 || status >= 300) {
+    console.error(`HTTP ${status}: ${typeof data === 'string' ? data.substring(0, 200) : JSON.stringify(data).substring(0, 200)}`);
     process.exit(1);
   }
 
@@ -214,9 +181,9 @@ async function apiFetch(session, url, options = {}) {
 // Sector / Industry fetcher
 // ---------------------------------------------------------------------------
 
-async function fetchSector(session, sectorKey) {
+function fetchSector(session, sectorKey) {
   const url = `${SECTORS_URL}/${encodeURIComponent(sectorKey)}?formatted=true&withReturns=true&lang=en-US&region=US&crumb=${encodeURIComponent(session.crumb)}`;
-  const data = await apiFetch(session, url);
+  const data = apiFetch(session, url);
 
   // Cache
   ensureDir(CACHE_DIR);
@@ -226,9 +193,9 @@ async function fetchSector(session, sectorKey) {
   return data;
 }
 
-async function fetchIndustry(session, industryKey) {
+function fetchIndustry(session, industryKey) {
   const url = `${INDUSTRIES_URL}/${encodeURIComponent(industryKey)}?formatted=true&withReturns=true&lang=en-US&region=US&crumb=${encodeURIComponent(session.crumb)}`;
-  const data = await apiFetch(session, url);
+  const data = apiFetch(session, url);
 
   // Cache
   ensureDir(CACHE_DIR);
@@ -294,13 +261,13 @@ function cmdList() {
 // Command: view <sector-key>
 // ---------------------------------------------------------------------------
 
-async function cmdView(session, sectorKey) {
+function cmdView(session, sectorKey) {
   if (!SECTOR_KEYS.includes(sectorKey)) {
     console.error(`Unknown sector key: "${sectorKey}". Run "list" to see valid keys.`);
     process.exit(1);
   }
 
-  const result = await fetchSector(session, sectorKey);
+  const result = fetchSector(session, sectorKey);
   const data = result?.data;
   if (!data) {
     console.error('No data returned for this sector.');
@@ -390,7 +357,7 @@ async function cmdView(session, sectorKey) {
 // Command: industry <sector-key>/<industry-key>
 // ---------------------------------------------------------------------------
 
-async function cmdIndustry(session, compositeKey) {
+function cmdIndustry(session, compositeKey) {
   const slashIdx = compositeKey.indexOf('/');
   if (slashIdx === -1) {
     console.error('Usage: node yahoofinance-sectors.mjs industry <sector-key>/<industry-key>');
@@ -406,7 +373,7 @@ async function cmdIndustry(session, compositeKey) {
     process.exit(1);
   }
 
-  const result = await fetchIndustry(session, industryKey);
+  const result = fetchIndustry(session, industryKey);
   const data = result?.data;
   if (!data) {
     console.error(`No data returned for industry "${industryKey}".`);
@@ -537,7 +504,7 @@ Examples:
   node yahoofinance-sectors.mjs industry financial-services/banks-diversified
 
 Data: ${DATA_DIR}/
-  session.json     Auth cookies & crumb
+  session.json     Auth crumb
   cache/           Cached API responses`);
 }
 
@@ -545,7 +512,7 @@ const [,, command, ...args] = process.argv;
 
 switch (command) {
   case 'auth': {
-    await doAuth();
+    doAuth();
     break;
   }
 
@@ -558,7 +525,7 @@ switch (command) {
     const sectorKey = args[0];
     if (!sectorKey) { console.error('Usage: node yahoofinance-sectors.mjs view <sector-key>'); process.exit(1); }
     const session = getSession();
-    await cmdView(session, sectorKey);
+    cmdView(session, sectorKey);
     break;
   }
 
@@ -566,7 +533,7 @@ switch (command) {
     const compositeKey = args[0];
     if (!compositeKey) { console.error('Usage: node yahoofinance-sectors.mjs industry <sector-key>/<industry-key>'); process.exit(1); }
     const session = getSession();
-    await cmdIndustry(session, compositeKey);
+    cmdIndustry(session, compositeKey);
     break;
   }
 

@@ -9,7 +9,7 @@
 //          node crunchbase-event.mjs contestants <permalink|uuid> [--count=100] [--after-id=UUID]
 //          node crunchbase-event.mjs news <permalink|uuid> [--count=50] [--after-id=UUID]
 //
-// Requires Node 22+ (built-in fetch).
+// All API requests go through Chrome's browser context via CDP.
 
 import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
@@ -53,82 +53,97 @@ function cdp(...args) {
   return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
 }
 
+function findCrunchbaseTab() {
+  const list = cdp('list');
+  for (const line of list.split('\n')) {
+    if (line.includes('crunchbase.com')) return line.trim().split(/\s+/)[0];
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Chrome CDP fetch — all Crunchbase API requests go through Chrome's context
+// ---------------------------------------------------------------------------
+
+function cdpFetch(tabId, url, options = {}) {
+  const fullUrl = url.startsWith('http') ? url : `https://www.crunchbase.com${url}`;
+  const method = options.method || 'GET';
+  const headers = { 'x-requested-with': 'XMLHttpRequest', 'content-type': 'application/json', ...options.headers };
+  const hdrs = `,headers:${JSON.stringify(headers)}`;
+  const bodyPart = options.body ? `,body:${JSON.stringify(String(options.body))}` : '';
+
+  const result = cdp('eval', tabId,
+    `(async()=>{const r=await fetch('${fullUrl}',{method:'${method}',credentials:'include'${hdrs}${bodyPart}});return r.status+'|||'+(await r.text())})()`);
+
+  const sepIdx = result.indexOf('|||');
+  const status = parseInt(result.substring(0, sepIdx), 10);
+  const body = result.substring(sepIdx + 3);
+  return { status, body };
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
 
-async function doAuth() {
+function doAuth() {
   console.log('Finding Crunchbase tab...');
-  const list = cdp('list');
-  let target;
-  for (const line of list.split('\n')) {
-    if (line.includes('crunchbase.com')) {
-      target = line.trim().split(/\s+/)[0];
-      break;
-    }
-  }
+  const target = findCrunchbaseTab();
   if (!target) throw new Error('No Crunchbase tab found. Open crunchbase.com in Chrome first.');
 
+  // Validate login by checking for trustcookie (httpOnly, requires Network.getCookies)
   const raw = cdp('evalraw', target, 'Network.getCookies',
     JSON.stringify({ urls: ['https://www.crunchbase.com'] }));
   const { cookies } = JSON.parse(raw);
-  const cookieStr = cookies
-    .filter(c => c.domain.includes('crunchbase.com'))
-    .map(c => `${c.name}=${c.value}`)
-    .join('; ');
+  const hasTrust = cookies.some(c => c.name === 'trustcookie');
+  if (!hasTrust) throw new Error('trustcookie not found. Are you logged in?');
 
-  const cookieMap = Object.fromEntries(cookies.map(c => [c.name, c.value]));
-  if (!cookieMap['trustcookie']) throw new Error('trustcookie not found. Are you logged in?');
-
-  const userAgent = cdp('eval', target, 'navigator.userAgent');
-
-  saveJson(SESSION_FILE, {
-    cookie: cookieStr,
-    userAgent,
-    capturedAt: new Date().toISOString(),
-  });
+  saveJson(SESSION_FILE, { capturedAt: new Date().toISOString() });
   console.log(`Auth saved to: ${SESSION_FILE}`);
 }
 
 // ---------------------------------------------------------------------------
-// HTTP helpers
+// HTTP helpers — all requests routed through Chrome's browser context
 // ---------------------------------------------------------------------------
 
-function getAuth() {
-  const auth = loadJson(SESSION_FILE);
-  if (!auth.cookie) {
+function getSession() {
+  const session = loadJson(SESSION_FILE);
+  if (!session.capturedAt) {
     console.error('No auth found. Run: node crunchbase-event.mjs auth');
     process.exit(1);
   }
-  return auth;
+  return session;
 }
 
-function baseHeaders(auth) {
-  return {
-    'accept': 'application/json',
-    'content-type': 'application/json',
-    'x-requested-with': 'XMLHttpRequest',
-    'cookie': auth.cookie,
-    'user-agent': auth.userAgent || 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
-  };
-}
-
-async function apiFetch(auth, url, options = {}) {
-  const fullUrl = url.startsWith('http') ? url : `https://www.crunchbase.com${url}`;
-  const resp = await fetch(fullUrl, {
-    ...options,
-    headers: { ...baseHeaders(auth), ...options.headers },
-  });
-  const text = await resp.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-
-  if (!resp.ok) {
-    if (resp.status === 401 || resp.status === 403) console.error('Session expired. Run: node crunchbase-event.mjs auth');
-    else if (resp.status === 429) console.error('Rate limited. Wait a few minutes.');
-    else if (resp.status === 404) console.error('Event not found.');
-    throw new Error(`API error (HTTP ${resp.status}): ${JSON.stringify(data).substring(0, 300)}`);
+function apiFetch(session, url, options = {}) {
+  const target = findCrunchbaseTab();
+  if (!target) {
+    console.error('No Crunchbase tab found. Open crunchbase.com in Chrome.');
+    process.exit(1);
   }
+
+  const { status, body } = cdpFetch(target, url, options);
+
+  if (status === 401 || status === 403) {
+    console.error('Session expired. Run: node crunchbase-event.mjs auth');
+    process.exit(1);
+  }
+  if (status === 429) {
+    console.error('Rate limited (HTTP 429). Wait a few minutes.');
+    process.exit(1);
+  }
+  if (status === 404) {
+    console.error('Event not found (HTTP 404).');
+    process.exit(1);
+  }
+
+  let data;
+  try { data = JSON.parse(body); } catch { data = body; }
+
+  if (status < 200 || status >= 300) {
+    console.error(`HTTP ${status}: ${typeof data === 'string' ? data.substring(0, 300) : JSON.stringify(data).substring(0, 300)}`);
+    process.exit(1);
+  }
+
   return data;
 }
 
@@ -136,14 +151,14 @@ async function apiFetch(auth, url, options = {}) {
 // Resolve permalink to UUID
 // ---------------------------------------------------------------------------
 
-async function resolvePermalink(auth, permalink) {
+function resolvePermalink(auth, permalink) {
   // If it looks like a UUID, return it directly
   if (permalink.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)) {
     return permalink;
   }
 
   // Search for the event by permalink
-  const data = await apiFetch(auth, '/v4/data/searches/events?source=custom_advanced_search', {
+  const data = apiFetch(auth, '/v4/data/searches/events?source=custom_advanced_search', {
     method: 'POST',
     body: JSON.stringify({
       field_ids: ['identifier', 'short_description'],
@@ -163,11 +178,11 @@ async function resolvePermalink(auth, permalink) {
 // Resolve to permalink (for overrides endpoint which uses permalink)
 // ---------------------------------------------------------------------------
 
-async function resolveToPermalink(auth, input) {
+function resolveToPermalink(auth, input) {
   if (!input.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)) {
     return input;
   }
-  const data = await apiFetch(auth,
+  const data = apiFetch(auth,
     `/v4/data/entities/events/${input}?field_ids=${encodeURIComponent('["identifier"]')}`);
   return data.properties?.identifier?.permalink || input;
 }
@@ -249,11 +264,11 @@ const SECTIONS = {
   },
 };
 
-async function fetchSection(auth, input, sectionName, { count, afterId } = {}) {
+function fetchSection(auth, input, sectionName, { count, afterId } = {}) {
   const config = SECTIONS[sectionName];
   if (!config) throw new Error(`Unknown section: ${sectionName}`);
 
-  const permalink = await resolveToPermalink(auth, input);
+  const permalink = resolveToPermalink(auth, input);
   const sectionId = config.sectionId || sectionName;
   const limit = count || config.defaultCount;
 
@@ -311,15 +326,15 @@ const EVENT_FIELDS = [
   'rank_event',
 ];
 
-async function viewEvent(auth, input) {
-  const uuid = await resolvePermalink(auth, input);
+function viewEvent(auth, input) {
+  const uuid = resolvePermalink(auth, input);
 
   const fieldIds = encodeURIComponent(JSON.stringify(EVENT_FIELDS));
   let url = `/v4/data/entities/events/${uuid}?field_ids=${fieldIds}`;
   if (EVENT_CARDS.length) {
     url += `&card_ids=${encodeURIComponent(JSON.stringify(EVENT_CARDS))}`;
   }
-  const data = await apiFetch(auth, url);
+  const data = apiFetch(auth, url);
 
   return data;
 }
@@ -343,7 +358,7 @@ function parseFlags(args) {
 const sectionCommand = SECTIONS[command];
 
 if (command === 'auth') {
-  await doAuth();
+  doAuth();
 } else if (command === 'view') {
   const { positional } = parseFlags(args);
   const input = positional[0];
@@ -352,9 +367,9 @@ if (command === 'auth') {
     process.exit(1);
   }
 
-  const auth = getAuth();
+  const auth = getSession();
   console.log(`Fetching event: ${input}...`);
-  const data = await viewEvent(auth, input);
+  const data = viewEvent(auth, input);
 
   const cacheFile = resolve(CACHE_DIR, `view-${input}.json`);
   saveJson(cacheFile, data);
@@ -401,12 +416,12 @@ if (command === 'auth') {
     process.exit(1);
   }
 
-  const auth = getAuth();
+  const auth = getSession();
   const count = parseInt(flags.count || String(sectionCommand.defaultCount));
   const afterId = flags['after-id'] || null;
 
   console.log(`Fetching ${command} for: ${input}...`);
-  const data = await fetchSection(auth, input, command, { count, afterId });
+  const data = fetchSection(auth, input, command, { count, afterId });
 
   const cacheFile = resolve(CACHE_DIR, `${command}-${input}-${Date.now()}.json`);
   saveJson(cacheFile, data);
@@ -442,6 +457,6 @@ Input formats:
   6acfa7da-1dbd-936e-...         Event UUID
 
 Data: ${DATA_DIR}/
-  session.json     Auth cookies
+  session.json     Auth session
   cache/           Event data`);
 }

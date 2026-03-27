@@ -20,7 +20,6 @@ const QUERY2_URL = 'https://query2.finance.yahoo.com';
 const QUERY1_URL = 'https://query1.finance.yahoo.com';
 const QUOTE_SUMMARY_URL = `${QUERY2_URL}/v10/finance/quoteSummary`;
 const CRUMB_URL = `${QUERY1_URL}/v1/test/getcrumb`;
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
 
 const MODULES = 'quoteType,summaryProfile,fundProfile,topHoldings';
 
@@ -50,38 +49,46 @@ function cdp(...args) {
   return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
 }
 
+function findYahooTab() {
+  const list = cdp('list');
+  for (const pref of ['finance.yahoo.com', 'yahoo.com/quote', 'yahoo.com']) {
+    for (const line of list.split('\n')) {
+      if (line.includes(pref)) return line.trim().split(/\s+/)[0];
+    }
+  }
+  return null;
+}
+
+function cdpFetch(tabId, url, options = {}) {
+  const method = options.method || 'GET';
+  const hdrs = options.headers ? `,headers:${JSON.stringify(options.headers)}` : '';
+  const bodyPart = options.body ? `,body:${JSON.stringify(String(options.body))}` : '';
+  const result = cdp('eval', tabId,
+    `(async()=>{const r=await fetch('${url}',{method:'${method}',credentials:'include'${hdrs}${bodyPart}});return r.status+'|||'+(await r.text())})()`);
+  const sepIdx = result.indexOf('|||');
+  const status = parseInt(result.substring(0, sepIdx), 10);
+  const body = result.substring(sepIdx + 3);
+  return { status, body };
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
-async function doAuth() {
+function doAuth() {
   console.log('Finding Yahoo Finance tab...');
-  const list = cdp('list');
-  let target;
-  for (const pref of ['finance.yahoo.com', 'yahoo.com/quote', 'yahoo.com']) {
-    for (const line of list.split('\n')) {
-      if (line.includes(pref)) { target = line.trim().split(/\s+/)[0]; break; }
-    }
-    if (target) break;
-  }
-  if (!target) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
-  console.log(`Using tab: ${target}`);
-
-  const raw = cdp('evalraw', target, 'Network.getCookies',
-    JSON.stringify({ urls: ['https://finance.yahoo.com', 'https://www.yahoo.com', 'https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'] }));
-  const { cookies } = JSON.parse(raw);
-  const cookieStr = cookies.filter(c => c.domain.includes('yahoo.com')).map(c => `${c.name}=${c.value}`).join('; ');
-  if (!cookieStr) throw new Error('No Yahoo cookies found.');
-
-  let userAgent = USER_AGENT;
-  try { const ua = cdp('eval', target, 'navigator.userAgent'); if (ua && ua.length > 10) userAgent = ua; } catch {}
+  const tabId = findYahooTab();
+  if (!tabId) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
+  console.log(`Using tab: ${tabId}`);
 
   console.log('Fetching crumb...');
-  const crumbResp = await fetch(CRUMB_URL, { headers: { 'Cookie': cookieStr, 'User-Agent': userAgent }, redirect: 'follow' });
-  if (!crumbResp.ok) throw new Error(`Failed to fetch crumb: HTTP ${crumbResp.status}`);
-  const crumb = await crumbResp.text();
-  if (!crumb || crumb.includes('<html>') || crumb.includes('Too Many Requests')) throw new Error(`Invalid crumb: ${crumb.substring(0, 100)}`);
+  const { status, body } = cdpFetch(tabId, CRUMB_URL);
+  if (status !== 200 || !body || body.includes('<html>') || body.includes('Too Many Requests') || body.length > 60) {
+    throw new Error(`Failed to fetch crumb: HTTP ${status} — ${body.substring(0, 100)}`);
+  }
+  const crumb = body;
+  console.log('Crumb obtained via Chrome CDP.');
 
-  const session = { cookies: cookieStr, crumb, userAgent, capturedAt: new Date().toISOString() };
+  const session = { crumb, capturedAt: new Date().toISOString() };
   saveJson(SESSION_FILE, session);
   console.log(`Auth saved to: ${SESSION_FILE}`);
   console.log(`Crumb: ${crumb}`);
@@ -92,31 +99,29 @@ async function doAuth() {
 // ---------------------------------------------------------------------------
 function getSession() {
   const s = loadJson(SESSION_FILE);
-  if (!s || !s.cookies || !s.crumb) { console.error('No auth. Run: node yahoofinance-etf.mjs auth'); process.exit(1); }
+  if (!s || !s.crumb) { console.error('No auth. Run: node yahoofinance-etf.mjs auth'); process.exit(1); }
   return s;
 }
 
-async function apiFetch(session, url, opts = {}) {
-  const resp = await fetch(url, {
-    ...opts,
-    headers: { 'Cookie': session.cookies, 'User-Agent': session.userAgent || USER_AGENT, 'Accept': 'application/json', ...opts.headers },
-  });
-  if (resp.status === 401 || resp.status === 403) { console.error(`Auth expired (${resp.status}). Run: node yahoofinance-etf.mjs auth`); process.exit(1); }
-  if (resp.status === 429) { console.error('Rate limited (429). Wait and retry.'); process.exit(1); }
-  if (resp.status === 404) { console.error('Not found (404). Check symbol.'); process.exit(1); }
-  const text = await resp.text();
-  let data; try { data = JSON.parse(text); } catch { data = text; }
-  if (!resp.ok) { console.error(`HTTP ${resp.status}: ${String(data).substring(0, 200)}`); process.exit(1); }
+function apiFetch(session, url) {
+  const tabId = findYahooTab();
+  if (!tabId) { console.error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome.'); process.exit(1); }
+  const { status, body } = cdpFetch(tabId, url);
+  if (status === 401 || status === 403) { console.error(`Auth expired (${status}). Run: node yahoofinance-etf.mjs auth`); process.exit(1); }
+  if (status === 429) { console.error('Rate limited (429). Wait and retry.'); process.exit(1); }
+  if (status === 404) { console.error('Not found (404). Check symbol.'); process.exit(1); }
+  let data; try { data = JSON.parse(body); } catch { data = body; }
+  if (status < 200 || status >= 300) { console.error(`HTTP ${status}: ${String(data).substring(0, 200)}`); process.exit(1); }
   return data;
 }
 
 // ---------------------------------------------------------------------------
 // Fetch quoteSummary
 // ---------------------------------------------------------------------------
-async function fetchSummary(symbol) {
+function fetchSummary(symbol) {
   const session = getSession();
   const url = `${QUOTE_SUMMARY_URL}/${encodeURIComponent(symbol)}?modules=${MODULES}&crumb=${encodeURIComponent(session.crumb)}`;
-  const data = await apiFetch(session, url);
+  const data = apiFetch(session, url);
   const result = data?.quoteSummary?.result?.[0];
   if (!result) { console.error('No data returned for symbol:', symbol); process.exit(1); }
 
@@ -140,8 +145,8 @@ function val(obj, ...keys) {
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
-async function cmdView(symbol) {
-  const r = await fetchSummary(symbol);
+function cmdView(symbol) {
+  const r = fetchSummary(symbol);
   const qt = r.quoteType || {};
   const sp = r.summaryProfile || {};
   const fp = r.fundProfile || {};
@@ -163,8 +168,8 @@ async function cmdView(symbol) {
   console.log(JSON.stringify(info, null, 2));
 }
 
-async function cmdHoldings(symbol) {
-  const r = await fetchSummary(symbol);
+function cmdHoldings(symbol) {
+  const r = fetchSummary(symbol);
   const th = r.topHoldings || {};
 
   const holdings = (th.holdings || []).map(h => ({
@@ -192,8 +197,8 @@ async function cmdHoldings(symbol) {
   console.log(JSON.stringify({ holdings, sectorWeightings, assetComposition }, null, 2));
 }
 
-async function cmdOperations(symbol) {
-  const r = await fetchSummary(symbol);
+function cmdOperations(symbol) {
+  const r = fetchSummary(symbol);
   const fp = r.fundProfile || {};
   const fees = fp.feesExpensesInvestment || {};
   const ops = fp.feesExpensesInvestmentCat || {};
@@ -210,8 +215,8 @@ async function cmdOperations(symbol) {
   console.log(JSON.stringify(info, null, 2));
 }
 
-async function cmdEquityHoldings(symbol) {
-  const r = await fetchSummary(symbol);
+function cmdEquityHoldings(symbol) {
+  const r = fetchSummary(symbol);
   const eq = r.topHoldings?.equityHoldings || {};
 
   const info = {
@@ -225,8 +230,8 @@ async function cmdEquityHoldings(symbol) {
   console.log(JSON.stringify(info, null, 2));
 }
 
-async function cmdBondHoldings(symbol) {
-  const r = await fetchSummary(symbol);
+function cmdBondHoldings(symbol) {
+  const r = fetchSummary(symbol);
   const bh = r.topHoldings?.bondHoldings || {};
   const br = r.topHoldings?.bondRatings || [];
 
@@ -279,12 +284,12 @@ const symbol = rest[0]?.toUpperCase();
 
 try {
   switch (cmd) {
-    case 'auth': await doAuth(); break;
-    case 'view': if (!symbol) { console.error('Usage: view <symbol>'); process.exit(1); } await cmdView(symbol); break;
-    case 'holdings': if (!symbol) { console.error('Usage: holdings <symbol>'); process.exit(1); } await cmdHoldings(symbol); break;
-    case 'operations': if (!symbol) { console.error('Usage: operations <symbol>'); process.exit(1); } await cmdOperations(symbol); break;
-    case 'equity-holdings': if (!symbol) { console.error('Usage: equity-holdings <symbol>'); process.exit(1); } await cmdEquityHoldings(symbol); break;
-    case 'bond-holdings': if (!symbol) { console.error('Usage: bond-holdings <symbol>'); process.exit(1); } await cmdBondHoldings(symbol); break;
+    case 'auth': doAuth(); break;
+    case 'view': if (!symbol) { console.error('Usage: view <symbol>'); process.exit(1); } cmdView(symbol); break;
+    case 'holdings': if (!symbol) { console.error('Usage: holdings <symbol>'); process.exit(1); } cmdHoldings(symbol); break;
+    case 'operations': if (!symbol) { console.error('Usage: operations <symbol>'); process.exit(1); } cmdOperations(symbol); break;
+    case 'equity-holdings': if (!symbol) { console.error('Usage: equity-holdings <symbol>'); process.exit(1); } cmdEquityHoldings(symbol); break;
+    case 'bond-holdings': if (!symbol) { console.error('Usage: bond-holdings <symbol>'); process.exit(1); } cmdBondHoldings(symbol); break;
     default: console.error(`Unknown command: ${cmd}`); printHelp(); process.exit(1);
   }
 } catch (e) { console.error(`Error: ${e.message}`); process.exit(1); }
