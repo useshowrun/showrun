@@ -4,20 +4,20 @@ Search Pitchbook for companies by domain, name, or any search term.
 
 ## Prerequisites
 
-- Node.js 22+ (uses built-in `WebSocket`)
+- Node.js 22+
+- [chrome-cdp](../../chrome-cdp) skill (for `auth`)
 - `curl` with HTTP/2 support — verify with `curl --version` (look for `HTTP2`)
 - Valid session (run login first)
 
 ## Setup
 
-One-time authentication — see [pitchbook-login](../pitchbook-login/SKILL.md) for all methods. Quickest:
+One-time authentication — see [pitchbook-login](../pitchbook-login/SKILL.md) for all methods. Preferred:
 
 ```bash
-# Copy any my.pitchbook.com request as cURL from browser DevTools, save to file
-node ../pitchbook-login/scripts/pitchbook-login.mjs curl /tmp/pb-curl.txt
+node ../pitchbook-login/scripts/pitchbook-login.mjs auth    # CDP auto-login
 ```
 
-Or via CDP:
+Or capture via CDP from an already-logged-in tab:
 
 ```bash
 node scripts/pitchbook-search.mjs auth
@@ -76,4 +76,4 @@ The console summary (printed to stderr) shows a brief list of matches. For the f
 
 ## Session expiry
 
-If you see `Session expired`, re-authenticate. Quickest: copy a fresh request as cURL from the browser. See [pitchbook-login](../pitchbook-login/SKILL.md).
+If you see `Session expired`, re-authenticate. Fastest: `node ../pitchbook-login/scripts/pitchbook-login.mjs auth`. See [pitchbook-login](../pitchbook-login/SKILL.md) for fallbacks.

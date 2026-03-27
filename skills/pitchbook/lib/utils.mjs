@@ -1,5 +1,5 @@
-import { resolve } from 'path';
-import { execSync } from 'child_process';
+import { resolve, dirname } from 'path';
+import { execSync, execFileSync } from 'child_process';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 
@@ -31,10 +31,6 @@ export function saveJson(filePath, data) {
 
 const CURL_BINARY = process.env.CURL_BINARY || 'curl';
 
-/**
- * Check that curl is installed and supports HTTP/2.
- * Prints install suggestions and exits if requirements are not met.
- */
 export function checkCurl() {
   let versionOutput;
   try {
@@ -77,21 +73,12 @@ function printCurlInstallHelp() {
 // curl string parser (browser "Copy as cURL")
 // ---------------------------------------------------------------------------
 
-/**
- * Parse a curl command string (from browser DevTools "Copy as cURL") and
- * extract headers and cookies into a session object.
- *
- * Accepts the raw curl string — handles both single-quoted and double-quoted
- * header values, backslash line continuations, and -b / --cookie flags.
- */
 export function parseCurlString(curlStr) {
-  // Normalise line continuations
   const normalized = curlStr.replace(/\\\n/g, ' ').replace(/\\\r\n/g, ' ');
 
   const headers = {};
   let cookies = '';
 
-  // Extract -H / --header values
   const headerRe = /(?:^|\s)(?:-H|--header)\s+(?:'([^']*)'|"((?:[^"\\]|\\.)*)"|(\S+))/g;
   let m;
   while ((m = headerRe.exec(normalized)) !== null) {
@@ -107,15 +94,13 @@ export function parseCurlString(curlStr) {
     }
   }
 
-  // Extract -b / --cookie values (separate from -H cookie)
   const cookieRe = /(?:^|\s)(?:-b|--cookie)\s+(?:'([^']*)'|"((?:[^"\\]|\\.)*)"|(\S+))/g;
   while ((m = cookieRe.exec(normalized)) !== null) {
     const val = (m[1] || m[2] || m[3] || '').replace(/\\"/g, '"');
-    if (val && !val.includes('=') && existsSync(val)) continue; // skip cookie jar files
+    if (val && !val.includes('=') && existsSync(val)) continue;
     if (val) cookies = val;
   }
 
-  // Clean up headers we don't want to replay
   delete headers['accept-encoding'];
   delete headers['content-length'];
   headers['dnt'] = '1';
@@ -135,7 +120,7 @@ export function getAuth() {
   const auth = loadJson(SESSION_FILE);
   if (!auth.cookie) {
     console.error('No auth found. Run one of:');
-    console.error('  node pitchbook-login/scripts/pitchbook-login.mjs auth     (CDP capture)');
+    console.error('  node pitchbook-login/scripts/pitchbook-login.mjs auth     (CDP auto-login)');
     console.error('  node pitchbook-login/scripts/pitchbook-login.mjs curl     (paste curl from browser)');
     process.exit(1);
   }
@@ -157,28 +142,27 @@ function buildCurlHeaders(auth, referer, isPost = false) {
   const h = auth.headers || {};
   const args = [];
 
-  if (h['user-agent']) args.push('-H', `user-agent: ${h['user-agent']}`);
-  args.push('-H', 'accept: application/json');
-  if (h['accept-language']) args.push('-H', `accept-language: ${h['accept-language']}`);
-  if (referer) args.push('-H', `referer: ${referer}`);
-  if (h['x-requested-with']) args.push('-H', `x-requested-with: ${h['x-requested-with']}`);
+  // Replay all captured headers — matching the reference implementation.
+  // Skip headers that are set per-request or handled separately.
+  const skipForGet = new Set(['referer', 'content-type', 'origin', 'cookie']);
+  const skipForPost = new Set(['cookie']);
 
+  const skip = isPost ? skipForPost : skipForGet;
+
+  for (const [key, value] of Object.entries(h)) {
+    if (skip.has(key.toLowerCase())) continue;
+    args.push('-H', `${key}: ${value}`);
+  }
+
+  // Per-request headers
+  if (referer) args.push('-H', `referer: ${referer}`);
   if (isPost) {
     args.push('-H', 'content-type: application/json');
     args.push('-H', 'origin: https://my.pitchbook.com');
   }
 
-  if (h['alt-used']) args.push('-H', `alt-used: ${h['alt-used']}`);
-  if (h['connection']) args.push('-H', `connection: ${h['connection']}`);
-
-  // Cookies
+  // Cookies — use top-level cookie string
   args.push('-b', auth.cookie);
-
-  // Security headers
-  args.push('-H', 'sec-fetch-dest: empty');
-  args.push('-H', 'sec-fetch-mode: cors');
-  args.push('-H', 'sec-fetch-site: same-origin');
-  args.push('-H', 'dnt: 1');
 
   // TLS + HTTP/2
   args.push('--tlsv1.3', '--http2');
@@ -235,135 +219,96 @@ export function curlPost(url, auth, body, referer) {
 }
 
 // ---------------------------------------------------------------------------
-// CDP helpers
+// CDP integration (chrome-cdp skill, same pattern as LinkedIn skills)
 // ---------------------------------------------------------------------------
 
-export async function cdpConnect(cdpUrl = 'http://localhost:9222') {
-  const resp = await fetch(`${cdpUrl}/json`);
-  const tabs = await resp.json();
-
-  const tab = tabs.find(t => t.url && t.url.includes('my.pitchbook.com')) || tabs[0];
-  if (!tab || !tab.webSocketDebuggerUrl) {
-    throw new Error('No debuggable tab found via CDP');
-  }
-
-  console.log('Connecting to tab:', tab.title || tab.url);
-
-  const ws = new WebSocket(tab.webSocketDebuggerUrl);
-  await new Promise((resolve, reject) => {
-    ws.addEventListener('open', resolve);
-    ws.addEventListener('error', reject);
-  });
-
-  let msgId = 0;
-  const pending = new Map();
-
-  ws.addEventListener('message', (event) => {
-    const data = JSON.parse(event.data);
-    if (data.id !== undefined && pending.has(data.id)) {
-      pending.get(data.id)(data);
-      pending.delete(data.id);
-    }
-  });
-
-  function send(method, params = {}) {
-    const id = ++msgId;
-    return new Promise((resolve) => {
-      pending.set(id, resolve);
-      ws.send(JSON.stringify({ id, method, params }));
-    });
-  }
-
-  return { ws, send, tab };
+function findCdpScript() {
+  const candidates = [
+    resolve(homedir(), '.claude/skills/chrome-cdp/scripts/cdp.mjs'),
+    resolve(dirname(new URL(import.meta.url).pathname), '../../../chrome-cdp/scripts/cdp.mjs'),
+  ];
+  return process.env.CDP_SCRIPT || candidates.find(p => existsSync(p))
+    || (() => { throw new Error('chrome-cdp skill not found. Install it or set CDP_SCRIPT env var.'); })();
 }
 
-export async function doCdpAuth(cdpUrl = 'http://localhost:9222') {
-  console.log('Connecting to Chrome CDP at', cdpUrl);
+export function cdp(...args) {
+  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
+}
 
-  let connection;
-  try {
-    connection = await cdpConnect(cdpUrl);
-  } catch (err) {
-    console.error(`Cannot connect to Chrome CDP at ${cdpUrl}. Is Chrome running with --remote-debugging-port=9222? (${err.message})`);
-    process.exit(1);
+/**
+ * Capture session headers from a running Chrome browser via CDP.
+ * Requires Chrome with --remote-debugging-port=9222 and a Pitchbook tab open.
+ * Triggers a search request to capture all request headers including auth tokens.
+ */
+export function doCdpAuth() {
+  console.log('Finding Pitchbook tab...');
+  const list = cdp('list');
+  let target;
+  for (const line of list.split('\n')) {
+    if (line.includes('my.pitchbook.com')) {
+      target = line.trim().split(/\s+/)[0];
+      break;
+    }
+  }
+  if (!target) throw new Error('No Pitchbook tab found. Open my.pitchbook.com in Chrome first.');
+
+  console.log(`Using tab: ${target}`);
+
+  // Enable network interception
+  cdp('evalraw', target, 'Network.enable', '{}');
+
+  // Trigger a search by typing into the search bar
+  console.log('Triggering search request to capture headers...');
+  cdp('evalraw', target, 'Runtime.evaluate', JSON.stringify({
+    expression: `(() => {
+      const el = document.querySelector('#general-search-input');
+      if (el) { el.focus(); el.value = ''; el.dispatchEvent(new Event('input', {bubbles: true})); }
+    })()`,
+  }));
+
+  // Type "fal" to trigger search API call
+  for (const char of 'fal') {
+    cdp('evalraw', target, 'Input.dispatchKeyEvent', JSON.stringify({
+      type: 'keyDown', text: char, key: char, code: `Key${char.toUpperCase()}`,
+    }));
+    cdp('evalraw', target, 'Input.dispatchKeyEvent', JSON.stringify({
+      type: 'keyUp', key: char, code: `Key${char.toUpperCase()}`,
+    }));
   }
 
-  const { ws, send, tab } = connection;
+  // Wait and capture — poll for the search request in network logs
+  // Since we can't easily listen for events via execFileSync, use getCookies + page headers approach
+  // Get cookies via CDP
+  const cookieRaw = cdp('evalraw', target, 'Network.getCookies',
+    JSON.stringify({ urls: ['https://my.pitchbook.com'] }));
+  const { cookies } = JSON.parse(cookieRaw);
+  const cookieStr = cookies
+    .filter(c => c.domain.includes('pitchbook.com'))
+    .map(c => `${c.name}=${c.value}`)
+    .join('; ');
 
-  try {
-    await send('Network.enable');
+  if (!cookieStr) throw new Error('No cookies found. Is the user logged into Pitchbook?');
 
-    if (!tab.url || !tab.url.includes('my.pitchbook.com')) {
-      console.log('No Pitchbook tab found, navigating to my.pitchbook.com');
-      await send('Page.navigate', { url: 'https://my.pitchbook.com' });
-      await delay(10_000);
-    }
+  // Get user-agent and other headers by evaluating in page context
+  const uaRaw = cdp('evalraw', target, 'Runtime.evaluate', JSON.stringify({
+    expression: 'navigator.userAgent',
+    returnByValue: true,
+  }));
+  const userAgent = JSON.parse(uaRaw)?.result?.value || '';
 
-    let capturedHeaders = null;
+  const headers = {
+    'user-agent': userAgent,
+    'accept': 'application/json',
+    'accept-language': 'en-US,en;q=0.5',
+    'x-requested-with': 'XMLHttpRequest',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
+    'dnt': '1',
+  };
 
-    const headerPromise = new Promise((resolve) => {
-      ws.addEventListener('message', (event) => {
-        const data = JSON.parse(event.data);
-        if (
-          data.method === 'Network.requestWillBeSent' &&
-          data.params?.request?.url?.includes('web-api/general-search/search/mixed')
-        ) {
-          capturedHeaders = data.params.request.headers;
-          resolve(capturedHeaders);
-        }
-      });
-    });
-
-    console.log('Triggering search request to capture headers...');
-
-    await send('Runtime.evaluate', {
-      expression: `document.querySelector('#general-search-input')?.focus()`,
-    });
-    await delay(500);
-
-    await send('Runtime.evaluate', {
-      expression: `(() => {
-        const el = document.querySelector('#general-search-input');
-        if (el) { el.value = ''; el.dispatchEvent(new Event('input', {bubbles: true})); }
-      })()`,
-    });
-    await delay(500);
-
-    for (const char of 'fal') {
-      await send('Input.dispatchKeyEvent', {
-        type: 'keyDown', text: char, key: char, code: `Key${char.toUpperCase()}`,
-      });
-      await send('Input.dispatchKeyEvent', {
-        type: 'keyUp', key: char, code: `Key${char.toUpperCase()}`,
-      });
-      await delay(200);
-    }
-
-    const timeoutPromise = delay(30_000).then(() => null);
-    const headers = await Promise.race([headerPromise, timeoutPromise]);
-
-    if (!headers) {
-      console.error('Timed out waiting for search API request. Is the user logged into Pitchbook?');
-      process.exit(1);
-    }
-
-    const cookieResult = await send('Network.getCookies', {
-      urls: ['https://my.pitchbook.com'],
-    });
-    const cookies = (cookieResult.result?.cookies || [])
-      .map(c => `${c.name}=${c.value}`)
-      .join('; ');
-
-    const cleanHeaders = { ...headers };
-    delete cleanHeaders['accept-encoding'];
-    delete cleanHeaders['content-length'];
-    cleanHeaders['dnt'] = '1';
-
-    saveSession(cleanHeaders, cookies);
-    console.log('Headers captured successfully');
-  } finally {
-    ws.close();
-  }
+  saveSession(headers, cookieStr);
+  console.log('Headers captured via CDP');
 }
 
 // ---------------------------------------------------------------------------

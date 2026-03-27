@@ -4,10 +4,11 @@ Authenticate with Pitchbook and save session headers for API access.
 
 ## Prerequisites
 
-- Node.js 22+ (uses built-in `WebSocket`)
+- Node.js 22+
+- [chrome-cdp](../../chrome-cdp) skill (for `auth` command)
+- Chrome with remote debugging enabled: `google-chrome --remote-debugging-port=9222`
 - `curl` with HTTP/2 support — verify with `curl --version` (look for `HTTP2`)
-- Chrome (for `auth` and `curl` methods)
-- For `auto`: `camoufox` and `otpauth` npm packages installed in `~/.local/share/showrun/data/pitchbook/` + env vars set
+- For `camoufox`: `camoufox-js` and `otpauth` npm packages installed in `~/.local/share/showrun/data/pitchbook/`
 
 ### Installing curl with HTTP/2
 
@@ -20,7 +21,17 @@ If `curl --version` does not show `HTTP2`:
 
 ## Usage
 
-### Copy as cURL (easiest, instant)
+### CDP auto-login (preferred)
+
+```bash
+node scripts/pitchbook-login.mjs auth
+```
+
+Automates login via Chrome DevTools Protocol — navigates to Pitchbook, types email/password, handles TOTP, and captures session headers. Requires env vars and Chrome with CDP enabled.
+
+If a CAPTCHA is detected, the script exits with a message suggesting `camoufox` or `curl` fallback.
+
+### Copy as cURL (manual fallback)
 
 ```bash
 node scripts/pitchbook-login.mjs curl <file>
@@ -29,30 +40,19 @@ node scripts/pitchbook-login.mjs curl -          # read from stdin
 
 The user copies any request to `my.pitchbook.com` as cURL from browser DevTools. The script extracts headers and cookies from the curl string and saves the session.
 
-**How to get the curl string:**
-1. Open `my.pitchbook.com` in Chrome, log in
+**Agent guidance:** When CDP login fails (CAPTCHA, bot detection), ask the user to:
+1. Open `my.pitchbook.com` in Chrome and log in manually
 2. Open DevTools (F12) → Network tab
 3. Right-click any request to `my.pitchbook.com` → Copy → Copy as cURL
-4. Save to a file or pipe to stdin
+4. Paste it — the agent saves the string to a temp file and runs `curl <file>`
 
-**Agent guidance:** This is the recommended auth method. When a user needs to authenticate, suggest they copy a request as cURL from their browser and either paste it for the agent to save to a temp file, or save it themselves. The agent should write the pasted string to a temp file and run `node pitchbook-login.mjs curl /tmp/pb-curl.txt`.
-
-### CDP capture (~10s)
+### Camoufox fallback (anti-detect browser)
 
 ```bash
-node scripts/pitchbook-login.mjs auth
-node scripts/pitchbook-login.mjs auth --cdp-url=http://localhost:9222
+node scripts/pitchbook-login.mjs camoufox
 ```
 
-Connects to Chrome via CDP, finds a Pitchbook tab, triggers a search API request, and captures the request headers and cookies.
-
-### Automated login (~60-90s)
-
-```bash
-node scripts/pitchbook-login.mjs auto
-```
-
-Launches camoufox (anti-detect Firefox), logs in with email/password/TOTP, and captures headers.
+Uses camoufox (anti-detect Firefox) to bypass bot detection. Use when `auth` fails due to CAPTCHA.
 
 ### Show help
 
@@ -60,13 +60,19 @@ Launches camoufox (anti-detect Firefox), logs in with email/password/TOTP, and c
 node scripts/pitchbook-login.mjs
 ```
 
+## Auth priority for agents
+
+1. **Try `auth` first** — CDP auto-login is fastest and requires no user interaction
+2. **If CAPTCHA** → try `camoufox` (if npm deps installed and display available)
+3. **If camoufox fails** → ask user to paste a curl string from their browser
+
 ## How it works
 
-1. **`curl`** — Parses a raw curl command string (from browser "Copy as cURL"). Extracts all `-H` headers and `-b`/`--cookie` values. Cleans up non-replayable headers (`accept-encoding`, `content-length`). Saves session to disk.
+1. **`auth`** — Connects to Chrome via CDP ([chrome-cdp](../../chrome-cdp) skill), navigates to Pitchbook, fills login form via `Runtime.evaluate`, enters TOTP, then captures cookies via `Network.getCookies`. Saves session to disk.
 
-2. **`auth`** — Connects to Chrome via CDP, enables Network domain, types into the Pitchbook search bar to trigger an API request, captures the request headers and cookies via `Network.requestWillBeSent`, saves session to disk.
+2. **`curl`** — Parses a raw curl command string (from browser "Copy as cURL"). Extracts all `-H` headers and cookie values. Saves session to disk.
 
-3. **`auto`** — Launches camoufox, navigates to Pitchbook login, fills email/password/TOTP fields, verifies login, triggers a search to capture headers, saves session to disk.
+3. **`camoufox`** — Launches camoufox, performs automated login, triggers a search request to capture headers via Playwright's `request.allHeaders()`. Saves session to disk.
 
 ## Data storage
 
@@ -77,4 +83,15 @@ node scripts/pitchbook-login.mjs
 
 ## Session expiry
 
-If you see `Session expired` or `Failed (HTTP 401)`, your session has expired (~30 min). Re-authenticate using any method. The `curl` import is fastest — just copy a fresh request from the browser.
+Sessions expire after ~30 min. If you see `Session expired` or `HTTP 401`, re-authenticate. CDP `auth` is fastest for refresh.
+
+## Environment variables
+
+| Variable | Required For | Description |
+|----------|-------------|-------------|
+| `PITCHBOOK_EMAIL` | auth, camoufox | Login email |
+| `PITCHBOOK_PASSWORD` | auth, camoufox | Password |
+| `PITCHBOOK_OTP_SECRET` | auth, camoufox | TOTP base32 secret |
+| `PITCHBOOK_USERNAME` | auth, camoufox | Display name (for login verification) |
+| `CDP_SCRIPT` | Optional | Path to chrome-cdp script |
+| `CURL_BINARY` | Optional | Path to curl binary |

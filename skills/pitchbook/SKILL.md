@@ -4,9 +4,10 @@ Scrape financial data from Pitchbook (company profiles, deal history, team membe
 
 ## Prerequisites
 
-- Node.js 22+ (uses built-in `WebSocket`)
+- Node.js 22+
+- [chrome-cdp](../chrome-cdp) skill (for CDP auto-login)
+- Chrome with remote debugging: `google-chrome --remote-debugging-port=9222`
 - `curl` with HTTP/2 support (used for all API requests)
-- Chrome (for `auth` and `curl` session capture methods)
 
 ### curl with HTTP/2
 
@@ -27,16 +28,36 @@ Set `CURL_BINARY` env var if the correct curl is not at the default path. The sc
 
 ## Setup
 
-One-time authentication — three methods available (fastest first):
+One-time authentication — three methods available (in order of preference):
 
-### Method 1: Copy as cURL (easiest)
+### Method 1: CDP auto-login (preferred)
+
+Requires Chrome with CDP and env vars set. Fully automated — types credentials and handles TOTP:
+
+```bash
+google-chrome --remote-debugging-port=9222
+node pitchbook-login/scripts/pitchbook-login.mjs auth
+```
+
+### Method 2: Camoufox (if CAPTCHA blocks CDP)
+
+Anti-detect browser that can bypass bot detection. Use when `auth` fails due to CAPTCHA:
+
+```bash
+node pitchbook-login/scripts/pitchbook-login.mjs camoufox
+```
+
+Requires npm packages: `cd ~/.local/share/showrun/data/pitchbook && npm init -y && npm install camoufox-js otpauth`
+
+### Method 3: Copy as cURL (manual fallback)
+
+When both automated methods fail, ask the user to copy a request from their browser:
 
 1. Open `https://my.pitchbook.com` in Chrome and log in
 2. Open DevTools (F12) → Network tab
 3. Right-click any request to `my.pitchbook.com` → **Copy** → **Copy as cURL**
 4. Save to a file and run:
    ```bash
-   pbpaste > /tmp/pb-curl.txt                                    # macOS
    node pitchbook-login/scripts/pitchbook-login.mjs curl /tmp/pb-curl.txt
    ```
    Or pipe directly:
@@ -45,49 +66,33 @@ One-time authentication — three methods available (fastest first):
    xclip -o | node pitchbook-login/scripts/pitchbook-login.mjs curl -   # Linux
    ```
 
-**Agent guidance:** When the user needs to authenticate, suggest this method first. Ask the user to copy a request as cURL from their browser DevTools and paste it. The agent can save the pasted string to a temp file and run the `curl` subcommand.
-
-### Method 2: CDP capture (~10s)
-
-1. Launch Chrome with CDP:
-   ```bash
-   google-chrome --remote-debugging-port=9222
-   ```
-2. Log into Pitchbook manually at `https://my.pitchbook.com`
-3. Run:
-   ```bash
-   node pitchbook-login/scripts/pitchbook-login.mjs auth
-   ```
-
-### Method 3: Automated login (~60-90s)
-
-Requires npm packages installed in the data directory and env vars set. See [pitchbook-login/SKILL.md](pitchbook-login/SKILL.md) for details.
+**Agent guidance:** When the user needs to authenticate, try `auth` first. If it fails due to CAPTCHA, try `camoufox`. If that also fails, ask the user to paste a curl string from their browser DevTools.
 
 ### Environment variables
 
 | Variable | Required For | Description |
 |----------|-------------|-------------|
 | `CURL_BINARY` | Optional | Path to curl binary (default: `curl`) |
-| `CHROME_CDP_URL` | Optional | CDP endpoint (default: `http://localhost:9222`) |
-| `PITCHBOOK_EMAIL` | Automated login | Login email |
-| `PITCHBOOK_PASSWORD` | Automated login | Password |
-| `PITCHBOOK_OTP_SECRET` | Automated login | TOTP base32 secret |
-| `PITCHBOOK_USERNAME` | Automated login | Display name (for verification) |
+| `CDP_SCRIPT` | Optional | Path to chrome-cdp script |
+| `PITCHBOOK_EMAIL` | auth, camoufox | Login email |
+| `PITCHBOOK_PASSWORD` | auth, camoufox | Password |
+| `PITCHBOOK_OTP_SECRET` | auth, camoufox | TOTP base32 secret |
+| `PITCHBOOK_USERNAME` | auth, camoufox | Display name (for verification) |
 
 ## Available skills
 
 | Skill | Script | Description |
 |-------|--------|-------------|
-| [Login](pitchbook-login/SKILL.md) | `pitchbook-login/scripts/pitchbook-login.mjs` | Authenticate via cURL import, CDP, or automated login |
+| [Login](pitchbook-login/SKILL.md) | `pitchbook-login/scripts/pitchbook-login.mjs` | Authenticate via CDP, camoufox, or curl import |
 | [Search](pitchbook-search/SKILL.md) | `pitchbook-search/scripts/pitchbook-search.mjs` | Search companies by domain/name |
 | [Company](pitchbook-company/SKILL.md) | `pitchbook-company/scripts/pitchbook-company.mjs` | Fetch full company profile (6 endpoints) |
 
 ## Typical workflow
 
 ```
-1. Capture session   →  node pitchbook-login/scripts/pitchbook-login.mjs curl /tmp/pb-curl.txt
-2. Search company    →  node pitchbook-search/scripts/pitchbook-search.mjs search openai.com
-3. Fetch profile     →  node pitchbook-company/scripts/pitchbook-company.mjs get <companyId>
+1. Authenticate       →  node pitchbook-login/scripts/pitchbook-login.mjs auth
+2. Search company     →  node pitchbook-search/scripts/pitchbook-search.mjs search openai.com
+3. Fetch profile      →  node pitchbook-company/scripts/pitchbook-company.mjs get <companyId>
 ```
 
 ## Data storage
@@ -121,4 +126,4 @@ Requires npm packages installed in the data directory and env vars set. See [pit
 
 ## Session expiry
 
-Captured headers expire after ~30 minutes. If you see `Session expired`, re-authenticate using any method above. The `curl` import method is the fastest way to refresh — just copy a fresh request from the browser.
+Captured headers expire after ~30 minutes. If you see `Session expired`, re-authenticate. CDP `auth` is fastest for refresh.
