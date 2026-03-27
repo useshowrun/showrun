@@ -1,6 +1,6 @@
 # pitchbook-investors
 
-Fetch active investors from Pitchbook with optional filters for verticals, deal types, locations, and trailing range.
+Fetch active investors from Pitchbook with optional filters for verticals, asset class, locations, and trailing range.
 
 ## Prerequisites
 
@@ -28,20 +28,19 @@ node scripts/pitchbook-investors.mjs auth
 ### Fetch active investors
 
 ```bash
-node scripts/pitchbook-investors.mjs active [options]
+node scripts/pitchbook-investors.mjs active [options] [--asset-class=...]
 ```
 
 **Options:**
 - `--days=365` — Trailing range in days (default: 365)
-- `--verticals=VC,PE` — Filter by verticals (comma-separated)
-- `--deal-types=X` — Filter by deal types (comma-separated)
-- `--locations=US` — Filter by locations (comma-separated)
+- `--verticals=AIML,FT` — Filter by verticals (comma-separated)
+- `--locations=gUS` — Filter by locations (see location codes below, comma-separated)
 
 **Examples:**
 ```bash
 node scripts/pitchbook-investors.mjs active
 node scripts/pitchbook-investors.mjs active --days=30
-node scripts/pitchbook-investors.mjs active --verticals=VC,PE --locations=US
+node scripts/pitchbook-investors.mjs active --days=90 --verticals=FT
 ```
 
 ### Show help
@@ -81,6 +80,75 @@ head -50 ~/.local/share/showrun/data/pitchbook/cache/active-investors-*.json
 ```
 
 The console summary (printed to stderr) shows a brief list of investors. For the full response, read the cache file — but only the lines you need. **Never dump full results into the conversation.**
+
+## Filter values
+
+The `--verticals` and `--locations` (see location codes below) flags accept Pitchbook internal codes. Common values:
+
+### Verticals (--verticals)
+
+| Code | Description |
+|------|-------------|
+| AIML | Artificial Intelligence & Machine Learning |
+| FT | FinTech |
+| DTLHL | Digital Health |
+| HT | HealthTech |
+| SEC | Cybersecurity |
+| SAAS | SaaS |
+| ECOMM | E-Commerce |
+| CT | CleanTech |
+| CAE | Climate Tech |
+| CUE | CloudTech & DevOps |
+| ET | EdTech |
+| AGTCH | AgTech |
+| IT | InsurTech |
+| RAD | Robotics and Drones |
+| SPTEC | Space Technology |
+| CCBC | Cryptocurrency/Blockchain |
+| IOT | Internet of Things |
+| LSCI | Life Sciences |
+| MLT | Mobility Tech |
+| MOBILE | Mobile |
+
+Full list (59 codes): `3D`, `AT`, `ADC`, `AGTCH`, `AIML`, `AUDTCH`, `AGTRLT`, `ATNMSCRS`, `BAN`, `BAT`, `BD`, `CNBS`, `CHN`, `CT`, `CAE`, `CUE`, `CTN`, `CCBC`, `SEC`, `DTLHL`, `ECOMM`, `ET`, `EPHMRL`, `EOS`, `FTH`, `FT`, `FDC`, `GMN`, `HT`, `HRTCH`, `ITS`, `ISA`, `INFR`, `IT`, `IOT`, `LAE`, `LSCI`, `LOHAS`, `MNF`, `MT`, `MMI`, `MOBILE`, `MEE`, `MLT`, `MGT`, `NANO`, `OLA`, `ONCO`, `PCO`, `RAN`, `RSTCLG`, `RSI`, `RAD`, `SAAS`, `SPTEC`, `SYN`, `TMT`, `VRTLRLT`, `WQS`
+
+Multiple verticals can be combined: `--verticals=AIML,FT,SEC`
+
+**Note:** Using `--verticals=VC` or `--verticals=PE` will NOT work — these are not valid vertical codes. Verticals describe industry sectors, not investor types.
+
+### Locations (--locations)
+
+| Code | Description |
+|------|-------------|
+| gUS | United States (all) |
+| gCA | Canada |
+| gEU | Europe |
+| gAS | Asia |
+| gAF | Africa |
+| gME | Middle East |
+| gOC | Oceania |
+| sCA | California |
+| sNY | New York |
+| sTX | Texas |
+| sMA | Massachusetts |
+
+Prefix convention: `g` = country/region group, `s` = US state, `sg` = sub-region (e.g., `sgBayArea`)
+
+Example: `--locations=gUS` or `--locations=sCA,sNY`
+
+### Asset class (--asset-class)
+
+Filter by asset class (applies to deal-feed and investors only):
+
+| Code | Description |
+|------|-------------|
+| VENTURE_CAPITAL | Venture Capital deals |
+| MNA | Mergers & Acquisitions |
+| PRIVATE_EQUITY | Private Equity deals |
+
+Example: `--asset-class=VENTURE_CAPITAL`
+
+**Note:** The `--asset-class` filter is accepted by the API but may not reliably filter results on its own. Pitchbook's UI auto-populates detailed `dealTypes` sub-codes when an asset class is selected, which this CLI does not replicate. Results may include deals from all asset classes regardless of the filter value.
 
 ## Session expiry
 

@@ -68,6 +68,21 @@ When both automated methods fail, ask the user to copy a request from their brow
 
 **Agent guidance:** When the user needs to authenticate, try `auth` first. If it fails due to CAPTCHA, try `camoufox`. If that also fails, ask the user to paste a curl string from their browser DevTools.
 
+**Headless Linux:** If running without a display (e.g., SSH, CI), prefix camoufox commands with `xvfb-run`:
+```bash
+xvfb-run node pitchbook-login/scripts/pitchbook-login.mjs camoufox
+```
+
+### Loading environment variables
+
+Scripts require env vars from the pitchbook `.env` file:
+
+```bash
+export $(cat skills/pitchbook/.env | xargs)    # from repo root
+# or
+export $(cat .env | xargs)                     # from skills/pitchbook/
+```
+
 ### Environment variables
 
 | Variable | Required For | Description |
@@ -86,6 +101,13 @@ When both automated methods fail, ask the user to copy a request from their brow
 | [Login](pitchbook-login/SKILL.md) | `pitchbook-login/scripts/pitchbook-login.mjs` | Authenticate via CDP, camoufox, or curl import |
 | [Search](pitchbook-search/SKILL.md) | `pitchbook-search/scripts/pitchbook-search.mjs` | Search companies by domain/name |
 | [Company](pitchbook-company/SKILL.md) | `pitchbook-company/scripts/pitchbook-company.mjs` | Fetch full company profile (6 endpoints) |
+| [Deal Feed](pitchbook-deal-feed/SKILL.md) | `pitchbook-deal-feed/scripts/pitchbook-deal-feed.mjs` | Fetch recent deal flow with filters |
+| [M&A Comps](pitchbook-mna-comps/SKILL.md) | `pitchbook-mna-comps/scripts/pitchbook-mna-comps.mjs` | Fetch comparable M&A transactions |
+| [Investors](pitchbook-investors/SKILL.md) | `pitchbook-investors/scripts/pitchbook-investors.mjs` | Discover active investors |
+| [Valuations](pitchbook-valuations/SKILL.md) | `pitchbook-valuations/scripts/pitchbook-valuations.mjs` | Deal valuation multiples by year |
+| [Hover](pitchbook-hover/SKILL.md) | `pitchbook-hover/scripts/pitchbook-hover.mjs` | Fast company summary (single endpoint) |
+| [Market Maps](pitchbook-market-maps/SKILL.md) | `pitchbook-market-maps/scripts/pitchbook-market-maps.mjs` | Published market map listings |
+| [Advanced Search](pitchbook-advanced-search/SKILL.md) | `pitchbook-advanced-search/scripts/pitchbook-advanced-search.mjs` | Screener: create, run, and paginate search results |
 
 ## Typical workflow
 
@@ -123,6 +145,15 @@ When both automated methods fail, ask the user to copy a request from their brow
    node pitchbook-company/scripts/pitchbook-company.mjs get 123456-78 --sections=generalInfo
    ```
 4. **Never dump full API responses into the conversation.** Summarize findings in your own words and reference the cache file path so the user can inspect the raw data if needed.
+
+## Rate limiting
+
+Pitchbook does not publish rate limits, but aggressive scraping triggers session invalidation or account warnings.
+
+- **Wait at least 8 seconds** between API calls
+- **Use `--limit` flags** to request only the data you need
+- **Advanced search** has built-in 6-second delays between its 6 API steps (~36s total)
+- If you get a 401, the session likely expired — re-authenticate, don't retry rapidly
 
 ## Session expiry
 

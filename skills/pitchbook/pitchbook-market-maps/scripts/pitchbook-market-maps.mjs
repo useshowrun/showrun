@@ -7,7 +7,7 @@
  *   node pitchbook-market-maps.mjs auth                          # capture session from Chrome
  *   node pitchbook-market-maps.mjs list                          # list published market maps
  *   node pitchbook-market-maps.mjs list --verticals=AI           # filter by vertical
- *   node pitchbook-market-maps.mjs list --deal-types=VC          # filter by deal type
+ *   node pitchbook-market-maps.mjs list --verticals=AI,FT        # filter by verticals
  *   node pitchbook-market-maps.mjs list --locations=US           # filter by location
  */
 
@@ -116,12 +116,12 @@ Fetch published market maps from Pitchbook.
 
 Commands:
   auth                                    Capture session from Chrome via CDP
-  list [--verticals=X] [--deal-types=X] [--locations=X]
+  list [--verticals=X] [--locations=X]
                                           List published market maps
 
 Examples:
   node pitchbook-market-maps.mjs auth
   node pitchbook-market-maps.mjs list
   node pitchbook-market-maps.mjs list --verticals=AI
-  node pitchbook-market-maps.mjs list --deal-types=VC --locations=US`);
+  node pitchbook-market-maps.mjs list --verticals=AI --locations=gUS`);
 }

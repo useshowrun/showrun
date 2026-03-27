@@ -7,7 +7,7 @@
  *   node pitchbook-deal-feed.mjs auth                          # capture session from Chrome
  *   node pitchbook-deal-feed.mjs feed                          # fetch recent deals
  *   node pitchbook-deal-feed.mjs feed --limit=10 --days=365
- *   node pitchbook-deal-feed.mjs feed --verticals=VC,PE --deal-types=SERIES_A --locations=US
+ *   node pitchbook-deal-feed.mjs feed --verticals=VC,PE --asset-class=VENTURE_CAPITAL --locations=US
  */
 
 import { resolve } from 'path';
@@ -25,13 +25,13 @@ import {
 // Deal Feed
 // ---------------------------------------------------------------------------
 
-function fetchDealFeed({ limit = 10, days = 365, verticals = [], dealTypes = [], locations = [] }) {
+function fetchDealFeed({ limit = 10, days = 365, verticals = [], assetClasses = [], dealTypes = [], locations = [] }) {
   const auth = getAuth();
   checkCurl();
   console.log(`Fetching recent deals (limit=${limit}, days=${days})`);
 
   const payload = {
-    assetClasses: [],
+    assetClasses,
     verticals,
     dealTypes,
     locations,
@@ -94,9 +94,10 @@ switch (command) {
     const limit = parseInt(flags.limit || '10', 10);
     const days = parseInt(flags.days || '365', 10);
     const verticals = flags.verticals ? flags.verticals.split(',') : [];
+    const assetClasses = flags['asset-class'] ? flags['asset-class'].split(',') : [];
     const dealTypes = flags['deal-types'] ? flags['deal-types'].split(',') : [];
     const locations = flags.locations ? flags.locations.split(',') : [];
-    fetchDealFeed({ limit, days, verticals, dealTypes, locations });
+    fetchDealFeed({ limit, days, verticals, assetClasses, dealTypes, locations });
     break;
   }
   default:
@@ -112,11 +113,11 @@ Options for feed:
   --limit=10                              Number of deals to fetch (default: 10)
   --days=365                              Trailing range in days (default: 365)
   --verticals=VC,PE                       Filter by verticals (comma-separated)
-  --deal-types=SERIES_A,SERIES_B          Filter by deal types (comma-separated)
+  --asset-class=VENTURE_CAPITAL            Filter by asset class (comma-separated)
   --locations=US,UK                       Filter by locations (comma-separated)
 
 Examples:
   node pitchbook-deal-feed.mjs feed
   node pitchbook-deal-feed.mjs feed --limit=5 --days=30
-  node pitchbook-deal-feed.mjs feed --verticals=VC --deal-types=SERIES_A --locations=US`);
+  node pitchbook-deal-feed.mjs feed --verticals=VC --asset-class=VENTURE_CAPITAL --locations=US`);
 }

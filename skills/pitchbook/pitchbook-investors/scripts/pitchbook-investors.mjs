@@ -8,7 +8,7 @@
  *   node pitchbook-investors.mjs active                        # fetch active investors (default 365 days)
  *   node pitchbook-investors.mjs active --days=30              # trailing range in days
  *   node pitchbook-investors.mjs active --verticals=VC,PE      # filter by verticals
- *   node pitchbook-investors.mjs active --deal-types=X         # filter by deal types
+ *   node pitchbook-investors.mjs active --asset-class=VENTURE_CAPITAL  # filter by asset class
  *   node pitchbook-investors.mjs active --locations=US         # filter by locations
  */
 
@@ -27,7 +27,7 @@ import {
 // Active Investors
 // ---------------------------------------------------------------------------
 
-function fetchActiveInvestors({ days = 365, verticals = [], dealTypes = [], locations = [] } = {}) {
+function fetchActiveInvestors({ days = 365, verticals = [], assetClasses = [], dealTypes = [], locations = [] } = {}) {
   const auth = getAuth();
   checkCurl();
 
@@ -35,7 +35,7 @@ function fetchActiveInvestors({ days = 365, verticals = [], dealTypes = [], loca
   console.log(`Fetching active investors (trailing ${trailingRange} days)...`);
 
   const payload = {
-    assetClasses: [],
+    assetClasses,
     verticals,
     dealTypes,
     locations,
@@ -98,6 +98,7 @@ switch (command) {
     fetchActiveInvestors({
       days: flags.days || '365',
       verticals: splitCsv(flags.verticals),
+      assetClasses: splitCsv(flags['asset-class']),
       dealTypes: splitCsv(flags['deal-types']),
       locations: splitCsv(flags.locations),
     });
@@ -115,7 +116,7 @@ Commands:
 Options for 'active':
   --days=365          Trailing range in days (default: 365)
   --verticals=VC,PE   Filter by verticals (comma-separated)
-  --deal-types=X      Filter by deal types (comma-separated)
+  --asset-class=VENTURE_CAPITAL  Filter by asset class (comma-separated)
   --locations=US      Filter by locations (comma-separated)
 
 Examples:

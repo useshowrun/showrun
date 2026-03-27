@@ -7,7 +7,7 @@
  *   node pitchbook-valuations.mjs auth                         # capture session from Chrome
  *   node pitchbook-valuations.mjs multiples                    # default 365-day trailing
  *   node pitchbook-valuations.mjs multiples --days=730
- *   node pitchbook-valuations.mjs multiples --verticals=X --deal-types=X --locations=X
+ *   node pitchbook-valuations.mjs multiples --verticals=X --locations=X
  */
 
 import { resolve } from 'path';
@@ -107,11 +107,11 @@ Fetch recent deal multiples and valuations from Pitchbook.
 
 Commands:
   auth                                        Capture session from Chrome via CDP
-  multiples [--days=365] [--verticals=X]      Fetch deal multiples
-            [--deal-types=X] [--locations=X]
+  multiples [--days=365] [--verticals=X] [--locations=X]
+                                                Fetch deal multiples
 
 Examples:
   node pitchbook-valuations.mjs multiples
   node pitchbook-valuations.mjs multiples --days=730
-  node pitchbook-valuations.mjs multiples --verticals=SaaS --deal-types=Buyout`);
+  node pitchbook-valuations.mjs multiples --verticals=SAAS`);
 }

@@ -29,9 +29,9 @@ const BASE = 'https://my.pitchbook.com';
 const REFERER = `${BASE}/search/companies`;
 
 const SEARCH_TYPE_MAP = {
-  COMPANIES: { entryPointKey: 'COMPANY', searchType: 'COMPANIES' },
-  DEALS: { entryPointKey: 'DEAL', searchType: 'DEALS' },
-  INVESTORS: { entryPointKey: 'INVESTOR', searchType: 'INVESTORS' },
+  COMPANIES: { entryPointKey: 'ALL_COMPANIES', searchType: 'COMPANY' },
+  DEALS: { entryPointKey: 'ALL_DEALS', searchType: 'DEAL' },
+  INVESTORS: { entryPointKey: 'ALL_INVESTORS', searchType: 'INVESTOR' },
 };
 
 const TAB_TYPE_MAP = {
@@ -131,9 +131,9 @@ function printSummary(data, count) {
 async function doFullSearch(auth, type, page, pageSize) {
   // Step 1: Create
   const createResult = createSearch(auth, type);
-  const searchId = createResult?.searchId;
+  const searchId = createResult?.id || createResult?.searchId;
   if (!searchId) {
-    console.error('Failed to create search session. Response:', JSON.stringify(createResult));
+    console.error('Failed to create search session. Response:', JSON.stringify(createResult).substring(0, 500));
     process.exit(1);
   }
   console.log(`  searchId: ${searchId}`);

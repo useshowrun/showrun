@@ -25,6 +25,11 @@ node scripts/pitchbook-hover.mjs auth
 
 ## Usage
 
+**Prerequisite:** You need a Pitchbook company ID (`pbId`). Use `pitchbook-search` to find it first:
+```bash
+node ../pitchbook-search/scripts/pitchbook-search.mjs search "company name"
+```
+
 ### Fetch company hover card
 
 ```bash
@@ -75,7 +80,7 @@ The console prints a concise summary. For the full response, read the cache file
 
 ```bash
 node scripts/pitchbook-hover.mjs get 12345-67 > /tmp/pb-hover.json 2>&1
-cat ~/.local/share/showrun/data/pitchbook/cache/hover-12345-67.json
+head -50 ~/.local/share/showrun/data/pitchbook/cache/hover-12345-67.json
 ```
 
 ## Session expiry
