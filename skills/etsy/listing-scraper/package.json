@@ -1,0 +1,15 @@
+{
+  "name": "etsy-listing-scraper",
+  "version": "1.0.0",
+  "description": "Etsy product listings, shop profiles, and reviews scraper — bypasses DataDome via Camoufox",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/listing-scraper.mjs"
+  },
+  "dependencies": {
+    "camoufox-js": ">=0.1.0"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
