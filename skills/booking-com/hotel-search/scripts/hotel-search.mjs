@@ -147,11 +147,39 @@ class CDP {
     };
   }
 
+  /**
+   * Navigate to URL and wait for load + extra ms.
+   * Returns the final URL after any redirects.
+   */
   async navigate(url, waitMs = 8000) {
     await this.send('Page.navigate', { url });
     await sleep(waitMs);
     const r = await this.send('Runtime.evaluate', { expression: 'location.href' });
     return r.result?.value;
+  }
+
+  /**
+   * Navigate to a URL, ensuring a fresh page load.
+   * Stays within booking.com to preserve Service Worker and session cookies.
+   * If already on the same page (same path), navigates to homepage first.
+   */
+  async navigateFresh(url, waitMs = 8000) {
+    let currentUrl = '';
+    try {
+      const r = await this.send('Runtime.evaluate', { expression: 'location.href' });
+      currentUrl = r?.result?.value || '';
+    } catch(e) {}
+
+    const urlPath = new URL(url).pathname;
+    const currentPath = currentUrl ? (() => { try { return new URL(currentUrl).pathname; } catch(e) { return ''; } })() : '';
+
+    // If same path, navigate to homepage first to force fresh load
+    if (currentPath === urlPath) {
+      await this.send('Page.navigate', { url: BASE_URL + '/' });
+      await sleep(1500);
+    }
+
+    return this.navigate(url, waitMs);
   }
 
   async eval(expr, awaitPromise = false, timeout = 30000) {
@@ -178,11 +206,27 @@ async function connectCDP() {
     );
   }
 
-  let tab = tabs.find(t => t.type === 'page' && t.url?.includes('booking.com'));
-  if (!tab) tab = tabs.find(t => t.type === 'page');
+  const pageTabs = tabs.filter(t => t.type === 'page');
+
+  // Prefer booking.com tabs that have a full page loaded (not about:blank or error pages)
+  // Prioritize tabs on booking.com homepage or hotel pages (established session + SPA loaded)
+  let tab = pageTabs.find(t =>
+    t.url?.includes('booking.com') &&
+    !t.url.includes('about:') &&
+    !t.url.includes('chrome:') &&
+    !t.url.includes('error')
+  );
+
   if (!tab) {
-    const res = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new`);
-    tab = await res.json();
+    // Try any real page tab
+    tab = pageTabs.find(t => !t.url?.includes('about:') && !t.url?.includes('chrome:'));
+  }
+
+  if (!tab) {
+    // Create new tab as last resort
+    const newTabRes = await fetch(`http://127.0.0.1:${CDP_PORT}/json/new`, { method: 'PUT' });
+    tab = await newTabRes.json();
+    await sleep(500);
   }
 
   log(`Using tab: ${tab.id} (${tab.url?.substring(0, 60) || 'empty'})`);
@@ -192,12 +236,10 @@ async function connectCDP() {
   await cdp.send('Page.enable');
   await cdp.send('Runtime.enable');
   await cdp.send('Network.enable', { maxPostDataSize: 2097152 });
-  // Input domain needed for Input.insertText and Input.dispatchMouseEvent
-  // (No explicit enable needed — Input domain methods work without calling Input.enable)
 
-  // Ensure we're on booking.com for correct session
+  // Ensure we're on booking.com for correct session cookies
   if (!tab.url?.includes('booking.com')) {
-    log('Navigating to Booking.com...');
+    log('Navigating to Booking.com to establish session...');
     await cdp.navigate(BASE_URL + '/', 5000);
   }
 
@@ -206,6 +248,7 @@ async function connectCDP() {
 
 // ---------------------------------------------------------------------------
 // GraphQL helpers
+// ---------------------------------------------------------------------------
 
 /**
  * Extract the data from a GraphQL response.
@@ -228,25 +271,25 @@ function gqlData(response) {
 
 /**
  * Set up a listener for GraphQL responses matching the given operation names.
- * Returns a promise that resolves when all expected operations are received.
+ * Returns a promise that resolves when all expected operations are received,
+ * or after timeoutMs (returning partial results).
+ *
+ * IMPORTANT: Must be called BEFORE navigation that triggers the requests.
  */
 function setupGraphQLInterception(cdp, operationNames, timeoutMs = 15000) {
   const expectedOps = new Set(Array.isArray(operationNames) ? operationNames : [operationNames]);
   const results = {};
   const pendingRequests = new Map();
-  const pendingResponses = new Map();
 
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const timer = setTimeout(() => {
       cleanup();
-      // Return partial results if some operations timed out
       resolve(results);
     }, timeoutMs);
 
     const cleanup = () => {
       clearTimeout(timer);
       removeReqListener();
-      removeResListener();
       removeFinListener();
     };
 
@@ -264,12 +307,6 @@ function setupGraphQLInterception(cdp, operationNames, timeoutMs = 15000) {
       } catch(e) {}
     });
 
-    const removeResListener = cdp.on('Network.responseReceived', (params) => {
-      if (pendingRequests.has(params.requestId)) {
-        pendingResponses.set(params.requestId, { status: params.response.status });
-      }
-    });
-
     const removeFinListener = cdp.on('Network.loadingFinished', async (params) => {
       if (!pendingRequests.has(params.requestId)) return;
       const opName = pendingRequests.get(params.requestId);
@@ -284,10 +321,9 @@ function setupGraphQLInterception(cdp, operationNames, timeoutMs = 15000) {
         }
       } catch(e) {}
       pendingRequests.delete(params.requestId);
-      pendingResponses.delete(params.requestId);
 
       // Check if all expected ops collected
-      if (expectedOps.size > 0 && [...expectedOps].every(op => op in results)) {
+      if ([...expectedOps].every(op => op in results)) {
         cleanup();
         resolve(results);
       }
@@ -308,88 +344,75 @@ async function autocomplete(cdp, query) {
 
   log(`Resolving destination: "${query}"...`);
 
-  // Always navigate to homepage fresh — this ensures the search box is clean
-  // and prevents autocomplete debounce issues from previous queries
-  log('Loading Booking.com homepage...');
-  await cdp.navigate(BASE_URL + '/', 4000);
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    if (attempt > 1) log(`Retrying autocomplete (attempt ${attempt})...`);
 
-  // Set up interception BEFORE triggering the input
-  const interceptionPromise = setupGraphQLInterception(cdp, ['AutoComplete'], 12000);
+    // Navigate to homepage fresh to ensure clean state
+    // Always navigate fresh — even if on homepage, go to homepage again to reset React state
+    log('Loading Booking.com homepage...');
+    // Force a full navigation by going to the homepage with a unique search param  
+    await cdp.navigate(BASE_URL + '/', 5000);
 
-  // Get input coordinates for CDP Input events
-  const inputRectStr = await cdp.eval(`
-    (() => {
-      const input = document.querySelector('[name="ss"], [data-testid="destination-container"] input');
-      if (!input) return null;
-      const r = input.getBoundingClientRect();
-      return JSON.stringify({ x: r.left + r.width/2, y: r.top + r.height/2 });
-    })()
-  `, false);
+    // Set up interception BEFORE triggering the input
+    const interceptionPromise = setupGraphQLInterception(cdp, ['AutoComplete'], 18000);
 
-  if (!inputRectStr) {
-    // Try navigating to homepage explicitly
-    log('Search input not found, navigating to homepage...');
-    await cdp.navigate(BASE_URL + '/', 4000);
-    const inputRectStr2 = await cdp.eval(`
+    // Get input coordinates for CDP Input events
+    const inputRectStr = await cdp.eval(`
       (() => {
-        const input = document.querySelector('[name="ss"], [data-testid="destination-container"] input');
+        const input = document.querySelector('[name="ss"], [data-testid="destination-container"] input, input[placeholder*="destination"], input[placeholder*="Where"]');
         if (!input) return null;
         const r = input.getBoundingClientRect();
         return JSON.stringify({ x: r.left + r.width/2, y: r.top + r.height/2 });
       })()
     `, false);
-    if (!inputRectStr2) {
-      throw new Error('Search input not found on Booking.com homepage. Is booking.com accessible?');
+
+    if (!inputRectStr) {
+      log(`Search input not found on attempt ${attempt}. Retrying...`);
+      continue;
     }
-    // restart with fresh interception
-    const interceptionPromise2 = setupGraphQLInterception(cdp, ['AutoComplete'], 12000);
-    const inputRect2 = JSON.parse(inputRectStr2);
-    log(`Input found at ${JSON.stringify(inputRect2)}, typing...`);
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: inputRect2.x, y: inputRect2.y, button: 'left', clickCount: 3 });
-    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: inputRect2.x, y: inputRect2.y, button: 'left', clickCount: 3 });
-    await sleep(400);
+
+    const inputRect = JSON.parse(inputRectStr);
+    log(`Input found at (${Math.round(inputRect.x)}, ${Math.round(inputRect.y)}), typing query...`);
+
+    // Click to focus (triple-click selects all existing text)
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: inputRect.x, y: inputRect.y, button: 'left', clickCount: 3 });
+    await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: inputRect.x, y: inputRect.y, button: 'left', clickCount: 3 });
+    await sleep(500);
+
+    // Clear existing text with Ctrl+A then Backspace
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'a', code: 'KeyA', modifiers: 2 }); // Ctrl+A
+    await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'a', code: 'KeyA', modifiers: 2 });
+    await sleep(100);
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace' });
     await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace' });
-    await sleep(200);
+    await sleep(300);
+
+    // Type the query char by char to trigger React's autocomplete
     for (const char of query) {
       await cdp.send('Input.insertText', { text: char });
-      await sleep(50);
+      await sleep(60);
     }
-    const responses2 = await interceptionPromise2;
-    if (!responses2.AutoComplete) throw new Error('AutoComplete request not captured after retry.');
-    const results2 = gqlData(responses2.AutoComplete)?.autoCompleteSuggestions?.results || [];
-    writeCache(`autocomplete-${query.toLowerCase()}`, results2);
-    return results2;
+
+    // Wait extra after typing to give autocomplete time to fire
+    await sleep(500);
+
+    const responses = await interceptionPromise;
+
+    if (responses.AutoComplete) {
+      const results = gqlData(responses.AutoComplete)?.autoCompleteSuggestions?.results || [];
+      if (results.length > 0) {
+        writeCache(`autocomplete-${query.toLowerCase()}`, results);
+        return results;
+      }
+    }
+
+    log(`AutoComplete request not captured on attempt ${attempt}.`);
   }
 
-  const inputRect = JSON.parse(inputRectStr);
-  log(`Input found at (${Math.round(inputRect.x)}, ${Math.round(inputRect.y)}), typing query...`);
-
-  // Click to focus (triple-click selects all existing text)
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: inputRect.x, y: inputRect.y, button: 'left', clickCount: 3 });
-  await cdp.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: inputRect.x, y: inputRect.y, button: 'left', clickCount: 3 });
-  await sleep(400);
-
-  // Delete existing text (Backspace to clear)
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', key: 'Backspace', code: 'Backspace' });
-  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', key: 'Backspace', code: 'Backspace' });
-  await sleep(200);
-
-  // Type the query (char by char to mimic human typing — triggers React's onChange/autocomplete)
-  for (const char of query) {
-    await cdp.send('Input.insertText', { text: char });
-    await sleep(50);
-  }
-
-  const responses = await interceptionPromise;
-
-  if (!responses.AutoComplete) {
-    throw new Error('AutoComplete request not captured. Ensure booking.com is open in Chrome with CDP enabled.');
-  }
-
-  const results = gqlData(responses.AutoComplete)?.autoCompleteSuggestions?.results || [];
-  writeCache(`autocomplete-${query.toLowerCase()}`, results);
-  return results;
+  throw new Error(
+    'AutoComplete request not captured after 2 attempts. ' +
+    'Ensure Chrome is open and accessible at booking.com with CDP port ' + CDP_PORT + '.'
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -437,28 +460,67 @@ async function searchHotels(cdp, opts) {
   ].filter(Boolean).join('');
 
   // Set up GraphQL interception before navigation
-  // (The search page makes several GraphQL calls including search results)
+  // Also capture MvRexWebRecPlatformPropertyCards in case of geo-block redirect
   const interceptionPromise = setupGraphQLInterception(
     cdp,
-    ['SearchResultsDesktopSearch', 'SearchResults', 'FullSearch', 'DmlSearch'],
-    12000
+    ['SearchResultsDesktopSearch', 'SearchResults', 'FullSearch', 'DmlSearch', 'MvRexWebRecPlatformPropertyCards'],
+    15000
   );
 
   log('Navigating to search results...');
-  const finalUrl = await cdp.navigate(searchUrl, 10000);
+  // Use navigateFresh to ensure new network requests fire even if on same URL
+  const finalUrl = await cdp.navigateFresh(searchUrl, 10000);
 
   // Check for geo-block
   const isGeoBlocked = finalUrl?.includes('index.html') || finalUrl?.includes('errorc_search');
   if (isGeoBlocked) {
-    log('⚠️ Geo-IP block detected (redirect to homepage). Using fallback...');
-    return await searchHotelsFallback(cdp, { destId, destLabel, destType, checkin, checkout, adults, rooms });
+    log('⚠️ Geo-IP block detected (redirect to homepage). Waiting for recommendation cards...');
+    // Wait a bit longer for the MvRexWebRecPlatformPropertyCards GraphQL to fire on the redirect page
+    const gqlResults = await interceptionPromise;
+    const cards = gqlData(gqlResults?.MvRexWebRecPlatformPropertyCards)?.recommendationPlatform?.propertyCards?.cards;
+
+    if (cards && cards.length > 0) {
+      const hotels = cards.map(card => ({
+        id: card.id,
+        name: card.translatedName,
+        pageName: card.pageName,
+        cc1: card.cc1,
+        url: `${BASE_URL}/hotel/${card.cc1}/${card.pageName}.html`,
+        city: card.locationInfo?.translatedCityName || '',
+        country: card.locationInfo?.translatedCountryName || '',
+        starRating: card.ratingInfo?.value || null,
+        reviewScore: card.reviewInfo?.reviewScore || null,
+        reviewCount: card.reviewInfo?.reviewsCount || 0,
+        reviewText: card.reviewInfo?.reviewTranslatedText || '',
+        pricePerNight: card.priceInfo?.displayPrice?.perStay?.roundedValue || null,
+        isGenius: card.isGenius || false,
+        ufi: card.ufi,
+      }));
+
+      return {
+        destination: destLabel,
+        destId,
+        destType,
+        checkin,
+        checkout,
+        page,
+        totalResults: hotels.length,
+        hotels,
+        source: 'graphql-recommendations',
+        warning: '⚠️ Geo-IP block active (Turkish IP): search redirected to homepage. Returning homepage hotel recommendations — NOT filtered by destination. Use "detail" and "reviews" commands directly with hotel identifiers.',
+      };
+    } else {
+      // Fallback: reload homepage to trigger recommendations
+      log('MvRexWebRecPlatformPropertyCards not captured from redirect. Reloading homepage...');
+      return await searchHotelsFallback(cdp, { destId, destLabel, destType, checkin, checkout, adults, rooms });
+    }
   }
 
   // Wait for GraphQL responses (might not come if page loaded from cache)
   const gqlResults = await interceptionPromise;
   log(`GraphQL ops captured: ${Object.keys(gqlResults).join(', ') || 'none'}`);
 
-  // Scrape DOM regardless
+  // Scrape DOM
   const scrapedStr = await cdp.eval(`
     (() => {
       const cards = document.querySelectorAll('[data-testid="property-card"]');
@@ -519,18 +581,16 @@ async function searchHotels(cdp, opts) {
 }
 
 async function searchHotelsFallback(cdp, opts) {
-  // Fallback: Use GraphQL recommendations as "search results"
-  // Triggered by navigating to homepage and capturing the recommendations call
-  log('Fetching hotel recommendations as fallback...');
+  log('Loading homepage to capture hotel recommendations...');
 
   const interceptionPromise = setupGraphQLInterception(
     cdp,
     ['MvRexWebRecPlatformPropertyCards'],
-    12000
+    15000
   );
 
-  // Navigate to homepage to trigger recommendations
-  await cdp.navigate(BASE_URL + '/', 4000);
+  // Force fresh navigation to homepage to trigger recommendations GraphQL
+  await cdp.navigateFresh(BASE_URL + '/', 6000);
 
   const gqlResults = await interceptionPromise;
   const cards = gqlData(gqlResults?.MvRexWebRecPlatformPropertyCards)?.recommendationPlatform?.propertyCards?.cards || [];
@@ -560,7 +620,7 @@ async function searchHotelsFallback(cdp, opts) {
     totalResults: hotels.length,
     hotels,
     source: 'graphql-recommendations',
-    warning: '⚠️ Geo-IP block: search redirected to homepage. Showing homepage hotel recommendations. Results are NOT filtered by destination.',
+    warning: '⚠️ Geo-IP block (Turkish/datacenter IP): search unavailable. Returning homepage recommendations — NOT filtered by destination. Hotel detail and reviews still work from any IP.',
   };
 }
 
@@ -577,26 +637,31 @@ async function getHotelDetail(cdp, cc1, pageName, opts = {}) {
   const url = `${BASE_URL}/hotel/${cc1}/${pageName}.html?checkin=${checkin}&checkout=${checkout}&group_adults=${adults}&no_rooms=${rooms}&lang=en-us`;
   log(`Navigating to hotel: ${url.substring(0, 80)}`);
 
-  // Intercept GraphQL calls the hotel page makes automatically
+  // IMPORTANT: Use navigateFresh to force new network requests even if already on hotel page
+  // This ensures GraphQL calls fire and can be intercepted.
+  // Intercept BEFORE navigation.
   const interceptionPromise = setupGraphQLInterception(
     cdp,
-    ['Facilities', 'PropertyFaq', 'PropertySurroundingsBlockDesktop'],
+    ['PropertyFaq', 'PropertySurroundingsBlockDesktop'],
     15000
   );
 
-  const finalUrl = await cdp.navigate(url, 8000);
+  const finalUrl = await cdp.navigateFresh(url, 10000);
   if (!finalUrl?.includes(`/hotel/${cc1}/${pageName}`)) {
-    log(`Warning: unexpected URL: ${finalUrl?.substring(0, 80)}`);
+    log(`Warning: unexpected final URL: ${finalUrl?.substring(0, 80)}`);
   }
 
-  // Extract DOM data
+  // Extra wait for SPA-navigated pages to fully render
+  await sleep(2000);
+
+  // Extract DOM data (JSON-LD structured data + facilities)
   const domStr = await cdp.eval(`
     (() => {
       const jsonLdEl = document.querySelector('script[type="application/ld+json"]');
       let jsonLd = null;
       try { jsonLd = JSON.parse(jsonLdEl?.textContent || 'null'); } catch(e) {}
 
-      // Extract hotel ID from page scripts
+      // Extract hotel ID from inline page scripts
       let hotelId = null;
       const scripts = Array.from(document.querySelectorAll('script:not([src])'));
       for (const s of scripts) {
@@ -607,13 +672,37 @@ async function getHotelDetail(cdp, cc1, pageName, opts = {}) {
         if (m) { hotelId = parseInt(m[1]); break; }
       }
 
+      // Extract top facilities from DOM — booking.com renders these server-side
+      // Primary: new capla-component wrapper (2024+)
+      let facilityItems = Array.from(document.querySelectorAll(
+        '[data-testid="property-most-popular-facilities-wrapper"] li'
+      )).map(li => li.querySelector('span:last-child')?.textContent?.trim() || li.textContent.trim()).filter(t => t);
+
+      // Deduplicate (new layout renders each item twice)
+      facilityItems = [...new Set(facilityItems)];
+
+      // Fallback: legacy layout
+      if (facilityItems.length === 0) {
+        facilityItems = Array.from(document.querySelectorAll(
+          '.hp--popular_facilities li, .hp_desc_main_amenities li, ' +
+          '[data-testid="facility-list-most-popular"] li, [data-testid="facilities-block"] li'
+        )).map(li => li.textContent.trim()).filter(t => t);
+      }
+
+      // Extract star rating from DOM if not in JSON-LD
+      const starsEl = document.querySelector('[data-testid="rating-stars"] span, .bui-rating span[aria-label*="stars"]');
+      const starRating = starsEl ? parseInt(starsEl.getAttribute('aria-label') || '0') || null : null;
+
       return JSON.stringify({
         url: location.href,
         title: document.title,
         jsonLd,
         hotelId,
+        facilityItems,
+        starRating,
         twitterImage: document.querySelector('meta[name="twitter:image"]')?.getAttribute('content'),
         twitterDescription: document.querySelector('meta[name="twitter:description"]')?.getAttribute('content'),
+        ogDescription: document.querySelector('meta[property="og:description"]')?.getAttribute('content'),
       });
     })()
   `, false);
@@ -628,17 +717,7 @@ async function getHotelDetail(cdp, cc1, pageName, opts = {}) {
 
   log(`Hotel ID: ${domData.hotelId || 'not found'}`);
   log(`GraphQL ops captured: ${Object.keys(gqlResults).join(', ') || 'none'}`);
-
-  // Build facilities from GraphQL response
-  const facilitiesGql = gqlData(gqlResults?.Facilities)?.hotelPageByPageName?.propertyDetails?.facilities || [];
-  const facilities = facilitiesGql.map(group => ({
-    groupId: group.groupId,
-    slug: group.slug,
-    facilities: (group.instances || []).map(f => ({
-      title: f.title,
-      subFacilities: (f.subFacilities || []).map(sf => sf.title),
-    })),
-  }));
+  log(`DOM facility items: ${domData.facilityItems?.length || 0}`);
 
   // Build FAQ from GraphQL response
   const faqGql = gqlData(gqlResults?.PropertyFaq)?.landingContent?.propertyFaq?.questions || [];
@@ -653,7 +732,7 @@ async function getHotelDetail(cdp, cc1, pageName, opts = {}) {
     pageName,
     cc1,
     name: jsonLd.name || domData.title?.replace(/ \(updated prices \d+\)$/, '') || pageName,
-    description: jsonLd.description || domData.twitterDescription || null,
+    description: jsonLd.description || domData.twitterDescription || domData.ogDescription || null,
     address: {
       streetAddress: jsonLd.address?.streetAddress,
       postalCode: jsonLd.address?.postalCode,
@@ -663,9 +742,10 @@ async function getHotelDetail(cdp, cc1, pageName, opts = {}) {
     },
     reviewScore: jsonLd.aggregateRating?.ratingValue || null,
     reviewCount: jsonLd.aggregateRating?.reviewCount || null,
+    starRating: domData.starRating || null,
     image: jsonLd.image || domData.twitterImage || null,
     hotelId: domData.hotelId,
-    facilities,
+    topFacilities: domData.facilityItems,
     faq,
     surroundings,
   };
@@ -677,22 +757,17 @@ async function getHotelDetail(cdp, cc1, pageName, opts = {}) {
 function parseSurroundings(data) {
   const result = {};
   const props = data?.propertySurroundings?.surr;
-  if (!props) return null;
-
-  if (props.airports) {
-    result.airports = props.airports.map(a => ({
-      name: a.name,
-      distanceKm: a.distanceKm,
-      iataCode: a.iataCode,
-    }));
+  if (!props) {
+    // Try different shape
+    const surr = data?.propertySurroundings;
+    if (!surr) return null;
+    if (surr.airports?.length) result.airports = surr.airports.map(a => ({ name: a.name, distanceKm: a.distanceKm, iataCode: a.iataCode }));
+    if (surr.landmarks?.length) result.landmarks = surr.landmarks.slice(0, 10).map(l => ({ name: l.name, distanceM: l.distanceM }));
+    return Object.keys(result).length > 0 ? result : null;
   }
-  if (props.landmarks) {
-    result.landmarks = props.landmarks.slice(0, 10).map(l => ({
-      name: l.name,
-      distanceM: l.distanceM,
-    }));
-  }
-  return result;
+  if (props.airports?.length) result.airports = props.airports.map(a => ({ name: a.name, distanceKm: a.distanceKm, iataCode: a.iataCode }));
+  if (props.landmarks?.length) result.landmarks = props.landmarks.slice(0, 10).map(l => ({ name: l.name, distanceM: l.distanceM }));
+  return Object.keys(result).length > 0 ? result : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -707,11 +782,14 @@ async function scrapeReviews(cdp, cc1, pageName, opts = {}) {
     const url = `${BASE_URL}/reviews/${cc1}/hotel/${pageName}.html?lang=en-us&page=${page}`;
     log(`Scraping reviews page ${page}/${pages}...`);
 
-    const finalUrl = await cdp.navigate(url, 6000);
+    // Use navigateFresh for page 1, regular navigate for subsequent pages
+    const finalUrl = page === 1
+      ? await cdp.navigateFresh(url, 6000)
+      : await cdp.navigate(url, 6000);
 
     // Check redirect
     if (!finalUrl?.includes('/reviews/')) {
-      log(`Reviews page redirected: ${finalUrl?.substring(0, 80)}`);
+      log(`Reviews page redirected to: ${finalUrl?.substring(0, 80)}`);
       break;
     }
 
@@ -805,9 +883,10 @@ PREREQUISITES:
 
 NOTES:
   - All API calls execute inside Chrome (bypasses AWS WAF)
-  - Search results may not work from Turkish/some IPs (geo-block) → fallback activates
-  - Hotel detail + reviews work from all IPs
+  - Search results blocked from Turkish/datacenter IPs (geo-block) → homepage recommendations used as fallback
+  - Hotel detail + reviews work from ALL IPs
   - Data cached for 1h in ~/.local/share/showrun/data/booking-com/
+  - navigateFresh (about:blank → URL) ensures network requests always fire
 `);
   process.exit(0);
 }
