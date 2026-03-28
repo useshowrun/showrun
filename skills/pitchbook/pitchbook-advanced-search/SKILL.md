@@ -4,18 +4,20 @@ Run advanced/screener searches on Pitchbook via a multi-step API flow. This skil
 
 ## Commands
 
+**Note:** The `search` command runs a default unfiltered search (11M+ companies). To search with filters, set criteria in the Pitchbook web UI first, copy the search ID from the URL, then use `results <searchId>` to fetch results programmatically.
+
 ### `auth`
 Capture Pitchbook session cookies from a running Chrome instance via CDP.
 
 ```bash
-node pitchbook-advanced-search.mjs auth
+node scripts/pitchbook-advanced-search.mjs auth
 ```
 
 ### `search`
 Run a full default search. Executes the complete 6-step API flow: create session, run search, get metadata, get view, get count, fetch results.
 
 ```bash
-node pitchbook-advanced-search.mjs search [--type=COMPANIES|DEALS|INVESTORS] [--page=1] [--page-size=25]
+node scripts/pitchbook-advanced-search.mjs search [--type=COMPANIES|DEALS|INVESTORS] [--page=1] [--page-size=25]
 ```
 
 **Flags:**
@@ -27,14 +29,14 @@ node pitchbook-advanced-search.mjs search [--type=COMPANIES|DEALS|INVESTORS] [--
 Get the total result count for an existing search session.
 
 ```bash
-node pitchbook-advanced-search.mjs count <searchId>
+node scripts/pitchbook-advanced-search.mjs count <searchId>
 ```
 
 ### `results`
 Fetch paginated results for an existing search session. Useful when you have set up search criteria in the Pitchbook UI and want to pull results programmatically.
 
 ```bash
-node pitchbook-advanced-search.mjs results <searchId> [--page=1] [--page-size=25] [--tab=companies|deals|investors]
+node scripts/pitchbook-advanced-search.mjs results <searchId> [--page=1] [--page-size=25] [--tab=companies|deals|investors]
 ```
 
 **Flags:**
@@ -54,6 +56,10 @@ The advanced search requires 6 sequential API calls with delays between each:
 6. **Fetch results** — `POST /tables/{dataSetId}/data?page=N&pageSize=M`. Returns paginated `dataRows`.
 
 Each step is separated by a 6-second delay (~36 seconds total) to respect rate limits.
+
+**Session expiry warning:** The 6-step search flow takes ~36 seconds. If your session is close to expiring, it may expire mid-flow (e.g., steps 1-5 succeed but step 6 fails with 401). If this happens, re-authenticate and use the `results <searchId>` command to resume fetching from the already-created search — no need to re-run the full flow.
+
+Note: `--type` uses uppercase (`COMPANIES`, `DEALS`, `INVESTORS`) while `--tab` uses lowercase (`companies`, `deals`, `investors`).
 
 ## Important Notes
 
@@ -80,17 +86,17 @@ Each result row contains:
 
 ```bash
 # Authenticate first
-node pitchbook-advanced-search.mjs auth
+node scripts/pitchbook-advanced-search.mjs auth
 
 # Run a default company search
-node pitchbook-advanced-search.mjs search
+node scripts/pitchbook-advanced-search.mjs search
 
 # Search for deals
-node pitchbook-advanced-search.mjs search --type=DEALS --page-size=50
+node scripts/pitchbook-advanced-search.mjs search --type=DEALS --page-size=50
 
 # Get count for an existing search
-node pitchbook-advanced-search.mjs count s637561838
+node scripts/pitchbook-advanced-search.mjs count s637561838
 
 # Fetch page 2 of results for an existing search
-node pitchbook-advanced-search.mjs results s637561838 --page=2 --page-size=100
+node scripts/pitchbook-advanced-search.mjs results s637561838 --page=2 --page-size=100
 ```

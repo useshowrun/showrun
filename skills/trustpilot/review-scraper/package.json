@@ -1,0 +1,16 @@
+{
+  "name": "trustpilot-review-scraper",
+  "version": "1.0.0",
+  "description": "Trustpilot business search & review scraper",
+  "main": "scripts/review-scraper.mjs",
+  "scripts": {
+    "start": "node scripts/review-scraper.mjs"
+  },
+  "keywords": ["trustpilot", "reviews", "scraper"],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "optionalDependencies": {
+    "ws": "^8.18.0"
+  }
+}

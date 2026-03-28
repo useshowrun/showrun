@@ -28,15 +28,14 @@ node scripts/pitchbook-valuations.mjs auth
 ### Fetch deal multiples
 
 ```bash
-node scripts/pitchbook-valuations.mjs multiples [--days=365] [--verticals=X] [--deal-types=X] [--locations=X]
+node scripts/pitchbook-valuations.mjs multiples [--days=365] [--verticals=X] [--locations=X]
 ```
 
 **Examples:**
 ```bash
 node scripts/pitchbook-valuations.mjs multiples
 node scripts/pitchbook-valuations.mjs multiples --days=730
-node scripts/pitchbook-valuations.mjs multiples --verticals=SaaS --deal-types=Buyout
-node scripts/pitchbook-valuations.mjs multiples --locations=US,Europe
+node scripts/pitchbook-valuations.mjs multiples --verticals=SAAS
 ```
 
 ### Show help
@@ -77,6 +76,45 @@ head -50 ~/.local/share/showrun/data/pitchbook/cache/valuations-*.json
 ```
 
 The console summary (printed to stderr) shows a table of year, deal count, EV/EBITDA median, and EV/Revenue median. For the full response, read the cache file — but only the lines you need. **Never dump full results into the conversation.**
+
+## Filter values
+
+The `--verticals` and `--locations` (optional, free-text country/region) flags accept Pitchbook internal codes. Common values:
+
+### Verticals (--verticals)
+
+| Code | Description |
+|------|-------------|
+| AIML | Artificial Intelligence & Machine Learning |
+| FT | FinTech |
+| DTLHL | Digital Health |
+| HT | HealthTech |
+| SEC | Cybersecurity |
+| SAAS | SaaS |
+| ECOMM | E-Commerce |
+| CT | CleanTech |
+| CAE | Climate Tech |
+| CUE | CloudTech & DevOps |
+| ET | EdTech |
+| AGTCH | AgTech |
+| IT | InsurTech |
+| RAD | Robotics and Drones |
+| SPTEC | Space Technology |
+| CCBC | Cryptocurrency/Blockchain |
+| IOT | Internet of Things |
+| LSCI | Life Sciences |
+| MLT | Mobility Tech |
+| MOBILE | Mobile |
+
+Full list (59 codes): `3D`, `AT`, `ADC`, `AGTCH`, `AIML`, `AUDTCH`, `AGTRLT`, `ATNMSCRS`, `BAN`, `BAT`, `BD`, `CNBS`, `CHN`, `CT`, `CAE`, `CUE`, `CTN`, `CCBC`, `SEC`, `DTLHL`, `ECOMM`, `ET`, `EPHMRL`, `EOS`, `FTH`, `FT`, `FDC`, `GMN`, `HT`, `HRTCH`, `ITS`, `ISA`, `INFR`, `IT`, `IOT`, `LAE`, `LSCI`, `LOHAS`, `MNF`, `MT`, `MMI`, `MOBILE`, `MEE`, `MLT`, `MGT`, `NANO`, `OLA`, `ONCO`, `PCO`, `RAN`, `RSTCLG`, `RSI`, `RAD`, `SAAS`, `SPTEC`, `SYN`, `TMT`, `VRTLRLT`, `WQS`
+
+Multiple verticals can be combined: `--verticals=AIML,FT,SEC`
+
+**Note:** Using `--verticals=VC` or `--verticals=PE` will NOT work — these are not valid vertical codes. Verticals describe industry sectors, not investor types.
+
+### Deal types (--deal-types)
+
+Deal type filtering is not supported via the dashboard API — the `--deal-types` flag is accepted but Pitchbook's dashboard endpoints ignore it. To filter by deal type, use the Advanced Search skill with criteria set in the web UI.
 
 ## Session expiry
 
