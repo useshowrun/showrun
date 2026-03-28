@@ -43,7 +43,7 @@ const TAB_TYPE_MAP = {
 // ---------------------------------------------------------------------------
 // Step 1: Create search session
 // ---------------------------------------------------------------------------
-function createSearch(auth, type) {
+async function createSearch(auth, type) {
   const body = SEARCH_TYPE_MAP[type];
   if (!body) {
     console.error(`Unknown search type: ${type}. Use COMPANIES, DEALS, or INVESTORS.`);
@@ -51,52 +51,52 @@ function createSearch(auth, type) {
   }
   console.log(`[Step 1/6] Creating search session (type=${type})...`);
   const url = `${BASE}/web-api/advanced-search-api/searches?ignoreUserPreferences=true`;
-  return curlPost(url, auth, body, REFERER);
+  return await curlPost(url, auth, body, REFERER);
 }
 
 // ---------------------------------------------------------------------------
 // Step 2: Run the search
 // ---------------------------------------------------------------------------
-function runSearch(auth, searchId) {
+async function runSearch(auth, searchId) {
   console.log(`[Step 2/6] Running search ${searchId}...`);
   const url = `${BASE}/web-api/advanced-search-api/searches/${searchId}/run?resetTrigger=AS_CRITERIA&resetFilters=true`;
-  return curlPost(url, auth, {}, REFERER);
+  return await curlPost(url, auth, {}, REFERER);
 }
 
 // ---------------------------------------------------------------------------
 // Step 3: Get search metadata
 // ---------------------------------------------------------------------------
-function getSearchMeta(auth, searchId) {
+async function getSearchMeta(auth, searchId) {
   console.log(`[Step 3/6] Getting search metadata...`);
   const url = `${BASE}/web-api/advanced-search-api/searches/${searchId}`;
-  return curlGet(url, auth, REFERER);
+  return await curlGet(url, auth, REFERER);
 }
 
 // ---------------------------------------------------------------------------
 // Step 4: Get view (to find dataSetId)
 // ---------------------------------------------------------------------------
-function getView(auth, viewId) {
+async function getView(auth, viewId) {
   console.log(`[Step 4/6] Getting view ${viewId}...`);
   const url = `${BASE}/web-api/advanced-search-api/views/${viewId}`;
-  return curlGet(url, auth, REFERER);
+  return await curlGet(url, auth, REFERER);
 }
 
 // ---------------------------------------------------------------------------
 // Step 5: Get result count
 // ---------------------------------------------------------------------------
-function getCount(auth, dataSetId) {
+async function getCount(auth, dataSetId) {
   console.log(`[Step 5/6] Getting result count...`);
   const url = `${BASE}/web-api/advanced-search-api/tables/${dataSetId}/entities/count?alertMode=false&recentUpdatesMode=false`;
-  return curlGet(url, auth, REFERER);
+  return await curlGet(url, auth, REFERER);
 }
 
 // ---------------------------------------------------------------------------
 // Step 6: Fetch results
 // ---------------------------------------------------------------------------
-function fetchResults(auth, dataSetId, page, pageSize) {
+async function fetchResults(auth, dataSetId, page, pageSize) {
   console.log(`[Step 6/6] Fetching results (page=${page}, pageSize=${pageSize})...`);
   const url = `${BASE}/web-api/advanced-search-api/tables/${dataSetId}/data?page=${page}&pageSize=${pageSize}&alertMode=false&recentUpdatesMode=false`;
-  return curlPost(url, auth, {}, REFERER);
+  return await curlPost(url, auth, {}, REFERER);
 }
 
 // ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ function printSummary(data, count) {
 // ---------------------------------------------------------------------------
 async function doFullSearch(auth, type, page, pageSize) {
   // Step 1: Create
-  const createResult = createSearch(auth, type);
+  const createResult = await createSearch(auth, type);
   const searchId = createResult?.id || createResult?.searchId;
   if (!searchId) {
     console.error('Failed to create search session. Response:', JSON.stringify(createResult).substring(0, 500));
@@ -140,29 +140,29 @@ async function doFullSearch(auth, type, page, pageSize) {
   await delay(6000);
 
   // Step 2: Run
-  runSearch(auth, searchId);
+  await runSearch(auth, searchId);
   await delay(6000);
 
   // Step 3: Get metadata
-  const meta = getSearchMeta(auth, searchId);
+  const meta = await getSearchMeta(auth, searchId);
   await delay(6000);
 
   // Step 4: Get view — derive viewId from metadata or convention
   const tabType = type === 'DEALS' ? 'deal' : type === 'INVESTORS' ? 'investor' : 'company';
   const viewId = `${searchId}.${tabType}`;
-  const viewData = getView(auth, viewId);
+  const viewData = await getView(auth, viewId);
   const dataSetId = viewData?.dataSetId || `${searchId}.${tabType}.data_set`;
   console.log(`  dataSetId: ${dataSetId}`);
   await delay(6000);
 
   // Step 5: Count
-  const countResult = getCount(auth, dataSetId);
+  const countResult = await getCount(auth, dataSetId);
   const count = countResult?.count;
   console.log(`  count: ${count}`);
   await delay(6000);
 
   // Step 6: Fetch results
-  const results = fetchResults(auth, dataSetId, page, pageSize);
+  const results = await fetchResults(auth, dataSetId, page, pageSize);
 
   // Save
   const outFile = resolve(CACHE_DIR, `advanced-search-${searchId}-p${page}.json`);
@@ -181,10 +181,10 @@ async function doResults(auth, searchId, page, pageSize, tab) {
   const tabType = TAB_TYPE_MAP[tab] || 'company';
   const dataSetId = `${searchId}.${tabType}.data_set`;
 
-  const countResult = getCount(auth, dataSetId);
+  const countResult = await getCount(auth, dataSetId);
   const count = countResult?.count;
 
-  const results = fetchResults(auth, dataSetId, page, pageSize);
+  const results = await fetchResults(auth, dataSetId, page, pageSize);
 
   const outFile = resolve(CACHE_DIR, `advanced-search-${searchId}-p${page}.json`);
   saveJson(outFile, { searchId, dataSetId, count, results });
@@ -197,11 +197,11 @@ async function doResults(auth, searchId, page, pageSize, tab) {
 // ---------------------------------------------------------------------------
 // Count for existing search
 // ---------------------------------------------------------------------------
-function doCount(auth, searchId) {
+async function doCount(auth, searchId) {
   checkCurl();
   // Default to company tab for count
   const dataSetId = `${searchId}.company.data_set`;
-  const countResult = getCount(auth, dataSetId);
+  const countResult = await getCount(auth, dataSetId);
   console.log(`Result count: ${countResult?.count}`);
   return countResult;
 }
@@ -220,7 +220,7 @@ switch (command) {
     break;
   }
   case 'search': {
-    const auth = getAuth();
+    const auth = await getAuth();
     checkCurl();
     const type = (flags.type || 'COMPANIES').toUpperCase();
     const page = parseInt(flags.page || '1', 10);
@@ -234,8 +234,8 @@ switch (command) {
       console.error('Usage: node pitchbook-advanced-search.mjs count <searchId>');
       process.exit(1);
     }
-    const auth = getAuth();
-    doCount(auth, searchId);
+    const auth = await getAuth();
+    await doCount(auth, searchId);
     break;
   }
   case 'results': {
@@ -244,7 +244,7 @@ switch (command) {
       console.error('Usage: node pitchbook-advanced-search.mjs results <searchId> [--page=1] [--page-size=25] [--tab=companies]');
       process.exit(1);
     }
-    const auth = getAuth();
+    const auth = await getAuth();
     const page = parseInt(flags.page || '1', 10);
     const pageSize = parseInt(flags['page-size'] || '25', 10);
     const tab = (flags.tab || 'companies').toLowerCase();

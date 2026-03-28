@@ -116,14 +116,34 @@ export function parseCurlString(curlStr) {
 // Auth / session
 // ---------------------------------------------------------------------------
 
-export function getAuth() {
-  const auth = loadJson(SESSION_FILE);
-  if (!auth.cookie) {
-    console.error('No auth found. Run one of:');
-    console.error('  node pitchbook-login/scripts/pitchbook-login.mjs auth     (CDP auto-login)');
-    console.error('  node pitchbook-login/scripts/pitchbook-login.mjs curl     (paste curl from browser)');
+export async function getAuth() {
+  // 1. Try cached session.json
+  const cached = loadJson(SESSION_FILE);
+  if (cached.cookie) {
+    return cached;
+  }
+
+  // 2. Try browser cookie extraction
+  console.error('No cached session. Attempting browser cookie extraction...');
+  const extracted = await extractBrowserCookies();
+
+  if (!extracted.ok) {
+    console.error(extracted.message);
     process.exit(1);
   }
+
+  // 3. Validate
+  const auth = { headers: extracted.headers, cookie: extracted.cookie, extractedAt: new Date().toISOString(), source: 'browser' };
+  console.error('Validating session...');
+  const valid = validateSession(auth);
+  if (!valid) {
+    console.error('[AUTH_ERROR] SESSION_EXPIRED: Browser cookies found but session is expired. Please refresh my.pitchbook.com in your browser and log in again.');
+    process.exit(1);
+  }
+
+  // 4. Save
+  saveJson(SESSION_FILE, auth);
+  console.error('Session extracted from browser and saved.');
   return auth;
 }
 
@@ -132,6 +152,71 @@ export function saveSession(headers, cookies) {
   saveJson(SESSION_FILE, session);
   console.log(`Session saved to: ${SESSION_FILE}`);
   return session;
+}
+
+// ---------------------------------------------------------------------------
+// Browser cookie extraction
+// ---------------------------------------------------------------------------
+
+export async function extractBrowserCookies() {
+  let getCookie;
+  try {
+    const mod = await import(resolve(DATA_DIR, 'node_modules/@mherod/get-cookie/dist/index.js'));
+    getCookie = mod.getCookie;
+  } catch {
+    return { ok: false, error: 'BROWSER_EXTRACT_UNAVAILABLE', message: 'Browser cookie extraction not available. Install: cd ~/.local/share/showrun/data/pitchbook && npm install @mherod/get-cookie' };
+  }
+
+  let cookies;
+  try {
+    cookies = await getCookie({ domain: 'pitchbook.com' });
+  } catch (err) {
+    return { ok: false, error: 'COOKIE_ACCESS_DENIED', message: `Could not read browser cookies: ${err.message}` };
+  }
+
+  if (!cookies || cookies.length === 0) {
+    return { ok: false, error: 'NO_SESSION', message: '[AUTH_ERROR] NO_SESSION: No Pitchbook session found in any browser. Please log in to my.pitchbook.com in your browser.' };
+  }
+
+  const cookieStr = cookies
+    .filter(c => c.name && c.value)
+    .map(c => `${c.name}=${c.value}`)
+    .join('; ');
+
+  if (!cookieStr || !cookieStr.includes('SESSION=')) {
+    return { ok: false, error: 'NO_SESSION', message: '[AUTH_ERROR] NO_SESSION: No Pitchbook SESSION cookie found. Please log in to my.pitchbook.com in your browser.' };
+  }
+
+  const headers = {
+    'user-agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+    'accept': 'application/json',
+    'accept-language': 'en-US,en;q=0.5',
+    'x-requested-with': 'XMLHttpRequest',
+    'sec-fetch-dest': 'empty',
+    'sec-fetch-mode': 'cors',
+    'sec-fetch-site': 'same-origin',
+    'dnt': '1',
+  };
+
+  return { ok: true, headers, cookie: cookieStr };
+}
+
+export function validateSession(auth) {
+  try {
+    const args = [
+      CURL_BINARY,
+      'https://my.pitchbook.com/web-api/users/me/general',
+      ...buildCurlHeaders(auth, 'https://my.pitchbook.com/dashboard/private', false),
+      '-s', '-w', '\n%{http_code}',
+    ];
+    const cmd = args.map(shellQuote).join(' ');
+    const output = execSync(cmd, { encoding: 'utf-8', maxBuffer: 1024 * 1024, timeout: 15_000 });
+    const lines = output.trimEnd().split('\n');
+    const statusCode = parseInt(lines.pop(), 10);
+    return statusCode >= 200 && statusCode < 400;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -177,45 +262,80 @@ function shellQuote(s) {
   return s;
 }
 
-function execCurl(args) {
+function execCurlRaw(args) {
   const fullArgs = [CURL_BINARY, ...args, '-s', '-w', '\n%{http_code}'];
   const cmd = fullArgs.map(shellQuote).join(' ');
-
   const output = execSync(cmd, {
     encoding: 'utf-8',
     maxBuffer: 50 * 1024 * 1024,
     timeout: 60_000,
   });
-
   const lines = output.trimEnd().split('\n');
   const statusCode = parseInt(lines.pop(), 10);
   const body = lines.join('\n');
+  return { statusCode, body };
+}
 
-  if (statusCode === 401 || statusCode === 403) {
-    console.error(`Session expired (HTTP ${statusCode}). Run auth again.`);
-    process.exit(1);
-  }
-
+function parseResponse(body) {
   if (body.includes('"loginUrl"') || body.includes('/login')) {
-    console.error('Session expired (login redirect). Run auth again.');
-    process.exit(1);
+    return { _sessionExpired: true };
   }
-
   try {
     return JSON.parse(body);
   } catch {
-    return { _raw: body, _statusCode: statusCode };
+    return { _raw: body };
   }
 }
 
-export function curlGet(url, auth, referer) {
-  const args = [url, ...buildCurlHeaders(auth, referer, false)];
-  return execCurl(args);
+async function execCurl(args, url, referer, isPost, postBody) {
+  const { statusCode, body } = execCurlRaw(args);
+
+  if (statusCode === 401 || statusCode === 403) {
+    console.error(`Session expired (HTTP ${statusCode}). Attempting browser cookie refresh...`);
+    const extracted = await extractBrowserCookies();
+    if (extracted.ok) {
+      const newAuth = { headers: extracted.headers, cookie: extracted.cookie, extractedAt: new Date().toISOString(), source: 'browser-retry' };
+      const valid = validateSession(newAuth);
+      if (valid) {
+        saveJson(SESSION_FILE, newAuth);
+        console.error('Session refreshed. Retrying request...');
+        const retryArgs = isPost
+          ? [url, ...buildCurlHeaders(newAuth, referer, true), '--data-raw', postBody]
+          : [url, ...buildCurlHeaders(newAuth, referer, false)];
+        const retry = execCurlRaw(retryArgs);
+        if (retry.statusCode === 401 || retry.statusCode === 403) {
+          console.error('[AUTH_ERROR] SESSION_EXPIRED: Session still expired after refresh. Please log in to my.pitchbook.com in your browser.');
+          process.exit(1);
+        }
+        const parsed = parseResponse(retry.body);
+        if (parsed._sessionExpired) {
+          console.error('[AUTH_ERROR] SESSION_EXPIRED: Login redirect detected. Please log in to my.pitchbook.com in your browser.');
+          process.exit(1);
+        }
+        return parsed;
+      }
+    }
+    console.error('[AUTH_ERROR] SESSION_EXPIRED: Could not refresh session. Please log in to my.pitchbook.com in your browser.');
+    process.exit(1);
+  }
+
+  const parsed = parseResponse(body);
+  if (parsed._sessionExpired) {
+    console.error('[AUTH_ERROR] SESSION_EXPIRED: Login redirect detected. Please log in to my.pitchbook.com in your browser.');
+    process.exit(1);
+  }
+  return parsed;
 }
 
-export function curlPost(url, auth, body, referer) {
-  const args = [url, ...buildCurlHeaders(auth, referer, true), '--data-raw', JSON.stringify(body)];
-  return execCurl(args);
+export async function curlGet(url, auth, referer) {
+  const args = [url, ...buildCurlHeaders(auth, referer, false)];
+  return execCurl(args, url, referer, false, null);
+}
+
+export async function curlPost(url, auth, body, referer) {
+  const postBody = JSON.stringify(body);
+  const args = [url, ...buildCurlHeaders(auth, referer, true), '--data-raw', postBody];
+  return execCurl(args, url, referer, true, postBody);
 }
 
 // ---------------------------------------------------------------------------

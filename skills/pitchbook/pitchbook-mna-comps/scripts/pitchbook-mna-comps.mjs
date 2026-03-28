@@ -23,15 +23,15 @@ import {
 // Comps
 // ---------------------------------------------------------------------------
 
-function doComps(pbId) {
-  const auth = getAuth();
+async function doComps(pbId) {
+  const auth = await getAuth();
   checkCurl();
   console.log(`Fetching M&A comps for pbId: ${pbId}`);
 
   const url = `https://my.pitchbook.com/web-api/dashboard-platform-service/v2/private/mergers-and-acquisitions/comps?pbId=${pbId}`;
   const referer = 'https://my.pitchbook.com/dashboard/private';
 
-  const result = curlGet(url, auth, referer);
+  const result = await curlGet(url, auth, referer);
 
   const outFile = resolve(CACHE_DIR, `mna-comps-${pbId}.json`);
   saveJson(outFile, result);
@@ -69,7 +69,7 @@ switch (command) {
       console.error('Usage: node pitchbook-mna-comps.mjs comps <pbId>');
       process.exit(1);
     }
-    doComps(pbId);
+    await doComps(pbId);
     break;
   }
   default:

@@ -27,8 +27,8 @@ import {
 // Active Investors
 // ---------------------------------------------------------------------------
 
-function fetchActiveInvestors({ days = 365, verticals = [], assetClasses = [], dealTypes = [], locations = [] } = {}) {
-  const auth = getAuth();
+async function fetchActiveInvestors({ days = 365, verticals = [], assetClasses = [], dealTypes = [], locations = [] } = {}) {
+  const auth = await getAuth();
   checkCurl();
 
   const trailingRange = parseInt(days, 10);
@@ -50,7 +50,7 @@ function fetchActiveInvestors({ days = 365, verticals = [], assetClasses = [], d
     },
   };
 
-  const result = curlPost(
+  const result = await curlPost(
     'https://my.pitchbook.com/web-api/dashboard-platform-service/v2/private/investors-and-acquirers/ACTIVE_INVESTORS',
     auth,
     payload,
@@ -95,7 +95,7 @@ switch (command) {
     break;
   }
   case 'active': {
-    fetchActiveInvestors({
+    await fetchActiveInvestors({
       days: flags.days || '365',
       verticals: splitCsv(flags.verticals),
       assetClasses: splitCsv(flags['asset-class']),

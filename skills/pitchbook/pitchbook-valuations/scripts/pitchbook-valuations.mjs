@@ -30,8 +30,8 @@ function fmtMultiple(v) {
   return `${Number(v).toFixed(1)}x`;
 }
 
-function doMultiples({ days = 365, verticals = [], dealTypes = [], locations = [], gecsIndustries = [] } = {}) {
-  const auth = getAuth();
+async function doMultiples({ days = 365, verticals = [], dealTypes = [], locations = [], gecsIndustries = [] } = {}) {
+  const auth = await getAuth();
   checkCurl();
   console.log(`Fetching deal multiples (trailing ${days} days)...`);
 
@@ -43,7 +43,7 @@ function doMultiples({ days = 365, verticals = [], dealTypes = [], locations = [
     trailingRange: days,
   };
 
-  const result = curlPost(
+  const result = await curlPost(
     'https://my.pitchbook.com/web-api/dashboard-platform-service/v2/private/valuations/recent-deal-multiples',
     auth,
     payload,
@@ -97,7 +97,7 @@ switch (command) {
     const verticals = splitList(flags.verticals);
     const dealTypes = splitList(flags['deal-types']);
     const locations = splitList(flags.locations);
-    doMultiples({ days, verticals, dealTypes, locations });
+    await doMultiples({ days, verticals, dealTypes, locations });
     break;
   }
   default:

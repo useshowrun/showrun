@@ -23,13 +23,13 @@ import {
 // Hover
 // ---------------------------------------------------------------------------
 
-function doGet(pbId) {
-  const auth = getAuth();
+async function doGet(pbId) {
+  const auth = await getAuth();
   checkCurl();
   console.log(`Fetching hover card for pbId: ${pbId}`);
 
   const url = `https://my.pitchbook.com/web-api/entity-hover-platform-service/company/${pbId}`;
-  const result = curlGet(url, auth, 'https://my.pitchbook.com/dashboard/private');
+  const result = await curlGet(url, auth, 'https://my.pitchbook.com/dashboard/private');
 
   const outFile = resolve(CACHE_DIR, `hover-${pbId}.json`);
   saveJson(outFile, result);
@@ -101,7 +101,7 @@ switch (command) {
       console.error('Usage: node pitchbook-hover.mjs get <pbId>');
       process.exit(1);
     }
-    doGet(pbId);
+    await doGet(pbId);
     break;
   }
   default:

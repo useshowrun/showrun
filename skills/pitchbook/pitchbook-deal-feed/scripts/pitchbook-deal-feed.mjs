@@ -25,8 +25,8 @@ import {
 // Deal Feed
 // ---------------------------------------------------------------------------
 
-function fetchDealFeed({ limit = 10, days = 365, verticals = [], assetClasses = [], dealTypes = [], locations = [] }) {
-  const auth = getAuth();
+async function fetchDealFeed({ limit = 10, days = 365, verticals = [], assetClasses = [], dealTypes = [], locations = [] }) {
+  const auth = await getAuth();
   checkCurl();
   console.log(`Fetching recent deals (limit=${limit}, days=${days})`);
 
@@ -48,7 +48,7 @@ function fetchDealFeed({ limit = 10, days = 365, verticals = [], assetClasses = 
 
   const url = `https://my.pitchbook.com/web-api/dashboard-platform-service/v3/private/data-sourcing/recent-deals?limit=${limit}`;
 
-  const result = curlPost(
+  const result = await curlPost(
     url,
     auth,
     payload,
@@ -97,7 +97,7 @@ switch (command) {
     const assetClasses = flags['asset-class'] ? flags['asset-class'].split(',') : [];
     const dealTypes = flags['deal-types'] ? flags['deal-types'].split(',') : [];
     const locations = flags.locations ? flags.locations.split(',') : [];
-    fetchDealFeed({ limit, days, verticals, assetClasses, dealTypes, locations });
+    await fetchDealFeed({ limit, days, verticals, assetClasses, dealTypes, locations });
     break;
   }
   default:

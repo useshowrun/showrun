@@ -46,7 +46,7 @@ const ALL_SECTIONS = ['generalInfo', 'dealHistory', 'currentTeam', 'formerTeam',
 // ---------------------------------------------------------------------------
 
 async function doGet(companyId, sections) {
-  const auth = getAuth();
+  const auth = await getAuth();
   checkCurl();
   const referer = `${BASE}/profile/${companyId}/company/profile`;
   const selected = sections.length > 0 ? sections : ALL_SECTIONS;
@@ -66,7 +66,7 @@ async function doGet(companyId, sections) {
 
     console.log(`Fetching ${key}...`);
     try {
-      company[key] = curlGet(url, auth, referer);
+      company[key] = await curlGet(url, auth, referer);
     } catch (err) {
       console.error(`Error fetching ${key}: ${err.message}`);
       company[key] = { error: err.message };

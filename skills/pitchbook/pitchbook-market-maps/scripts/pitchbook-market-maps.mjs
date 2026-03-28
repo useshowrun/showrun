@@ -26,8 +26,8 @@ import {
 // List published market maps
 // ---------------------------------------------------------------------------
 
-function listMarketMaps({ verticals = [], dealTypes = [], locations = [] } = {}) {
-  const auth = getAuth();
+async function listMarketMaps({ verticals = [], dealTypes = [], locations = [] } = {}) {
+  const auth = await getAuth();
   checkCurl();
   console.log('Fetching published market maps from Pitchbook...');
 
@@ -37,7 +37,7 @@ function listMarketMaps({ verticals = [], dealTypes = [], locations = [] } = {})
     verticals,
   };
 
-  const result = curlPost(
+  const result = await curlPost(
     'https://my.pitchbook.com/web-api/market-map-bff/api/v1/market-map-dashboard/published',
     auth,
     payload,
@@ -102,7 +102,7 @@ switch (command) {
     break;
   }
   case 'list': {
-    listMarketMaps({
+    await listMarketMaps({
       verticals: csvToArray(flags.verticals),
       dealTypes: csvToArray(flags['deal-types']),
       locations: csvToArray(flags.locations),
