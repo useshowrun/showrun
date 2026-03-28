@@ -1,0 +1,9 @@
+{
+  "name": "yelp-business-scraper",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Yelp business scraper using Chrome CDP",
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}
