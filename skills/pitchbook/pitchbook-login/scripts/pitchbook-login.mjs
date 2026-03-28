@@ -368,29 +368,50 @@ switch (command) {
   case 'camoufox':
     await doCamoufoxLogin();
     break;
+  case 'browser': {
+    const { extractBrowserCookies, validateSession, saveSession } = await import('../../lib/utils.mjs');
+    console.log('Extracting Pitchbook session from browser cookies...');
+    const result = await extractBrowserCookies();
+    if (!result.ok) {
+      console.error(result.message);
+      process.exit(1);
+    }
+    const auth = { headers: result.headers, cookie: result.cookie, extractedAt: new Date().toISOString(), source: 'browser' };
+    console.log('Validating session...');
+    const valid = validateSession(auth);
+    if (!valid) {
+      console.error('Browser cookies found but session is expired.');
+      console.error('Please refresh my.pitchbook.com in your browser and log in again.');
+      process.exit(1);
+    }
+    saveSession(result.headers, result.cookie);
+    console.log('Browser cookie extraction complete.');
+    break;
+  }
   default:
     console.log(`pitchbook-login
 
 Authenticate with Pitchbook and save session for API access.
 
 Commands:
-  auth                   CDP auto-login via Chrome DevTools Protocol (preferred)
-  curl <file>            Import session from a "Copy as cURL" string saved to a file
-  curl -                 Import session from a "Copy as cURL" string via stdin
-  camoufox               Fallback: automated login via camoufox anti-detect browser
+  browser                Extract session from browser cookies (recommended)
+  auth                   CDP auto-login via Chrome DevTools Protocol
+  curl <file>            Import session from a "Copy as cURL" string
+  curl -                 Import from stdin
+  camoufox               Automated login via camoufox anti-detect browser
 
 Auth methods (in order of preference):
-  1. auth      — Logs in via Chrome CDP (types credentials, handles TOTP automatically)
+  1. browser   — Extracts cookies from your browser (Firefox, Chrome, etc.)
+                 Requires: User logged in to my.pitchbook.com in their browser
+  2. auth      — Logs in via Chrome CDP (types credentials, handles TOTP)
                  Requires: Chrome with --remote-debugging-port=9222, env vars set
-  2. camoufox  — Anti-detect browser login (bypasses some bot detection)
-                 Use when auth fails due to CAPTCHA
-                 Requires: camoufox + otpauth npm packages in data dir, env vars set
-  3. curl      — User logs in manually, copies a request as cURL from DevTools
-                 Use when both auth and camoufox fail
+  3. camoufox  — Anti-detect browser login (bypasses some bot detection)
+                 Requires: camoufox + otpauth npm packages, env vars set
+  4. curl      — User logs in manually, copies request as cURL from DevTools
 
-Env vars (for auth and camoufox):
-  PITCHBOOK_EMAIL, PITCHBOOK_PASSWORD, PITCHBOOK_OTP_SECRET, PITCHBOOK_USERNAME
+npm packages (for browser extraction):
+  cd ~/.local/share/showrun/data/pitchbook && npm install @mherod/get-cookie
 
 npm packages (for camoufox only):
-  cd ~/.local/share/showrun/data/pitchbook && npm init -y && npm install camoufox-js otpauth`);
+  cd ~/.local/share/showrun/data/pitchbook && npm install camoufox-js otpauth`);
 }

@@ -5,9 +5,9 @@ Scrape financial data from Pitchbook (company profiles, deal history, team membe
 ## Prerequisites
 
 - Node.js 22+
-- [chrome-cdp](../chrome-cdp) skill (for CDP auto-login)
-- Chrome with remote debugging: `google-chrome --remote-debugging-port=9222`
 - `curl` with HTTP/2 support (used for all API requests)
+- A browser with an active Pitchbook session (for automatic cookie extraction)
+- Optional: [chrome-cdp](../chrome-cdp) skill, camoufox (for power-user auth methods)
 
 ### curl with HTTP/2
 
@@ -28,54 +28,53 @@ Set `CURL_BINARY` env var if the correct curl is not at the default path. The sc
 
 ## Setup
 
-One-time authentication — three methods available (in order of preference):
+### Recommended: Browser cookies (zero setup)
 
-### Method 1: CDP auto-login (preferred)
+Just log in to [my.pitchbook.com](https://my.pitchbook.com) in your browser. The skills automatically extract your session cookies. No configuration needed.
 
-Requires Chrome with CDP and env vars set. Fully automated — types credentials and handles TOTP:
+If a skill reports that no session was found, ask the user to log in to Pitchbook in their browser and try again.
 
+**One-time dependency install:**
+```bash
+cd ~/.local/share/showrun/data/pitchbook && npm install @mherod/get-cookie
+```
+
+### Alternative: Power-user authentication
+
+For headless environments or when browser cookie extraction isn't available:
+
+#### Browser cookie extraction (explicit)
+```bash
+node pitchbook-login/scripts/pitchbook-login.mjs browser
+```
+
+#### CDP auto-login
+Requires Chrome with CDP and env vars set:
 ```bash
 google-chrome --remote-debugging-port=9222
 node pitchbook-login/scripts/pitchbook-login.mjs auth
 ```
 
-### Method 2: Camoufox (if CAPTCHA blocks CDP)
-
-Anti-detect browser that can bypass bot detection. Use when `auth` fails due to CAPTCHA:
-
+#### Camoufox (if CAPTCHA blocks CDP)
 ```bash
 node pitchbook-login/scripts/pitchbook-login.mjs camoufox
 ```
 
-Requires npm packages: `cd ~/.local/share/showrun/data/pitchbook && npm init -y && npm install camoufox-js otpauth`
-
-### Method 3: Copy as cURL (manual fallback)
-
-When both automated methods fail, ask the user to copy a request from their browser:
-
-1. Open `https://my.pitchbook.com` in Chrome and log in
-2. Open DevTools (F12) → Network tab
-3. Right-click any request to `my.pitchbook.com` → **Copy** → **Copy as cURL**
-4. Save to a file and run:
-   ```bash
-   node pitchbook-login/scripts/pitchbook-login.mjs curl /tmp/pb-curl.txt
-   ```
-   Or pipe directly:
-   ```bash
-   pbpaste | node pitchbook-login/scripts/pitchbook-login.mjs curl -    # macOS
-   xclip -o | node pitchbook-login/scripts/pitchbook-login.mjs curl -   # Linux
-   ```
-
-**Agent guidance:** When the user needs to authenticate, try `auth` first. If it fails due to CAPTCHA, try `camoufox`. If that also fails, ask the user to paste a curl string from their browser DevTools.
-
-**Headless Linux:** If running without a display (e.g., SSH, CI), prefix camoufox commands with `xvfb-run`:
+**Headless Linux:** Prefix with `xvfb-run`:
 ```bash
 xvfb-run node pitchbook-login/scripts/pitchbook-login.mjs camoufox
 ```
 
+#### Copy as cURL (manual fallback)
+```bash
+node pitchbook-login/scripts/pitchbook-login.mjs curl /tmp/pb-curl.txt
+```
+
+**Agent guidance:** Skills automatically extract browser cookies — no auth commands needed in normal use. If auto-extraction fails, ask the user to log in to my.pitchbook.com in their browser and let you know when they're done, then retry. Only use explicit auth commands as fallbacks.
+
 ### Loading environment variables
 
-Scripts require env vars from the pitchbook `.env` file:
+Environment variables are only needed for power-user auth methods (auth, camoufox):
 
 ```bash
 export $(cat skills/pitchbook/.env | xargs)    # from repo root
