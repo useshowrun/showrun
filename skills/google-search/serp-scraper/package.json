@@ -1,0 +1,15 @@
+{
+  "name": "google-search-serp-scraper",
+  "version": "1.0.0",
+  "description": "Google Search SERP scraper — organic results, news, images, PAA",
+  "type": "module",
+  "scripts": {
+    "start": "node scripts/serp-scraper.mjs"
+  },
+  "dependencies": {
+    "playwright": "^1.58.2"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
