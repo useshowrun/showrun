@@ -123,28 +123,21 @@ export async function getAuth() {
     return cached;
   }
 
-  // 2. Try browser cookie extraction
-  console.error('No cached session. Attempting browser cookie extraction...');
-  const extracted = await extractBrowserCookies();
-
-  if (!extracted.ok) {
-    console.error(extracted.message);
-    process.exit(1);
+  // 2. Try CDP auth (connect to Chrome via chrome-cdp)
+  console.error('No cached session. Attempting CDP cookie capture...');
+  try {
+    doCdpAuth();
+    const auth = loadJson(SESSION_FILE);
+    if (auth.cookie) {
+      console.error('Session captured from Chrome via CDP.');
+      return auth;
+    }
+  } catch (e) {
+    console.error(`CDP auth failed: ${e.message}`);
   }
 
-  // 3. Validate
-  const auth = { headers: extracted.headers, cookie: extracted.cookie, extractedAt: new Date().toISOString(), source: 'browser' };
-  console.error('Validating session...');
-  const valid = validateSession(auth);
-  if (!valid) {
-    console.error('[AUTH_ERROR] SESSION_EXPIRED: Browser cookies found but session is expired. Please refresh my.pitchbook.com in your browser and log in again.');
-    process.exit(1);
-  }
-
-  // 4. Save
-  saveJson(SESSION_FILE, auth);
-  console.error('Session extracted from browser and saved.');
-  return auth;
+  console.error('[AUTH_ERROR] No session found. Run: node pitchbook-login/scripts/pitchbook-login.mjs interactive');
+  process.exit(1);
 }
 
 export function saveSession(headers, cookies) {
@@ -345,7 +338,7 @@ export async function curlPost(url, auth, body, referer) {
 function findCdpScript() {
   const candidates = [
     resolve(homedir(), '.claude/skills/chrome-cdp/scripts/cdp.mjs'),
-    resolve(dirname(new URL(import.meta.url).pathname), '../../../chrome-cdp/scripts/cdp.mjs'),
+    resolve(dirname(new URL(import.meta.url).pathname), '../../chrome-cdp/scripts/cdp.mjs'),
   ];
   return process.env.CDP_SCRIPT || candidates.find(p => existsSync(p))
     || (() => { throw new Error('chrome-cdp skill not found. Install it or set CDP_SCRIPT env var.'); })();

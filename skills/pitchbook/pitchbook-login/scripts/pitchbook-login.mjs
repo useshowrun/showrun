@@ -1,23 +1,26 @@
 #!/usr/bin/env node
 
 /**
- * Pitchbook authentication via Chrome CDP (preferred), camoufox fallback, or curl import.
+ * Pitchbook authentication — interactive (preferred), CDP auto-login, curl import, or camoufox.
  *
  * Usage:
- *   node pitchbook-login.mjs auth                # CDP auto-login (preferred)
+ *   node pitchbook-login.mjs interactive          # connect to Chrome, capture session (preferred)
+ *   node pitchbook-login.mjs auth                 # CDP auto-login (types credentials)
  *   node pitchbook-login.mjs curl <file>          # import session from curl string
  *   node pitchbook-login.mjs curl -               # import from stdin
  *   node pitchbook-login.mjs camoufox             # fallback: automated camoufox login
  */
 
-import { resolve } from 'path';
-import { readFileSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { readFileSync, existsSync } from 'fs';
+import { execSync } from 'child_process';
 import {
   DATA_DIR,
   cdp,
   doCdpAuth,
   parseCurlString,
   saveSession,
+  validateSession,
   generateTOTP,
   delay,
   parseFlags,
@@ -338,6 +341,90 @@ async function doCamoufoxLogin() {
 }
 
 // ---------------------------------------------------------------------------
+// Interactive login: connect to user's Chrome, wait for login, capture session
+// ---------------------------------------------------------------------------
+
+function ensureCdpSkill() {
+  const skillDir = resolve(dirname(new URL(import.meta.url).pathname), '../../../chrome-cdp');
+  if (existsSync(resolve(skillDir, 'scripts/cdp.mjs'))) return;
+
+  console.log('Installing chrome-cdp skill...');
+  try {
+    execSync('git clone https://github.com/pasky/chrome-cdp-skill.git /tmp/chrome-cdp-skill-install 2>/dev/null');
+    const targetParent = resolve(skillDir, '..');
+    execSync(`cp -r /tmp/chrome-cdp-skill-install/skills/chrome-cdp "${targetParent}/"`);
+    execSync('rm -rf /tmp/chrome-cdp-skill-install');
+    console.log('chrome-cdp skill installed.');
+  } catch (e) {
+    console.error('Failed to install chrome-cdp skill automatically.');
+    console.error('Please install it manually from: https://github.com/pasky/chrome-cdp-skill');
+    process.exit(1);
+  }
+}
+
+async function doInteractiveLogin() {
+  ensureCdpSkill();
+
+  // 1. Check Chrome is reachable via CDP
+  let tabs;
+  try {
+    tabs = cdp('list');
+  } catch {
+    console.log('');
+    console.log('Cannot connect to Chrome. Please enable remote debugging:');
+    console.log('  1. Open Chrome');
+    console.log('  2. Go to chrome://inspect/#remote-debugging');
+    console.log('  3. Toggle the switch to enable remote debugging');
+    console.log('  4. Re-run this command');
+    console.log('');
+    process.exit(1);
+  }
+
+  // 2. Look for PitchBook tab, poll if not found
+  let hasPitchbook = tabs.includes('my.pitchbook.com');
+
+  if (!hasPitchbook) {
+    console.log('No PitchBook tab found. Please open my.pitchbook.com in Chrome and log in.');
+    console.log('Waiting for PitchBook tab...');
+
+    for (let i = 0; i < 60; i++) {
+      await delay(3000);
+      try {
+        tabs = cdp('list');
+        if (tabs.includes('my.pitchbook.com')) {
+          hasPitchbook = true;
+          break;
+        }
+      } catch { /* Chrome may momentarily disconnect */ }
+    }
+
+    if (!hasPitchbook) {
+      console.error('Timed out waiting for PitchBook tab (3 minutes).');
+      process.exit(1);
+    }
+  }
+
+  console.log('PitchBook tab found. Capturing session...');
+
+  // 3. Capture cookies via CDP
+  doCdpAuth();
+
+  // 4. Validate
+  const { loadJson } = await import('../../lib/utils.mjs');
+  const SESSION_FILE = resolve(DATA_DIR, 'session.json');
+  const auth = JSON.parse(readFileSync(SESSION_FILE, 'utf8'));
+
+  const valid = validateSession(auth);
+  if (!valid) {
+    console.error('Session captured but appears expired or invalid.');
+    console.error('Please make sure you are fully logged in to my.pitchbook.com, then re-run.');
+    process.exit(1);
+  }
+
+  console.log('Session captured and validated successfully.');
+}
+
+// ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
 
@@ -345,6 +432,9 @@ const [,, command, ...args] = process.argv;
 const { flags, positional } = parseFlags(args);
 
 switch (command) {
+  case 'interactive':
+    await doInteractiveLogin();
+    break;
   case 'auth':
     await doCdpLogin();
     break;
@@ -394,24 +484,20 @@ switch (command) {
 Authenticate with Pitchbook and save session for API access.
 
 Commands:
-  browser                Extract session from browser cookies (recommended)
+  interactive            Connect to Chrome and capture session (recommended)
   auth                   CDP auto-login via Chrome DevTools Protocol
   curl <file>            Import session from a "Copy as cURL" string
   curl -                 Import from stdin
+  browser                Extract session from browser cookies
   camoufox               Automated login via camoufox anti-detect browser
 
 Auth methods (in order of preference):
-  1. browser   — Extracts cookies from your browser (Firefox, Chrome, etc.)
-                 Requires: User logged in to my.pitchbook.com in their browser
-  2. auth      — Logs in via Chrome CDP (types credentials, handles TOTP)
-                 Requires: Chrome with --remote-debugging-port=9222, env vars set
-  3. camoufox  — Anti-detect browser login (bypasses some bot detection)
-                 Requires: camoufox + otpauth npm packages, env vars set
-  4. curl      — User logs in manually, copies request as cURL from DevTools
-
-npm packages (for browser extraction):
-  cd ~/.local/share/showrun/data/pitchbook && npm install @mherod/get-cookie
-
-npm packages (for camoufox only):
-  cd ~/.local/share/showrun/data/pitchbook && npm install camoufox-js otpauth`);
+  1. interactive — Connects to your Chrome browser and captures cookies
+                   Requires: Chrome with remote debugging enabled
+                   (open chrome://inspect/#remote-debugging and toggle the switch)
+  2. curl        — User logs in manually, copies request as cURL from DevTools
+  3. auth        — Automated CDP login (types credentials, handles TOTP)
+                   Requires: env vars set (PITCHBOOK_EMAIL, etc.)
+  4. camoufox    — Anti-detect browser login (bypasses some bot detection)
+                   Requires: camoufox + otpauth npm packages, env vars set`);
 }

@@ -6,8 +6,8 @@ Scrape financial data from Pitchbook (company profiles, deal history, team membe
 
 - Node.js 22+
 - `curl` with HTTP/2 support (used for all API requests)
-- A browser with an active Pitchbook session (for automatic cookie extraction)
-- Optional: [chrome-cdp](../chrome-cdp) skill, camoufox (for power-user auth methods)
+- Chrome with remote debugging enabled (for session capture)
+- [chrome-cdp](https://github.com/pasky/chrome-cdp-skill) skill (auto-installed on first use)
 
 ### curl with HTTP/2
 
@@ -28,41 +28,26 @@ Set `CURL_BINARY` env var if the correct curl is not at the default path. The sc
 
 ## Setup
 
-### Recommended: Browser cookies (zero setup)
+### Recommended: Interactive login
 
-Just log in to [my.pitchbook.com](https://my.pitchbook.com) in your browser. The skills automatically extract your session cookies. No configuration needed.
-
-If a skill reports that no session was found, ask the user to log in to Pitchbook in their browser and try again.
-
-**One-time dependency install:**
+1. Enable Chrome remote debugging: open `chrome://inspect/#remote-debugging` and toggle the switch
+2. Log in to [my.pitchbook.com](https://my.pitchbook.com) in Chrome
+3. Run:
 ```bash
-cd ~/.local/share/showrun/data/pitchbook && npm install @mherod/get-cookie
+node pitchbook-login/scripts/pitchbook-login.mjs interactive
 ```
+
+The `interactive` command auto-installs the [chrome-cdp](https://github.com/pasky/chrome-cdp-skill) skill, connects to your Chrome browser, and captures the session cookies. No credentials or env vars needed.
+
+**Agent guidance:** If no session is found, run `interactive` login. If Chrome remote debugging is not enabled, instruct the user to open `chrome://inspect/#remote-debugging` and toggle the switch. This is the only step requiring user action.
 
 ### Alternative: Power-user authentication
 
-For headless environments or when browser cookie extraction isn't available:
+For headless environments or automated setups:
 
-#### Browser cookie extraction (explicit)
+#### CDP auto-login (requires env vars)
 ```bash
-node pitchbook-login/scripts/pitchbook-login.mjs browser
-```
-
-#### CDP auto-login
-Requires Chrome with CDP and env vars set:
-```bash
-google-chrome --remote-debugging-port=9222
 node pitchbook-login/scripts/pitchbook-login.mjs auth
-```
-
-#### Camoufox (if CAPTCHA blocks CDP)
-```bash
-node pitchbook-login/scripts/pitchbook-login.mjs camoufox
-```
-
-**Headless Linux:** Prefix with `xvfb-run`:
-```bash
-xvfb-run node pitchbook-login/scripts/pitchbook-login.mjs camoufox
 ```
 
 #### Copy as cURL (manual fallback)
@@ -70,7 +55,10 @@ xvfb-run node pitchbook-login/scripts/pitchbook-login.mjs camoufox
 node pitchbook-login/scripts/pitchbook-login.mjs curl /tmp/pb-curl.txt
 ```
 
-**Agent guidance:** Skills automatically extract browser cookies — no auth commands needed in normal use. If auto-extraction fails, ask the user to log in to my.pitchbook.com in their browser and let you know when they're done, then retry. Only use explicit auth commands as fallbacks.
+#### Camoufox (anti-detect browser)
+```bash
+node pitchbook-login/scripts/pitchbook-login.mjs camoufox
+```
 
 ### Loading environment variables
 
@@ -87,7 +75,7 @@ export $(cat .env | xargs)                     # from skills/pitchbook/
 | Variable | Required For | Description |
 |----------|-------------|-------------|
 | `CURL_BINARY` | Optional | Path to curl binary (default: `curl`) |
-| `CDP_SCRIPT` | Optional | Path to chrome-cdp script |
+| `CDP_SCRIPT` | Optional | Path to chrome-cdp script (auto-detected) |
 | `PITCHBOOK_EMAIL` | auth, camoufox | Login email |
 | `PITCHBOOK_PASSWORD` | auth, camoufox | Password |
 | `PITCHBOOK_OTP_SECRET` | auth, camoufox | TOTP base32 secret |
@@ -97,7 +85,7 @@ export $(cat .env | xargs)                     # from skills/pitchbook/
 
 | Skill | Script | Description |
 |-------|--------|-------------|
-| [Login](pitchbook-login/SKILL.md) | `pitchbook-login/scripts/pitchbook-login.mjs` | Authenticate via CDP, camoufox, or curl import |
+| [Login](pitchbook-login/SKILL.md) | `pitchbook-login/scripts/pitchbook-login.mjs` | Authenticate via interactive login, CDP, or curl import |
 | [Search](pitchbook-search/SKILL.md) | `pitchbook-search/scripts/pitchbook-search.mjs` | Search companies by domain/name |
 | [Company](pitchbook-company/SKILL.md) | `pitchbook-company/scripts/pitchbook-company.mjs` | Fetch full company profile (6 endpoints) |
 | [Deal Feed](pitchbook-deal-feed/SKILL.md) | `pitchbook-deal-feed/scripts/pitchbook-deal-feed.mjs` | Fetch recent deal flow with filters |
@@ -111,7 +99,7 @@ export $(cat .env | xargs)                     # from skills/pitchbook/
 ## Typical workflow
 
 ```
-1. Authenticate       →  node pitchbook-login/scripts/pitchbook-login.mjs auth
+1. Authenticate       →  node pitchbook-login/scripts/pitchbook-login.mjs interactive
 2. Search company     →  node pitchbook-search/scripts/pitchbook-search.mjs search openai.com
 3. Fetch profile      →  node pitchbook-company/scripts/pitchbook-company.mjs get <companyId>
 ```
@@ -156,4 +144,4 @@ Pitchbook does not publish rate limits, but aggressive scraping triggers session
 
 ## Session expiry
 
-Captured headers expire after ~30 minutes. If you see `Session expired`, re-authenticate. CDP `auth` is fastest for refresh.
+Captured headers expire after ~30 minutes. If you see `Session expired`, re-authenticate. `interactive` is fastest for refresh (just re-run — no re-login needed if Chrome is still logged in).

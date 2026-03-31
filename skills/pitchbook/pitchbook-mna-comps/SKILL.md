@@ -5,7 +5,7 @@ Fetch M&A comparable transactions for a company from Pitchbook.
 ## Prerequisites
 
 - Node.js 22+
-- [chrome-cdp](../../chrome-cdp) skill (for `auth`)
+- [chrome-cdp](https://github.com/pasky/chrome-cdp-skill) skill (auto-installed on first use)
 - `curl` with HTTP/2 support — verify with `curl --version` (look for `HTTP2`)
 - Valid session (run login first)
 
@@ -14,13 +14,7 @@ Fetch M&A comparable transactions for a company from Pitchbook.
 One-time authentication — see [pitchbook-login](../pitchbook-login/SKILL.md) for all methods. Preferred:
 
 ```bash
-node ../pitchbook-login/scripts/pitchbook-login.mjs auth    # CDP auto-login
-```
-
-Or capture via CDP from an already-logged-in tab:
-
-```bash
-node scripts/pitchbook-mna-comps.mjs auth
+node ../pitchbook-login/scripts/pitchbook-login.mjs interactive
 ```
 
 ## Usage
