@@ -6,7 +6,7 @@
 //          node crunchbase-advanced-search.mjs search funding_rounds --count=10
 //          node crunchbase-advanced-search.mjs fields companies
 //
-// Requires Node 22+ (built-in fetch).
+// Requires Chrome open with crunchbase.com tab + chrome-cdp skill.
 
 import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
@@ -48,6 +48,34 @@ function findCdpScript() {
 
 function cdp(...args) {
   return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
+}
+
+function findCrunchbaseTab() {
+  const list = cdp('list');
+  for (const line of list.split('\n')) {
+    if (line.includes('crunchbase.com')) return line.trim().split(/\s+/)[0];
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Chrome CDP fetch — all Crunchbase API requests go through Chrome's context
+// ---------------------------------------------------------------------------
+
+function cdpFetch(tabId, url, options = {}) {
+  const fullUrl = url.startsWith('http') ? url : `https://www.crunchbase.com${url}`;
+  const method = options.method || 'GET';
+  const headers = { 'x-requested-with': 'XMLHttpRequest', 'content-type': 'application/json', ...options.headers };
+  const hdrs = `,headers:${JSON.stringify(headers)}`;
+  const bodyPart = options.body ? `,body:${JSON.stringify(String(options.body))}` : '';
+
+  const result = cdp('eval', tabId,
+    `(async()=>{const r=await fetch('${fullUrl}',{method:'${method}',credentials:'include'${hdrs}${bodyPart}});return r.status+'|||'+(await r.text())})()`);
+
+  const sepIdx = result.indexOf('|||');
+  const status = parseInt(result.substring(0, sepIdx), 10);
+  const body = result.substring(sepIdx + 3);
+  return { status, body };
 }
 
 // ---------------------------------------------------------------------------
@@ -115,94 +143,74 @@ const COLLECTIONS = {
 };
 
 // ---------------------------------------------------------------------------
-// Auth: extract cookies from Chrome Crunchbase tab
+// Auth
 // ---------------------------------------------------------------------------
 
-async function doAuth() {
+function doAuth() {
   console.log('Finding Crunchbase tab...');
-  const list = cdp('list');
-  let target;
-  for (const line of list.split('\n')) {
-    if (line.includes('crunchbase.com')) {
-      target = line.trim().split(/\s+/)[0];
-      break;
-    }
-  }
+  const target = findCrunchbaseTab();
   if (!target) throw new Error('No Crunchbase tab found. Open crunchbase.com in Chrome first.');
 
-  console.log(`Using tab: ${target}`);
-
+  // Validate login by checking for trustcookie (httpOnly, requires Network.getCookies)
   const raw = cdp('evalraw', target, 'Network.getCookies',
     JSON.stringify({ urls: ['https://www.crunchbase.com'] }));
   const { cookies } = JSON.parse(raw);
-  const cookieStr = cookies
-    .filter(c => c.domain.includes('crunchbase.com'))
-    .map(c => `${c.name}=${c.value}`)
-    .join('; ');
-
-  const cookieMap = Object.fromEntries(cookies.map(c => [c.name, c.value]));
-  if (!cookieMap['trustcookie']) throw new Error('trustcookie not found. Are you logged in to Crunchbase?');
-
-  // Get user agent
-  const userAgent = cdp('eval', target, 'navigator.userAgent');
+  const hasTrust = cookies.some(c => c.name === 'trustcookie');
+  if (!hasTrust) throw new Error('trustcookie not found. Are you logged in?');
 
   // Get the x-cb-client-app-instance-id if present
   const appInstanceId = cdp('eval', target,
     'document.cookie.match(/cb_client_app_instance_id=([^;]+)/)?.[1] || crypto.randomUUID()');
 
-  saveJson(SESSION_FILE, {
-    cookie: cookieStr,
-    userAgent,
-    appInstanceId,
-    capturedAt: new Date().toISOString(),
-  });
+  saveJson(SESSION_FILE, { appInstanceId, capturedAt: new Date().toISOString() });
   console.log(`Auth saved to: ${SESSION_FILE}`);
 }
 
 // ---------------------------------------------------------------------------
-// HTTP helpers
+// HTTP helpers — all requests routed through Chrome's browser context
 // ---------------------------------------------------------------------------
 
-function getAuth() {
-  const auth = loadJson(SESSION_FILE);
-  if (!auth.cookie) {
+function getSession() {
+  const session = loadJson(SESSION_FILE);
+  if (!session.capturedAt) {
     console.error('No auth found. Run: node crunchbase-advanced-search.mjs auth');
     process.exit(1);
   }
-  return auth;
+  return session;
 }
 
-function baseHeaders(auth) {
-  return {
-    'accept': 'application/json',
-    'content-type': 'application/json',
-    'x-requested-with': 'XMLHttpRequest',
-    'x-cb-client-app-instance-id': auth.appInstanceId || '',
-    'cookie': auth.cookie,
-    'user-agent': auth.userAgent || 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  };
-}
-
-async function apiFetch(auth, url, options = {}) {
-  const fullUrl = url.startsWith('http') ? url : `https://www.crunchbase.com${url}`;
-  const resp = await fetch(fullUrl, {
-    ...options,
-    headers: { ...baseHeaders(auth), ...options.headers },
-  });
-  const text = await resp.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-
-  if (!resp.ok) {
-    if (resp.status === 401 || resp.status === 403) {
-      console.error('Session expired. Run: node crunchbase-advanced-search.mjs auth');
-    } else if (resp.status === 429) {
-      console.error('Rate limited. Wait a few minutes and try again.');
-    } else if (resp.status === 404) {
-      console.error('Not found. Check your entity type or query parameters.');
-    }
-    throw new Error(`API error (HTTP ${resp.status}): ${JSON.stringify(data).substring(0, 300)}`);
+function apiFetch(session, url, options = {}) {
+  const target = findCrunchbaseTab();
+  if (!target) {
+    console.error('No Crunchbase tab found. Open crunchbase.com in Chrome.');
+    process.exit(1);
   }
+
+  const extraHeaders = { 'x-cb-client-app-instance-id': session.appInstanceId || '' };
+  const mergedOptions = { ...options, headers: { ...extraHeaders, ...options.headers } };
+  const { status, body } = cdpFetch(target, url, mergedOptions);
+
+  if (status === 401 || status === 403) {
+    console.error('Session expired. Run: node crunchbase-advanced-search.mjs auth');
+    process.exit(1);
+  }
+  if (status === 429) {
+    console.error('Rate limited (HTTP 429). Wait a few minutes.');
+    process.exit(1);
+  }
+  if (status === 404) {
+    console.error('Not found (HTTP 404). Check your entity type or query parameters.');
+    process.exit(1);
+  }
+
+  let data;
+  try { data = JSON.parse(body); } catch { data = body; }
+
+  if (status < 200 || status >= 300) {
+    console.error(`HTTP ${status}: ${typeof data === 'string' ? data.substring(0, 300) : JSON.stringify(data).substring(0, 300)}`);
+    process.exit(1);
+  }
+
   return data;
 }
 
@@ -210,7 +218,7 @@ async function apiFetch(auth, url, options = {}) {
 // Search
 // ---------------------------------------------------------------------------
 
-async function doSearch(entityType, { query = [], count = 15, afterId = null, fieldIds = null, order = null } = {}) {
+function doSearch(entityType, { query = [], count = 15, afterId = null, fieldIds = null, order = null } = {}) {
   const config = COLLECTIONS[entityType];
   if (!config) {
     console.error(`Unknown entity type: ${entityType}`);
@@ -218,7 +226,7 @@ async function doSearch(entityType, { query = [], count = 15, afterId = null, fi
     process.exit(1);
   }
 
-  const auth = getAuth();
+  const session = getSession();
   const body = {
     field_ids: fieldIds || config.field_ids,
     order: order || config.order,
@@ -229,7 +237,7 @@ async function doSearch(entityType, { query = [], count = 15, afterId = null, fi
   };
   if (afterId) body.after_id = afterId;
 
-  const data = await apiFetch(auth, `/v4/data/searches/${config.collection_id}?source=custom_advanced_search`, {
+  const data = apiFetch(session, `/v4/data/searches/${config.collection_id}?source=custom_advanced_search`, {
     method: 'POST',
     body: JSON.stringify(body),
   });
@@ -241,9 +249,9 @@ async function doSearch(entityType, { query = [], count = 15, afterId = null, fi
 // List available fields
 // ---------------------------------------------------------------------------
 
-async function listFields(entityType) {
-  const auth = getAuth();
-  const data = await apiFetch(auth, '/v4/md/applications/crunchbase?lang=en');
+function listFields(entityType) {
+  const session = getSession();
+  const data = apiFetch(session, '/v4/md/applications/crunchbase?lang=en');
 
   // Map entity type to entity_def id
   const defMap = {
@@ -287,7 +295,7 @@ function parseFlags(args) {
 
 switch (command) {
   case 'auth': {
-    await doAuth();
+    doAuth();
     break;
   }
 
@@ -324,7 +332,7 @@ switch (command) {
       }
     }
 
-    const data = await doSearch(entityType, { query, count, afterId, fieldIds, order });
+    const data = doSearch(entityType, { query, count, afterId, fieldIds, order });
 
     // Cache the results
     const cacheKey = `search-${entityType}-${Date.now()}`;
@@ -359,7 +367,7 @@ switch (command) {
       process.exit(1);
     }
 
-    const fields = await listFields(entityType);
+    const fields = listFields(entityType);
     console.log(`Fields for ${entityType} (${fields.length}):\n`);
     for (const f of fields) {
       console.log(`  ${f.id} (${f.type || 'unknown'})`);
@@ -405,6 +413,6 @@ Examples:
     --query='[{"type":"predicate","field_id":"num_founded_organizations","operator_id":"gte","values":[3]}]'
 
 Data: ${DATA_DIR}/
-  session.json     Auth cookies
+  session.json     Auth session
   cache/           Search results`);
 }

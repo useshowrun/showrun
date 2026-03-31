@@ -8,7 +8,7 @@
 //          node crunchbase-people.mjs education <permalink|uuid> [--count=50] [--after-id=UUID]
 //          node crunchbase-people.mjs news <permalink|uuid> [--count=50] [--after-id=UUID]
 //
-// Requires Node 22+ (built-in fetch).
+// Requires Node 22+ and Chrome with crunchbase.com open.
 
 import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
@@ -52,40 +52,46 @@ function cdp(...args) {
   return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
 }
 
+function findCrunchbaseTab() {
+  const list = cdp('list');
+  for (const line of list.split('\n')) {
+    if (line.includes('crunchbase.com')) return line.trim().split(/\s+/)[0];
+  }
+  return null;
+}
+
+function cdpFetch(tabId, url, options = {}) {
+  const fullUrl = url.startsWith('http') ? url : `https://www.crunchbase.com${url}`;
+  const method = options.method || 'GET';
+  const headers = { 'x-requested-with': 'XMLHttpRequest', 'content-type': 'application/json', ...options.headers };
+  const hdrs = `,headers:${JSON.stringify(headers)}`;
+  const bodyPart = options.body ? `,body:${JSON.stringify(String(options.body))}` : '';
+
+  const result = cdp('eval', tabId,
+    `(async()=>{const r=await fetch('${fullUrl}',{method:'${method}',credentials:'include'${hdrs}${bodyPart}});return r.status+'|||'+(await r.text())})()`);
+
+  const sepIdx = result.indexOf('|||');
+  const status = parseInt(result.substring(0, sepIdx), 10);
+  const body = result.substring(sepIdx + 3);
+  return { status, body };
+}
+
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
 
-async function doAuth() {
+function doAuth() {
   console.log('Finding Crunchbase tab...');
-  const list = cdp('list');
-  let target;
-  for (const line of list.split('\n')) {
-    if (line.includes('crunchbase.com')) {
-      target = line.trim().split(/\s+/)[0];
-      break;
-    }
-  }
+  const target = findCrunchbaseTab();
   if (!target) throw new Error('No Crunchbase tab found. Open crunchbase.com in Chrome first.');
 
   const raw = cdp('evalraw', target, 'Network.getCookies',
     JSON.stringify({ urls: ['https://www.crunchbase.com'] }));
   const { cookies } = JSON.parse(raw);
-  const cookieStr = cookies
-    .filter(c => c.domain.includes('crunchbase.com'))
-    .map(c => `${c.name}=${c.value}`)
-    .join('; ');
+  const hasTrust = cookies.some(c => c.name === 'trustcookie');
+  if (!hasTrust) throw new Error('trustcookie not found. Are you logged in?');
 
-  const cookieMap = Object.fromEntries(cookies.map(c => [c.name, c.value]));
-  if (!cookieMap['trustcookie']) throw new Error('trustcookie not found. Are you logged in?');
-
-  const userAgent = cdp('eval', target, 'navigator.userAgent');
-
-  saveJson(SESSION_FILE, {
-    cookie: cookieStr,
-    userAgent,
-    capturedAt: new Date().toISOString(),
-  });
+  saveJson(SESSION_FILE, { capturedAt: new Date().toISOString() });
   console.log(`Auth saved to: ${SESSION_FILE}`);
 }
 
@@ -93,41 +99,24 @@ async function doAuth() {
 // HTTP helpers
 // ---------------------------------------------------------------------------
 
-function getAuth() {
-  const auth = loadJson(SESSION_FILE);
-  if (!auth.cookie) {
+function getSession() {
+  const session = loadJson(SESSION_FILE);
+  if (!session.capturedAt) {
     console.error('No auth found. Run: node crunchbase-people.mjs auth');
     process.exit(1);
   }
-  return auth;
+  return session;
 }
 
-function baseHeaders(auth) {
-  return {
-    'accept': 'application/json',
-    'content-type': 'application/json',
-    'x-requested-with': 'XMLHttpRequest',
-    'cookie': auth.cookie,
-    'user-agent': auth.userAgent || 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36',
-  };
-}
-
-async function apiFetch(auth, url, options = {}) {
-  const fullUrl = url.startsWith('http') ? url : `https://www.crunchbase.com${url}`;
-  const resp = await fetch(fullUrl, {
-    ...options,
-    headers: { ...baseHeaders(auth), ...options.headers },
-  });
-  const text = await resp.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-
-  if (!resp.ok) {
-    if (resp.status === 401 || resp.status === 403) console.error('Session expired. Run: node crunchbase-people.mjs auth');
-    else if (resp.status === 429) console.error('Rate limited. Wait a few minutes.');
-    else if (resp.status === 404) console.error('Person not found.');
-    throw new Error(`API error (HTTP ${resp.status}): ${JSON.stringify(data).substring(0, 300)}`);
-  }
+function apiFetch(session, url, options = {}) {
+  const target = findCrunchbaseTab();
+  if (!target) { console.error('No Crunchbase tab found. Open crunchbase.com in Chrome.'); process.exit(1); }
+  const { status, body } = cdpFetch(target, url, options);
+  if (status === 401 || status === 403) { console.error('Session expired. Run auth.'); process.exit(1); }
+  if (status === 429) { console.error('Rate limited (HTTP 429). Wait a few minutes.'); process.exit(1); }
+  if (status === 404) { console.error('Not found (HTTP 404).'); process.exit(1); }
+  let data; try { data = JSON.parse(body); } catch { data = body; }
+  if (status < 200 || status >= 300) { console.error(`HTTP ${status}: ${JSON.stringify(data).substring(0, 300)}`); process.exit(1); }
   return data;
 }
 
@@ -135,14 +124,14 @@ async function apiFetch(auth, url, options = {}) {
 // Resolve permalink to UUID
 // ---------------------------------------------------------------------------
 
-async function resolvePermalink(auth, permalink) {
+function resolvePermalink(session, permalink) {
   // If it looks like a UUID, return it directly
   if (permalink.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)) {
     return permalink;
   }
 
   // Search for the person by permalink
-  const data = await apiFetch(auth, '/v4/data/searches/people?source=custom_advanced_search', {
+  const data = apiFetch(session, '/v4/data/searches/people?source=custom_advanced_search', {
     method: 'POST',
     body: JSON.stringify({
       field_ids: ['identifier', 'short_description'],
@@ -162,11 +151,11 @@ async function resolvePermalink(auth, permalink) {
 // Resolve UUID -> permalink (for overrides endpoint)
 // ---------------------------------------------------------------------------
 
-async function resolveToPermalink(auth, input) {
+function resolveToPermalink(session, input) {
   if (!input.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/)) {
     return input;
   }
-  const data = await apiFetch(auth,
+  const data = apiFetch(session,
     `/v4/data/entities/people/${input}?field_ids=${encodeURIComponent('["identifier"]')}`);
   return data.properties?.identifier?.permalink || input;
 }
@@ -241,11 +230,11 @@ const SECTIONS = {
   },
 };
 
-async function fetchSection(auth, input, sectionName, { count, afterId } = {}) {
+function fetchSection(session, input, sectionName, { count, afterId } = {}) {
   const config = SECTIONS[sectionName];
   if (!config) throw new Error(`Unknown section: ${sectionName}`);
 
-  const permalink = await resolveToPermalink(auth, input);
+  const permalink = resolveToPermalink(session, input);
   const sectionId = config.sectionId || sectionName;
   const limit = count || config.defaultCount;
 
@@ -256,7 +245,7 @@ async function fetchSection(auth, input, sectionName, { count, afterId } = {}) {
   const cardLookup = { card_id: config.listCard, limit };
   if (afterId) cardLookup.after_id = afterId;
 
-  return apiFetch(auth,
+  return apiFetch(session,
     `/v4/data/entities/people/${permalink}/overrides?field_ids=${fieldIds}&section_ids=${sectionIds}`, {
       method: 'POST',
       body: JSON.stringify({ card_lookups: [cardLookup] }),
@@ -305,12 +294,12 @@ const PERSON_FIELDS = [
   'rank_person', 'current_organizations', 'attended_schools', 'featured_job',
 ];
 
-async function viewPerson(auth, input) {
-  const uuid = await resolvePermalink(auth, input);
+function viewPerson(session, input) {
+  const uuid = resolvePermalink(session, input);
 
   const cardIds = encodeURIComponent(JSON.stringify(PERSON_CARDS));
   const fieldIds = encodeURIComponent(JSON.stringify(PERSON_FIELDS));
-  const data = await apiFetch(auth,
+  const data = apiFetch(session,
     `/v4/data/entities/people/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}`);
 
   return data;
@@ -335,7 +324,7 @@ function parseFlags(args) {
 const sectionCommand = SECTIONS[command];
 
 if (command === 'auth') {
-  await doAuth();
+  doAuth();
 } else if (command === 'view') {
   const { positional } = parseFlags(args);
   const input = positional[0];
@@ -344,9 +333,9 @@ if (command === 'auth') {
     process.exit(1);
   }
 
-  const auth = getAuth();
+  const session = getSession();
   console.log(`Fetching person: ${input}...`);
-  const data = await viewPerson(auth, input);
+  const data = viewPerson(session, input);
 
   const cacheFile = resolve(CACHE_DIR, `view-${input}.json`);
   saveJson(cacheFile, data);
@@ -398,12 +387,12 @@ if (command === 'auth') {
     process.exit(1);
   }
 
-  const auth = getAuth();
+  const session = getSession();
   const count = parseInt(flags.count || String(sectionCommand.defaultCount));
   const afterId = flags['after-id'] || null;
 
   console.log(`Fetching ${command} for: ${input}...`);
-  const data = await fetchSection(auth, input, command, { count, afterId });
+  const data = fetchSection(session, input, command, { count, afterId });
 
   const cacheFile = resolve(CACHE_DIR, `${command}-${input}-${Date.now()}.json`);
   saveJson(cacheFile, data);
@@ -439,6 +428,6 @@ Examples:
   node crunchbase-people.mjs news elon-musk --count=20
 
 Data: ${DATA_DIR}/
-  session.json     Auth cookies
+  session.json     Auth session
   cache/           People data`);
 }

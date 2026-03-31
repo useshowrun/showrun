@@ -10,7 +10,7 @@
 //   node yahoofinance-financials.mjs balance MSFT --period=annual
 //   node yahoofinance-financials.mjs cashflow GOOG --period=trailing
 //
-// Requires Node 22+ (built-in fetch).
+// Requires Chrome with Yahoo Finance open (uses CDP for all API requests).
 
 import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
@@ -212,61 +212,48 @@ function cdp(...args) {
   return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
 }
 
-// ---------------------------------------------------------------------------
-// Auth: extract A3 cookie from Chrome Yahoo Finance tab, then fetch crumb
-// ---------------------------------------------------------------------------
-
-async function doAuth() {
-  console.log('Finding Yahoo Finance tab...');
+function findYahooTab() {
   const list = cdp('list');
-  let target;
-  // Prefer tabs that are on finance.yahoo.com
-  for (const pref of ['finance.yahoo.com', 'query1.finance.yahoo.com', 'yahoo.com']) {
+  for (const pref of ['finance.yahoo.com', 'yahoo.com/quote', 'yahoo.com']) {
     for (const line of list.split('\n')) {
-      if (line.includes(pref)) {
-        target = line.trim().split(/\s+/)[0];
-        break;
-      }
+      if (line.includes(pref)) return line.trim().split(/\s+/)[0];
     }
-    if (target) break;
   }
-  if (!target) throw new Error('No Yahoo Finance tab found. Open https://finance.yahoo.com in Chrome first.');
+  return null;
+}
 
-  console.log(`Using tab: ${target}`);
+function cdpFetch(tabId, url, options = {}) {
+  const method = options.method || 'GET';
+  const hdrs = options.headers ? `,headers:${JSON.stringify(options.headers)}` : '';
+  const bodyPart = options.body ? `,body:${JSON.stringify(String(options.body))}` : '';
+  const result = cdp('eval', tabId,
+    `(async()=>{const r=await fetch('${url}',{method:'${method}',credentials:'include'${hdrs}${bodyPart}});return r.status+'|||'+(await r.text())})()`);
+  const sepIdx = result.indexOf('|||');
+  const status = parseInt(result.substring(0, sepIdx), 10);
+  const body = result.substring(sepIdx + 3);
+  return { status, body };
+}
 
-  // Extract cookies via CDP
-  const raw = cdp('evalraw', target, 'Network.getCookies',
-    JSON.stringify({ urls: ['https://finance.yahoo.com', 'https://query1.finance.yahoo.com', 'https://query2.finance.yahoo.com'] }));
-  const { cookies } = JSON.parse(raw);
+// ---------------------------------------------------------------------------
+// Auth: fetch crumb via Chrome CDP
+// ---------------------------------------------------------------------------
 
-  // Build cookie string from yahoo.com domain cookies
-  const yahooCookies = cookies.filter(c => c.domain.includes('yahoo.com'));
-  const cookieStr = yahooCookies.map(c => `${c.name}=${c.value}`).join('; ');
+function doAuth() {
+  console.log('Finding Yahoo Finance tab...');
+  const tabId = findYahooTab();
+  if (!tabId) throw new Error('No Yahoo Finance tab found. Open https://finance.yahoo.com in Chrome first.');
+  console.log(`Using tab: ${tabId}`);
 
-  if (!cookieStr) throw new Error('No Yahoo cookies found. Make sure you are logged in or have visited finance.yahoo.com.');
-
-  // Check for A3 cookie specifically
-  const a3 = yahooCookies.find(c => c.name === 'A3');
-  if (!a3) {
-    console.log('Warning: A3 cookie not found. Auth may not work for all endpoints.');
-  }
-
-  // Fetch crumb using the cookies
   console.log('Fetching crumb...');
-  const crumbResp = await fetch('https://query1.finance.yahoo.com/v1/test/getcrumb', {
-    headers: {
-      'cookie': cookieStr,
-      'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36',
-    },
-  });
-  if (!crumbResp.ok) throw new Error(`Failed to fetch crumb (HTTP ${crumbResp.status})`);
-  const crumb = await crumbResp.text();
-  if (!crumb || crumb.includes('<html>')) throw new Error('Invalid crumb response. Try refreshing Yahoo Finance in Chrome.');
+  const resp = cdpFetch(tabId, 'https://query1.finance.yahoo.com/v1/test/getcrumb');
+  if (resp.status !== 200 || !resp.body || resp.body.includes('<html>') || resp.body.length >= 80) {
+    throw new Error(`Failed to fetch crumb (HTTP ${resp.status}). Try refreshing Yahoo Finance in Chrome.`);
+  }
+  const crumb = resp.body.trim();
 
   saveJson(SESSION_FILE, {
-    cookie: cookieStr,
     crumb,
-    extractedAt: new Date().toISOString(),
+    capturedAt: new Date().toISOString(),
   });
   console.log(`Auth saved to: ${SESSION_FILE}`);
   console.log(`Crumb: ${crumb}`);
@@ -278,36 +265,31 @@ async function doAuth() {
 
 function getSession() {
   const session = loadJson(SESSION_FILE);
-  if (!session.cookie || !session.crumb) {
+  if (!session.crumb) {
     console.error('No auth found. Run: node yahoofinance-financials.mjs auth');
     process.exit(1);
   }
   return session;
 }
 
-const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
+function yahooFetch(session, url) {
+  const tabId = findYahooTab();
+  if (!tabId) throw new Error('No Yahoo Finance tab found. Open https://finance.yahoo.com in Chrome first.');
 
-async function yahooFetch(session, url) {
   const separator = url.includes('?') ? '&' : '?';
   const fullUrl = `${url}${separator}crumb=${encodeURIComponent(session.crumb)}`;
-  const resp = await fetch(fullUrl, {
-    headers: {
-      'cookie': session.cookie,
-      'user-agent': USER_AGENT,
-      'accept': 'application/json',
-    },
-  });
-  const text = await resp.text();
+
+  const resp = cdpFetch(tabId, fullUrl);
   let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-  return { status: resp.status, ok: resp.ok, data };
+  try { data = JSON.parse(resp.body); } catch { data = resp.body; }
+  return { status: resp.status, ok: resp.status >= 200 && resp.status < 300, data };
 }
 
 // ---------------------------------------------------------------------------
 // Core: fetch fundamentals timeseries
 // ---------------------------------------------------------------------------
 
-async function fetchTimeseries(session, symbol, statementType, period) {
+function fetchTimeseries(session, symbol, statementType, period) {
   // Map statement type to field keys
   const keyMap = {
     'income': FINANCIALS_KEYS,
@@ -333,7 +315,7 @@ async function fetchTimeseries(session, symbol, statementType, period) {
   const url = `https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?symbol=${encodeURIComponent(symbol)}&type=${typeParam}&period1=0&period2=9999999999`;
 
   console.log(`Fetching ${period} ${statementType} data for ${symbol}...`);
-  const result = await yahooFetch(session, url);
+  const result = yahooFetch(session, url);
 
   if (!result.ok) {
     if (result.status === 401 || result.status === 403) {
@@ -474,7 +456,7 @@ function parseFlags(args) {
 
 switch (command) {
   case 'auth': {
-    await doAuth();
+    doAuth();
     break;
   }
 
@@ -492,7 +474,7 @@ switch (command) {
     }
 
     const session = getSession();
-    const data = await fetchTimeseries(session, symbol.toUpperCase(), 'income', period);
+    const data = fetchTimeseries(session, symbol.toUpperCase(), 'income', period);
 
     // Cache full result
     ensureDir(CACHE_DIR);
@@ -526,7 +508,7 @@ switch (command) {
     }
 
     const session = getSession();
-    const data = await fetchTimeseries(session, symbol.toUpperCase(), 'balance', period);
+    const data = fetchTimeseries(session, symbol.toUpperCase(), 'balance', period);
 
     ensureDir(CACHE_DIR);
     const cacheFile = resolve(CACHE_DIR, `${symbol.toUpperCase()}-balance-${period}.json`);
@@ -553,7 +535,7 @@ switch (command) {
     }
 
     const session = getSession();
-    const data = await fetchTimeseries(session, symbol.toUpperCase(), 'cashflow', period);
+    const data = fetchTimeseries(session, symbol.toUpperCase(), 'cashflow', period);
 
     ensureDir(CACHE_DIR);
     const cacheFile = resolve(CACHE_DIR, `${symbol.toUpperCase()}-cashflow-${period}.json`);
@@ -591,6 +573,6 @@ Examples:
   node yahoofinance-financials.mjs cashflow GOOG --period=trailing
 
 Data: ${DATA_DIR}/
-  session.json     Auth cookie & crumb
+  session.json     Auth crumb
   cache/           Financial statement JSON files`);
 }

@@ -9,7 +9,7 @@
 //   node yahoofinance-screener.mjs search --query='[{"op":"gt","field":"percentchange","val":3}]'
 //   node yahoofinance-screener.mjs fields
 //
-// Requires Node 22+ (built-in fetch).
+// Requires Chrome with Yahoo Finance open (uses CDP fetch for all API requests).
 
 import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
@@ -24,11 +24,7 @@ const QUERY1_URL = 'https://query1.finance.yahoo.com';
 const SCREENER_URL = `${QUERY1_URL}/v1/finance/screener`;
 const PREDEFINED_URL = `${SCREENER_URL}/predefined/saved`;
 const CRUMB_URL = `${QUERY1_URL}/v1/test/getcrumb`;
-const COOKIE_URL = 'https://fc.yahoo.com';
-
 const MAX_RESULTS = 250;
-
-const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36';
 
 const PREDEFINED_NAMES = [
   'most_actives', 'day_gainers', 'day_losers', 'most_shorted_stocks',
@@ -159,100 +155,65 @@ function cdp(...args) {
   return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
 }
 
-// ---------------------------------------------------------------------------
-// Auth: extract A3 cookie from Chrome Yahoo Finance tab, then fetch crumb
-// ---------------------------------------------------------------------------
-
-async function doAuth() {
-  console.log('Finding Yahoo Finance tab...');
+function findYahooTab() {
   const list = cdp('list');
-  let target;
   for (const pref of ['finance.yahoo.com', 'yahoo.com/quote', 'yahoo.com']) {
     for (const line of list.split('\n')) {
-      if (line.includes(pref)) {
-        target = line.trim().split(/\s+/)[0];
-        break;
-      }
+      if (line.includes(pref)) return line.trim().split(/\s+/)[0];
     }
-    if (target) break;
   }
-  if (!target) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
+  return null;
+}
 
-  console.log(`Using tab: ${target}`);
+function cdpFetch(tabId, url, options = {}) {
+  const method = options.method || 'GET';
+  const hdrs = options.headers ? `,headers:${JSON.stringify(options.headers)}` : '';
+  const bodyPart = options.body ? `,body:${JSON.stringify(String(options.body))}` : '';
+  const result = cdp('eval', tabId,
+    `(async()=>{const r=await fetch('${url}',{method:'${method}',credentials:'include'${hdrs}${bodyPart}});return r.status+'|||'+(await r.text())})()`);
+  const sepIdx = result.indexOf('|||');
+  const status = parseInt(result.substring(0, sepIdx), 10);
+  const body = result.substring(sepIdx + 3);
+  return { status, body };
+}
 
-  // Extract cookies via CDP
-  const raw = cdp('evalraw', target, 'Network.getCookies',
-    JSON.stringify({ urls: ['https://finance.yahoo.com', 'https://query1.finance.yahoo.com'] }));
-  const { cookies } = JSON.parse(raw);
+// ---------------------------------------------------------------------------
+// Auth: fetch crumb via Chrome CDP
+// ---------------------------------------------------------------------------
 
-  const cookieStr = cookies
-    .filter(c => c.domain.includes('yahoo.com'))
-    .map(c => `${c.name}=${c.value}`)
-    .join('; ');
+function doAuth() {
+  console.log('Finding Yahoo Finance tab...');
+  const tabId = findYahooTab();
+  if (!tabId) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome first.');
+  console.log(`Using tab: ${tabId}`);
 
-  const a3Cookie = cookies.find(c => c.name === 'A3' && c.domain.includes('yahoo.com'));
-  if (!a3Cookie) {
-    console.error('Warning: A3 cookie not found. Auth may not work for all endpoints.');
-  }
+  console.log('Fetching crumb via Chrome CDP...');
+  const resp = cdpFetch(tabId, CRUMB_URL);
+  const crumb = resp.body.trim();
 
-  if (!cookieStr) throw new Error('No Yahoo cookies found. Are you logged in?');
-
-  // Fetch crumb using the cookie
-  console.log('Fetching crumb...');
-  const crumbResp = await fetch(CRUMB_URL, {
-    headers: {
-      'cookie': cookieStr,
-      'user-agent': USER_AGENT,
-    },
-  });
-
-  if (!crumbResp.ok) {
-    throw new Error(`Failed to fetch crumb (HTTP ${crumbResp.status}). Try refreshing Yahoo Finance in Chrome.`);
-  }
-
-  const crumb = await crumbResp.text();
-  if (!crumb || crumb.includes('<html>')) {
-    throw new Error('Invalid crumb response. Try refreshing Yahoo Finance in Chrome.');
+  if (resp.status !== 200 || !crumb || crumb.includes('<html>')) {
+    throw new Error(`Failed to fetch crumb (HTTP ${resp.status}). Try refreshing Yahoo Finance in Chrome.`);
   }
 
   saveJson(SESSION_FILE, {
-    cookie: cookieStr,
     crumb,
-    extractedAt: new Date().toISOString(),
+    capturedAt: new Date().toISOString(),
   });
   console.log(`Crumb: ${crumb}`);
   console.log(`Auth saved to: ${SESSION_FILE}`);
 }
 
 // ---------------------------------------------------------------------------
-// HTTP helpers
+// Session & API helpers (Chrome CDP only)
 // ---------------------------------------------------------------------------
 
-function getAuth() {
-  const auth = loadJson(SESSION_FILE);
-  if (!auth.cookie || !auth.crumb) {
+function getSession() {
+  const session = loadJson(SESSION_FILE);
+  if (!session.crumb) {
     console.error('No auth found. Run: node yahoofinance-screener.mjs auth');
     process.exit(1);
   }
-  return auth;
-}
-
-function baseHeaders(auth) {
-  return {
-    'cookie': auth.cookie,
-    'user-agent': USER_AGENT,
-    'accept': 'application/json',
-  };
-}
-
-function commonParams(auth) {
-  return {
-    crumb: auth.crumb,
-    corsDomain: 'finance.yahoo.com',
-    formatted: 'false',
-    lang: 'en-US',
-    region: 'US',
-  };
+  return session;
 }
 
 function buildUrl(base, params) {
@@ -263,42 +224,51 @@ function buildUrl(base, params) {
   return url.toString();
 }
 
-async function apiGet(auth, url, extraParams = {}) {
-  const params = { ...commonParams(auth), ...extraParams };
+function commonParams(session) {
+  return {
+    crumb: session.crumb,
+    corsDomain: 'finance.yahoo.com',
+    formatted: 'false',
+    lang: 'en-US',
+    region: 'US',
+  };
+}
+
+function apiGet(session, url, extraParams = {}) {
+  const tabId = findYahooTab();
+  if (!tabId) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome.');
+  const params = { ...commonParams(session), ...extraParams };
   const fullUrl = buildUrl(url, params);
-  const resp = await fetch(fullUrl, { headers: baseHeaders(auth) });
-  const text = await resp.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-  if (!resp.ok) {
-    if (resp.status === 401 || resp.status === 403) {
-      console.error('Session expired. Run: node yahoofinance-screener.mjs auth');
-    }
-    throw new Error(`GET failed (HTTP ${resp.status}): ${typeof data === 'string' ? data.substring(0, 200) : JSON.stringify(data).substring(0, 200)}`);
+  const resp = cdpFetch(tabId, fullUrl);
+  if (resp.status === 401 || resp.status === 403) {
+    console.error('Session expired. Run: node yahoofinance-screener.mjs auth');
   }
+  if (resp.status !== 200) {
+    throw new Error(`GET failed (HTTP ${resp.status}): ${resp.body.substring(0, 200)}`);
+  }
+  let data;
+  try { data = JSON.parse(resp.body); } catch { data = resp.body; }
   return data;
 }
 
-async function apiPost(auth, url, body, extraParams = {}) {
-  const params = { ...commonParams(auth), ...extraParams };
+function apiPost(session, url, body, extraParams = {}) {
+  const tabId = findYahooTab();
+  if (!tabId) throw new Error('No Yahoo Finance tab found. Open finance.yahoo.com in Chrome.');
+  const params = { ...commonParams(session), ...extraParams };
   const fullUrl = buildUrl(url, params);
-  const resp = await fetch(fullUrl, {
+  const resp = cdpFetch(tabId, fullUrl, {
     method: 'POST',
-    headers: {
-      ...baseHeaders(auth),
-      'content-type': 'application/json',
-    },
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
-  const text = await resp.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-  if (!resp.ok) {
-    if (resp.status === 401 || resp.status === 403) {
-      console.error('Session expired. Run: node yahoofinance-screener.mjs auth');
-    }
-    throw new Error(`POST failed (HTTP ${resp.status}): ${typeof data === 'string' ? data.substring(0, 200) : JSON.stringify(data).substring(0, 200)}`);
+  if (resp.status === 401 || resp.status === 403) {
+    console.error('Session expired. Run: node yahoofinance-screener.mjs auth');
   }
+  if (resp.status !== 200) {
+    throw new Error(`POST failed (HTTP ${resp.status}): ${resp.body.substring(0, 200)}`);
+  }
+  let data;
+  try { data = JSON.parse(resp.body); } catch { data = resp.body; }
   return data;
 }
 
@@ -341,7 +311,7 @@ function convertQuery(filters) {
 // Commands
 // ---------------------------------------------------------------------------
 
-async function runPredefined(auth, name, { count = 25, offset = 0 } = {}) {
+function runPredefined(auth, name, { count = 25, offset = 0 } = {}) {
   if (!PREDEFINED_NAMES.includes(name)) {
     console.error(`Unknown predefined query: "${name}"`);
     console.error(`Available: ${PREDEFINED_NAMES.join(', ')}`);
@@ -351,7 +321,7 @@ async function runPredefined(auth, name, { count = 25, offset = 0 } = {}) {
   count = Math.min(Number(count), MAX_RESULTS);
   offset = Number(offset);
 
-  const data = await apiGet(auth, PREDEFINED_URL, {
+  const data = apiGet(auth, PREDEFINED_URL, {
     scrIds: name,
     count: String(count),
     offset: String(offset),
@@ -365,7 +335,7 @@ async function runPredefined(auth, name, { count = 25, offset = 0 } = {}) {
   return result;
 }
 
-async function runSearch(auth, queryFilters, { size = 100, offset = 0, sortField = 'ticker', sortAsc = false, quoteType = 'EQUITY' } = {}) {
+function runSearch(auth, queryFilters, { size = 100, offset = 0, sortField = 'ticker', sortAsc = false, quoteType = 'EQUITY' } = {}) {
   size = Math.min(Number(size), MAX_RESULTS);
   offset = Number(offset);
 
@@ -382,7 +352,7 @@ async function runSearch(auth, queryFilters, { size = 100, offset = 0, sortField
     query,
   };
 
-  const data = await apiPost(auth, SCREENER_URL, body);
+  const data = apiPost(auth, SCREENER_URL, body);
 
   const result = data?.finance?.result?.[0];
   if (!result) {
@@ -467,7 +437,7 @@ function parseFlags(args) {
 
 switch (command) {
   case 'auth': {
-    await doAuth();
+    doAuth();
     break;
   }
 
@@ -480,11 +450,11 @@ switch (command) {
       process.exit(1);
     }
 
-    const auth = getAuth();
+    const auth = getSession();
     const count = flags.count ? Number(flags.count) : 25;
     const offset = flags.offset ? Number(flags.offset) : 0;
 
-    const result = await runPredefined(auth, name, { count, offset });
+    const result = runPredefined(auth, name, { count, offset });
     printResult(result, `Predefined: ${name}`);
 
     // Cache result
@@ -518,14 +488,14 @@ switch (command) {
       process.exit(1);
     }
 
-    const auth = getAuth();
+    const auth = getSession();
     const size = flags.size ? Number(flags.size) : 100;
     const offset = flags.offset ? Number(flags.offset) : 0;
     const sortField = flags.sort || 'ticker';
     const sortAsc = !!flags.asc;
     const quoteType = flags.type || 'EQUITY';
 
-    const result = await runSearch(auth, queryFilters, { size, offset, sortField, sortAsc, quoteType });
+    const result = runSearch(auth, queryFilters, { size, offset, sortField, sortAsc, quoteType });
     printResult(result, `Custom search (${quoteType})`);
 
     // Cache result
@@ -571,6 +541,6 @@ Examples:
   node yahoofinance-screener.mjs fields
 
 Data: ${DATA_DIR}/
-  session.json     Auth cookies & crumb
+  session.json     Auth crumb
   cache/           Screener result JSON files`);
 }

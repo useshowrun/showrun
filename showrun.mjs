@@ -3,8 +3,10 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { createInterface } from 'node:readline';
+import { createHash } from 'node:crypto';
 
 const API_URL = 'https://api.showrun.co';
+const SHOWRUN_URL = 'https://showrun.co/showrun.mjs';
 const DEFAULT_CHECK_INTERVAL_HOURS = 24;
 
 // --- Config ---
@@ -98,6 +100,34 @@ function prompt(question) {
   });
 }
 
+function lockVersion(entry) {
+  if (!entry) return null;
+  return typeof entry === 'string' ? entry : entry.version;
+}
+
+// --- Self-update ---
+
+async function selfUpdate() {
+  try {
+    const selfPath = new URL(import.meta.url).pathname;
+    const localContent = readFileSync(selfPath, 'utf8');
+    const localHash = createHash('sha256').update(localContent).digest('hex');
+
+    const res = await fetch(SHOWRUN_URL);
+    if (!res.ok) return;
+    const remoteContent = await res.text();
+    const remoteHash = createHash('sha256').update(remoteContent).digest('hex');
+
+    if (localHash === remoteHash) return;
+
+    writeFileSync(selfPath, remoteContent);
+    console.log('showrun.mjs updated. Please re-run your command.');
+    process.exit(0);
+  } catch {
+    // Silent failure — don't block the user's command
+  }
+}
+
 // --- Auto-update ---
 
 async function autoUpdate() {
@@ -112,6 +142,8 @@ async function autoUpdate() {
 
   if (lastCheck && (now - lastCheck) < interval * 60 * 60 * 1000) return;
 
+  await selfUpdate();
+
   try {
     const lock = loadLock();
     const remote = await apiAuth('/skills');
@@ -120,7 +152,7 @@ async function autoUpdate() {
     const localPaths = new Set(Object.keys(lock));
 
     const hasUpdates =
-      [...remotePaths].some((p) => !localPaths.has(p) || lock[p] !== remoteSkills[p]);
+      [...remotePaths].some((p) => !localPaths.has(p) || lockVersion(lock[p]) !== remoteSkills[p]);
 
     if (hasUpdates) {
       console.log('Updates available, syncing...');
@@ -207,7 +239,7 @@ async function cmdCheck() {
   const added = [...remotePaths].filter((p) => !localPaths.has(p));
   const removed = [...localPaths].filter((p) => !remotePaths.has(p));
   const updated = [...remotePaths].filter(
-    (p) => localPaths.has(p) && lock[p] !== remoteSkills[p]
+    (p) => localPaths.has(p) && lockVersion(lock[p]) !== remoteSkills[p]
   );
 
   if (!added.length && !removed.length && !updated.length) {
@@ -241,29 +273,40 @@ async function cmdSync(filter, silent = false) {
   let skipped = 0;
 
   for (const skillPath of paths) {
-    if (!filter && lock[skillPath] === remoteSkills[skillPath]) {
-      skipped++;
-      continue;
+    const lockEntry = lock[skillPath];
+    if (!filter && lockEntry && lockVersion(lockEntry) === remoteSkills[skillPath]) {
+      // Verify all expected files actually exist on disk
+      const hasSkillMd = existsSync(join(skillsDir, skillPath, 'SKILL.md'));
+      const expectedScript = typeof lockEntry === 'object' ? lockEntry.script_name : null;
+      const hasScript = !expectedScript ||
+        existsSync(join(skillsDir, skillPath, 'scripts', expectedScript));
+      if (hasSkillMd && hasScript) {
+        skipped++;
+        continue;
+      }
     }
 
     const skill = await apiAuth(`/skills/${skillPath}`);
     const destDir = join(skillsDir, skillPath);
-    const scriptsDir = join(destDir, 'scripts');
-    mkdirSync(scriptsDir, { recursive: true });
+    mkdirSync(destDir, { recursive: true });
 
     writeFileSync(join(destDir, 'SKILL.md'), skill.skill_md);
 
     if (skill.script_name) {
+      const scriptsDir = join(destDir, 'scripts');
+      mkdirSync(scriptsDir, { recursive: true });
       const scriptRes = await fetch(`${getApiUrl()}/skills/${skillPath}/script`, {
         headers: { Authorization: `Bearer ${getApiKey()}` },
       });
       if (scriptRes.ok) {
-        const scriptContent = await scriptRes.text();
-        writeFileSync(join(scriptsDir, skill.script_name), scriptContent);
+        writeFileSync(join(scriptsDir, skill.script_name), await scriptRes.text());
+      } else {
+        console.error(`  ✗ Failed to download script for ${skillPath} (HTTP ${scriptRes.status})`);
+        continue;
       }
     }
 
-    lock[skillPath] = remoteSkills[skillPath];
+    lock[skillPath] = { version: remoteSkills[skillPath], script_name: skill.script_name || null };
     synced++;
   }
 
