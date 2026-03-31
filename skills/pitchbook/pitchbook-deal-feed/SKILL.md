@@ -1,6 +1,6 @@
 # pitchbook-deal-feed
 
-Fetch recent deals from Pitchbook's deal feed with optional filters for verticals, asset class, and locations.
+Fetch recent deals from Pitchbook's deal feed with filters for deal type, verticals, locations, and asset class.
 
 ## Prerequisites
 
@@ -19,46 +19,90 @@ node ../pitchbook-login/scripts/pitchbook-login.mjs interactive
 
 ## Usage
 
-### Fetch recent deals
-
 ```bash
-node scripts/pitchbook-deal-feed.mjs feed [--limit=10] [--days=365] [--verticals=...] [--locations=...] [--asset-class=...]
+node scripts/pitchbook-deal-feed.mjs feed [options]
 ```
 
-**Examples:**
+### Options
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--limit=N` | 10 | Number of deals to fetch |
+| `--days=N` | 365 | Trailing range in days |
+| `--asset-class=CODE` | (none) | Asset class filter — auto-populates deal types |
+| `--deal-types=PRESET` | (none) | Deal type preset or raw codes |
+| `--verticals=CODE,...` | (none) | Industry vertical codes |
+| `--locations=CODE,...` | (none) | Location codes |
+
+### Examples
+
 ```bash
-node scripts/pitchbook-deal-feed.mjs feed
-node scripts/pitchbook-deal-feed.mjs feed --limit=5 --days=30
-node scripts/pitchbook-deal-feed.mjs feed --limit=5 --verticals=AIML
+# Early-stage VC deals in the last 2 weeks
+node scripts/pitchbook-deal-feed.mjs feed --deal-types=vc-early --days=14 --limit=50
+
+# All VC deals in AI/ML
+node scripts/pitchbook-deal-feed.mjs feed --asset-class=VENTURE_CAPITAL --verticals=AIML --days=30
+
+# Seed rounds in the Bay Area
+node scripts/pitchbook-deal-feed.mjs feed --deal-types=vc-seed --locations=sgBayArea --days=30
+
+# M&A deals in Europe
+node scripts/pitchbook-deal-feed.mjs feed --asset-class=MNA --locations=gEu --days=90
+
+# Specific deal types by raw codes
+node scripts/pitchbook-deal-feed.mjs feed --deal-types=SEED,EVC,EVC_A,A --locations=gUS --days=30
 ```
 
-### Show help
+## Deal type presets
+
+The `--deal-types` flag accepts presets that expand to the correct API codes:
+
+| Preset | Description |
+|--------|-------------|
+| `vc-all` | All Venture Capital deal types |
+| `vc-early` | Pre-seed through Series A (accelerators, angels, seed, early VC) |
+| `vc-late` | Series B+ and later stage |
+| `vc-seed` | Seed and pre-seed only |
+| `vc-series-a` | Series A only |
+| `mna-all` | All M&A deal types |
+| `pe-all` | All Private Equity deal types |
+
+You can also pass raw deal type codes (comma-separated). When `--asset-class` is set but no `--deal-types`, the script auto-populates all deal type codes for that asset class — matching the PitchBook UI behavior.
+
+## Filter codes reference
+
+All filter codes (176 deal types, 59 verticals, 435 locations) are in [`filter-codes.json`](filter-codes.json). Grep it for specific codes:
 
 ```bash
-node scripts/pitchbook-deal-feed.mjs
+# Find a vertical code
+grep -i "fintech" pitchbook-deal-feed/filter-codes.json
+
+# Find a location code
+grep -i "california" pitchbook-deal-feed/filter-codes.json
 ```
+
+### Quick reference — common verticals
+
+`AIML` (AI/ML), `FT` (FinTech), `SAAS` (SaaS), `SEC` (Cybersecurity), `DTLHL` (Digital Health), `HT` (HealthTech), `ECOMM` (E-Commerce), `CT` (CleanTech), `ET` (EdTech), `FDC` (FoodTech), `MOBILE` (Mobile)
+
+### Quick reference — common locations
+
+`gUS` (United States), `gEu` (Europe), `gAs` (Asia), `sCA` (California), `sNY` (New York), `sTX` (Texas), `sgBayArea` (Bay Area), `sgNewYorkMetro` (NYC Metro), `cUK` (United Kingdom), `cIND` (India)
+
+### Quick reference — asset classes
+
+`VENTURE_CAPITAL`, `MNA`, `PRIVATE_EQUITY`
 
 ## How it works
 
-1. **`auth`** — Connects to Chrome via CDP, captures Pitchbook session headers, saves to disk.
-
-2. **`feed`** — POSTs to `web-api/dashboard-platform-service/v3/private/data-sourcing/recent-deals` via curl with filter parameters. Returns an array of deal objects. Each deal includes:
-   - `company.pbId` — Pitchbook company ID
-   - `company.name` — company name
-   - `dealSynopsis` — brief description of the deal
-   - `lastFinancingDate` — date of last financing
-   - `lastFinancingSize` — size of last financing round
-   - `totalRaised` — total amount raised
-   - `dealType` — e.g. `SERIES_A`, `SERIES_B`
-
-## Data storage
-
-```
-~/.local/share/showrun/data/pitchbook/
-├── session.json                         # Auth headers & cookies
-└── cache/
-    └── deal-feed-<timestamp>.json       # Cached deal feed results
-```
+**`feed`** — POSTs to `web-api/dashboard-platform-service/v3/private/data-sourcing/recent-deals` with filter parameters. Returns an array of deal objects with:
+- `company.pbId` — Pitchbook company ID
+- `company.name` — company name
+- `dealSynopsis` — brief description of the deal
+- `lastFinancingDate` — date of last financing
+- `lastFinancingSize` — size of last financing round (object with `amount`, `currency`, `nativeAmount`, `nativeCurrency`)
+- `totalRaised` — total amount raised
+- `dealType` — display name (e.g. "Early Stage VC", "Seed Round", "Series A")
 
 ## Output handling (important for agents)
 
@@ -69,77 +113,17 @@ node scripts/pitchbook-deal-feed.mjs feed --limit=10 > /tmp/pb-deals.json 2>&1
 head -50 ~/.local/share/showrun/data/pitchbook/cache/deal-feed-*.json
 ```
 
-The console summary (printed to stderr) shows a brief list of deals. For the full response, read the cache file — but only the lines you need. **Never dump full deal results into the conversation.**
+**Never dump full deal results into the conversation.**
 
-## Filter values
+## Data storage
 
-The `--verticals` and `--locations` (see location codes below) flags accept Pitchbook internal codes. Common values:
-
-### Verticals (--verticals)
-
-| Code | Description |
-|------|-------------|
-| AIML | Artificial Intelligence & Machine Learning |
-| FT | FinTech |
-| DTLHL | Digital Health |
-| HT | HealthTech |
-| SEC | Cybersecurity |
-| SAAS | SaaS |
-| ECOMM | E-Commerce |
-| CT | CleanTech |
-| CAE | Climate Tech |
-| CUE | CloudTech & DevOps |
-| ET | EdTech |
-| AGTCH | AgTech |
-| IT | InsurTech |
-| RAD | Robotics and Drones |
-| SPTEC | Space Technology |
-| CCBC | Cryptocurrency/Blockchain |
-| IOT | Internet of Things |
-| LSCI | Life Sciences |
-| MLT | Mobility Tech |
-| MOBILE | Mobile |
-
-Full list (59 codes): `3D`, `AT`, `ADC`, `AGTCH`, `AIML`, `AUDTCH`, `AGTRLT`, `ATNMSCRS`, `BAN`, `BAT`, `BD`, `CNBS`, `CHN`, `CT`, `CAE`, `CUE`, `CTN`, `CCBC`, `SEC`, `DTLHL`, `ECOMM`, `ET`, `EPHMRL`, `EOS`, `FTH`, `FT`, `FDC`, `GMN`, `HT`, `HRTCH`, `ITS`, `ISA`, `INFR`, `IT`, `IOT`, `LAE`, `LSCI`, `LOHAS`, `MNF`, `MT`, `MMI`, `MOBILE`, `MEE`, `MLT`, `MGT`, `NANO`, `OLA`, `ONCO`, `PCO`, `RAN`, `RSTCLG`, `RSI`, `RAD`, `SAAS`, `SPTEC`, `SYN`, `TMT`, `VRTLRLT`, `WQS`
-
-Multiple verticals can be combined: `--verticals=AIML,FT,SEC`
-
-**Note:** Using `--verticals=VC` or `--verticals=PE` will NOT work — these are not valid vertical codes. Verticals describe industry sectors, not investor types.
-
-### Locations (--locations)
-
-| Code | Description |
-|------|-------------|
-| gUS | United States (all) |
-| gCA | Canada |
-| gEU | Europe |
-| gAS | Asia |
-| gAF | Africa |
-| gME | Middle East |
-| gOC | Oceania |
-| sCA | California |
-| sNY | New York |
-| sTX | Texas |
-| sMA | Massachusetts |
-
-Prefix convention: `g` = country/region group, `s` = US state, `sg` = sub-region (e.g., `sgBayArea`)
-
-Example: `--locations=gUS` or `--locations=sCA,sNY`
-
-### Asset class (--asset-class)
-
-Filter by asset class (applies to deal-feed and investors only):
-
-| Code | Description |
-|------|-------------|
-| VENTURE_CAPITAL | Venture Capital deals |
-| MNA | Mergers & Acquisitions |
-| PRIVATE_EQUITY | Private Equity deals |
-
-Example: `--asset-class=VENTURE_CAPITAL`
-
-**Note:** The `--asset-class` filter is accepted by the API but may not reliably filter results on its own. Pitchbook's UI auto-populates detailed `dealTypes` sub-codes when an asset class is selected, which this CLI does not replicate. Results may include deals from all asset classes regardless of the filter value.
+```
+~/.local/share/showrun/data/pitchbook/
+├── session.json                         # Auth headers & cookies
+└── cache/
+    └── deal-feed-<timestamp>.json       # Cached deal feed results
+```
 
 ## Session expiry
 
-If you see `Session expired`, re-authenticate. Fastest: `node ../pitchbook-login/scripts/pitchbook-login.mjs auth`. See [pitchbook-login](../pitchbook-login/SKILL.md) for fallbacks.
+If you see `Session expired`, re-authenticate: `node ../pitchbook-login/scripts/pitchbook-login.mjs interactive`
