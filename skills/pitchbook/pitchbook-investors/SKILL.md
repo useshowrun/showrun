@@ -1,149 +1,34 @@
 # pitchbook-investors
 
-Fetch active investors from Pitchbook with optional filters for verticals, asset class, locations, and trailing range.
-
-## Prerequisites
-
-- Node.js 22+
-- [chrome-cdp](https://github.com/pasky/chrome-cdp-skill) skill (auto-installed on first use)
-- `curl` with HTTP/2 support — verify with `curl --version` (look for `HTTP2`)
-- Valid session (run login first)
-
-## Setup
-
-One-time authentication — see [pitchbook-login](../pitchbook-login/SKILL.md) for all methods. Preferred:
-
-```bash
-node ../pitchbook-login/scripts/pitchbook-login.mjs interactive
-```
+Fetch active investors from Pitchbook.
 
 ## Usage
 
-### Fetch active investors
-
 ```bash
-node scripts/pitchbook-investors.mjs active [options] [--asset-class=...]
+node scripts/pitchbook-investors.mjs active [options]
 ```
 
-**Options:**
-- `--days=365` — Trailing range in days (default: 365)
-- `--verticals=AIML,FT` — Filter by verticals (comma-separated)
-- `--locations=gUS` — Filter by locations (see location codes below, comma-separated)
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--days=N` | 365 | Trailing range in days |
+| `--verticals=CODE,...` | — | Industry verticals |
+| `--locations=CODE,...` | — | Location codes |
 
-**Examples:**
+## Examples
+
 ```bash
 node scripts/pitchbook-investors.mjs active
-node scripts/pitchbook-investors.mjs active --days=30
-node scripts/pitchbook-investors.mjs active --days=90 --verticals=FT
+node scripts/pitchbook-investors.mjs active --days=90
+node scripts/pitchbook-investors.mjs active --days=90 --verticals=AIML
+node scripts/pitchbook-investors.mjs active --verticals=FT --locations=gUS
 ```
 
-### Show help
+## Common filter codes
 
-```bash
-node scripts/pitchbook-investors.mjs
-```
+**Verticals:** `AIML` (AI/ML), `FT` (FinTech), `SAAS` (SaaS), `SEC` (Cybersecurity), `DTLHL` (Digital Health), `HT` (HealthTech), `ECOMM` (E-Commerce), `CT` (CleanTech), `ET` (EdTech)
 
-## How it works
+**Locations:** `gUS` (United States), `gEu` (Europe), `gAs` (Asia), `sCA` (California), `sNY` (New York), `sgBayArea` (Bay Area), `cUK` (UK), `cIND` (India)
 
-1. **`auth`** — Connects to Chrome via CDP, captures Pitchbook session headers, saves to disk.
+## Output
 
-2. **`active`** — POSTs to `web-api/dashboard-platform-service/v2/private/investors-and-acquirers/ACTIVE_INVESTORS` via curl with filter options. Returns a `data` array with active investor entries. Each item includes:
-   - `type` — investor category type
-   - `investor.pbId` — Pitchbook investor ID
-   - `investor.name` — investor name
-   - `investor.type` — investor type classification
-   - `investmentsCount` — number of investments in the trailing range
-   - `lastInvestmentDate` — date of most recent investment
-
-## Data storage
-
-```
-~/.local/share/showrun/data/pitchbook/
-├── session.json                              # Auth headers & cookies
-└── cache/
-    └── active-investors-<timestamp>.json     # Cached investor results
-```
-
-## Output handling (important for agents)
-
-Investor results can be large. **Always redirect output to a file** and read the cached result from disk with truncation:
-
-```bash
-node scripts/pitchbook-investors.mjs active > /tmp/pb-investors.json 2>&1
-head -50 ~/.local/share/showrun/data/pitchbook/cache/active-investors-*.json
-```
-
-The console summary (printed to stderr) shows a brief list of investors. For the full response, read the cache file — but only the lines you need. **Never dump full results into the conversation.**
-
-## Filter values
-
-The `--verticals` and `--locations` (see location codes below) flags accept Pitchbook internal codes. Common values:
-
-### Verticals (--verticals)
-
-| Code | Description |
-|------|-------------|
-| AIML | Artificial Intelligence & Machine Learning |
-| FT | FinTech |
-| DTLHL | Digital Health |
-| HT | HealthTech |
-| SEC | Cybersecurity |
-| SAAS | SaaS |
-| ECOMM | E-Commerce |
-| CT | CleanTech |
-| CAE | Climate Tech |
-| CUE | CloudTech & DevOps |
-| ET | EdTech |
-| AGTCH | AgTech |
-| IT | InsurTech |
-| RAD | Robotics and Drones |
-| SPTEC | Space Technology |
-| CCBC | Cryptocurrency/Blockchain |
-| IOT | Internet of Things |
-| LSCI | Life Sciences |
-| MLT | Mobility Tech |
-| MOBILE | Mobile |
-
-Full list (59 codes): `3D`, `AT`, `ADC`, `AGTCH`, `AIML`, `AUDTCH`, `AGTRLT`, `ATNMSCRS`, `BAN`, `BAT`, `BD`, `CNBS`, `CHN`, `CT`, `CAE`, `CUE`, `CTN`, `CCBC`, `SEC`, `DTLHL`, `ECOMM`, `ET`, `EPHMRL`, `EOS`, `FTH`, `FT`, `FDC`, `GMN`, `HT`, `HRTCH`, `ITS`, `ISA`, `INFR`, `IT`, `IOT`, `LAE`, `LSCI`, `LOHAS`, `MNF`, `MT`, `MMI`, `MOBILE`, `MEE`, `MLT`, `MGT`, `NANO`, `OLA`, `ONCO`, `PCO`, `RAN`, `RSTCLG`, `RSI`, `RAD`, `SAAS`, `SPTEC`, `SYN`, `TMT`, `VRTLRLT`, `WQS`
-
-Multiple verticals can be combined: `--verticals=AIML,FT,SEC`
-
-**Note:** Using `--verticals=VC` or `--verticals=PE` will NOT work — these are not valid vertical codes. Verticals describe industry sectors, not investor types.
-
-### Locations (--locations)
-
-| Code | Description |
-|------|-------------|
-| gUS | United States (all) |
-| gCA | Canada |
-| gEU | Europe |
-| gAS | Asia |
-| gAF | Africa |
-| gME | Middle East |
-| gOC | Oceania |
-| sCA | California |
-| sNY | New York |
-| sTX | Texas |
-| sMA | Massachusetts |
-
-Prefix convention: `g` = country/region group, `s` = US state, `sg` = sub-region (e.g., `sgBayArea`)
-
-Example: `--locations=gUS` or `--locations=sCA,sNY`
-
-### Asset class (--asset-class)
-
-Filter by asset class (applies to deal-feed and investors only):
-
-| Code | Description |
-|------|-------------|
-| VENTURE_CAPITAL | Venture Capital deals |
-| MNA | Mergers & Acquisitions |
-| PRIVATE_EQUITY | Private Equity deals |
-
-Example: `--asset-class=VENTURE_CAPITAL`
-
-**Note:** The `--asset-class` filter is accepted by the API but may not reliably filter results on its own. Pitchbook's UI auto-populates detailed `dealTypes` sub-codes when an asset class is selected, which this CLI does not replicate. Results may include deals from all asset classes regardless of the filter value.
-
-## Session expiry
-
-If you see `Session expired`, re-authenticate. Fastest: `node ../pitchbook-login/scripts/pitchbook-login.mjs auth`. See [pitchbook-login](../pitchbook-login/SKILL.md) for fallbacks.
+Returns investor name, investment count, and last investment date. Results cached to `~/.local/share/showrun/data/pitchbook/cache/active-investors-<timestamp>.json`.

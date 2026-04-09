@@ -10,7 +10,7 @@
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { resolve } from 'path';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import net from 'net';
 
 const TIMEOUT = 15000;
@@ -35,7 +35,23 @@ function sockPath(targetId) {
     : resolve(RUNTIME_DIR, `cdp-${targetId}.sock`);
 }
 
+function probePort(port, host) {
+  host = host || '127.0.0.1';
+  try {
+    const r = spawnSync('node', ['-e', `const http=require('http');http.get('http://${host}:${port}/json/version',r=>{let d='';r.on('data',c=>d+=c);r.on('end',()=>process.stdout.write(d))}).on('error',()=>process.exit(1)).setTimeout(3000,()=>process.exit(1))`], { encoding: 'utf8', timeout: 5000 });
+    if (r.status !== 0) return null;
+    const { webSocketDebuggerUrl } = JSON.parse(r.stdout);
+    return webSocketDebuggerUrl || null;
+  } catch { return null; }
+}
+
 function getWsUrl() {
+  // CDP_PORT: connect directly to a known port (e.g. --remote-debugging-port=9222)
+  if (process.env.CDP_PORT) {
+    const ws = probePort(process.env.CDP_PORT, process.env.CDP_HOST);
+    if (ws) return ws;
+  }
+
   const home = homedir();
   // macOS: ~/Library/Application Support/<name>/DevToolsActivePort
   const macBrowsers = [
@@ -80,7 +96,14 @@ function getWsUrl() {
     }) : []),
   ].filter(Boolean);
   const portFile = candidates.find(p => existsSync(p));
-  if (!portFile) throw new Error('No DevToolsActivePort found. Enable remote debugging at chrome://inspect/#remote-debugging');
+  if (!portFile) {
+    // Fallback: try common CDP ports before giving up
+    for (const port of [9222, 9229]) {
+      const ws = probePort(port, process.env.CDP_HOST);
+      if (ws) return ws;
+    }
+    throw new Error('No DevToolsActivePort found. Start Chrome with --remote-debugging-port=9222');
+  }
   const lines = readFileSync(portFile, 'utf8').trim().split('\n');
   if (lines.length < 2 || !lines[0] || !lines[1]) throw new Error(`Invalid DevToolsActivePort file: ${portFile}`);
   const host = process.env.CDP_HOST || '127.0.0.1';
