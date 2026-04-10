@@ -16,6 +16,7 @@ import {
   checkCurl,
   doCdpAuth,
   curlGet,
+  curlPost,
   saveJson,
   delay,
   parseFlags,
@@ -30,10 +31,10 @@ const DELAY_MS = 6_000;
 
 function endpoints(companyId) {
   return [
-    { key: 'generalInfo', url: `${BASE}/web-api/profiles/${companyId}/company/general-info` },
+    { key: 'generalInfo', url: `${BASE}/web-api/profile-platform-bff/profiles/${companyId}/company/general-info` },
     { key: 'dealHistory', url: `${BASE}/web-api/deal-debt-experience-bff/companies/${companyId}/deal-history` },
-    { key: 'currentTeam', url: `${BASE}/web-api/profiles/${companyId}/company/executives/current?page=1&pageSize=100` },
-    { key: 'formerTeam', url: `${BASE}/web-api/profiles/${companyId}/company/executives/former?page=1&pageSize=100` },
+    { key: 'currentTeam', method: 'POST', url: `${BASE}/web-api/profile-platform-bff/profiles/${companyId}/company/team/current?page=1&pageSize=100` },
+    { key: 'formerTeam', method: 'POST', url: `${BASE}/web-api/profile-platform-bff/profiles/${companyId}/company/team/former?page=1&pageSize=100` },
     { key: 'currentBoardMembers', url: `${BASE}/web-api/profiles/${companyId}/company/board-members/current?page=1&pageSize=100` },
     { key: 'formerBoardMembers', url: `${BASE}/web-api/profiles/${companyId}/company/board-members/former?page=1&pageSize=100` },
   ];
@@ -57,7 +58,7 @@ async function doGet(companyId, sections) {
   const company = { companyId };
 
   for (let i = 0; i < eps.length; i++) {
-    const { key, url } = eps[i];
+    const { key, url, method } = eps[i];
 
     if (i > 0) {
       console.log(`Waiting ${DELAY_MS / 1000}s...`);
@@ -66,7 +67,9 @@ async function doGet(companyId, sections) {
 
     console.log(`Fetching ${key}...`);
     try {
-      company[key] = await curlGet(url, auth, referer);
+      company[key] = method === 'POST'
+        ? await curlPost(url, auth, {}, referer)
+        : await curlGet(url, auth, referer);
     } catch (err) {
       console.error(`Error fetching ${key}: ${err.message}`);
       company[key] = { error: err.message };
@@ -80,7 +83,7 @@ async function doGet(companyId, sections) {
   // Print summary
   if (company.generalInfo && !company.generalInfo.error) {
     const gi = company.generalInfo;
-    const name = gi.companyName || gi.name || companyId;
+    const name = gi.officialName || gi.familiarName || companyId;
     console.log(`  Name: ${name}`);
     if (gi.website) console.log(`  Website: ${gi.website}`);
     if (gi.description) console.log(`  Description: ${gi.description.substring(0, 120)}...`);
