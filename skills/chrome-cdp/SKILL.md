@@ -75,3 +75,17 @@ CSS px = screenshot image px / DPR
 - Prefer `snap --compact` over `html` for page structure.
 - Use `type` (not eval) to enter text in cross-origin iframes — `click`/`clickxy` to focus first, then `type`.
 - Chrome shows an "Allow debugging" modal once per tab on first access. A background daemon keeps the session alive so subsequent commands need no further approval. Daemons auto-exit after 20 minutes of inactivity.
+
+## Agent guidance — CDP connection
+
+When a skill requires Chrome CDP and connection fails:
+
+1. **Try the command first** — `scripts/cdp.mjs list` will auto-discover Chrome via DevToolsActivePort
+2. **If connection fails** — launch a dedicated Chrome instance yourself. The binary name varies by system:
+   - **macOS:** `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir=~/Library/Application\ Support/showrun/chrome-profile --no-first-run &`
+   - **Linux:** try `google-chrome-stable`, `google-chrome`, or `chromium` — whichever is available:
+     ```bash
+     google-chrome-stable --remote-debugging-port=9222 --user-data-dir=~/.local/share/showrun/chrome-profile --no-first-run &
+     ```
+   Wait a few seconds, then retry. This profile persists across sessions — users only need to log in once.
+3. **If the user is not logged in** to the required platform — ask them to log in in the Chrome window you just opened, then retry.

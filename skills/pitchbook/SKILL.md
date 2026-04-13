@@ -4,28 +4,15 @@ Collect financial data from Pitchbook — company profiles, deals, investors, va
 
 ## Setup
 
-### 1. Connect to Chrome
+### Connecting to Chrome
 
-Enable remote debugging in Chrome:
-1. Open `chrome://inspect/#remote-debugging` in Chrome
-2. Toggle the switch on
+1. Run `node pitchbook-login/scripts/pitchbook-login.mjs interactive`
+2. If CDP connection fails, follow the chrome-cdp agent guidance (launch the dedicated Chrome instance yourself)
+3. If the user is not logged in to PitchBook, ask them to open `my.pitchbook.com` and log in, then re-run the interactive command
 
-**If that doesn't work**, close Chrome and reopen it with:
-```bash
-google-chrome --remote-debugging-port=9222 --user-data-dir=/tmp/chrome-pb --no-first-run
-```
+### Session expiry
 
-### 2. Log in to Pitchbook
-
-Open `my.pitchbook.com` in Chrome and log in normally.
-
-### 3. Capture session
-
-```bash
-node pitchbook-login/scripts/pitchbook-login.mjs interactive
-```
-
-This captures your browser cookies for API access. Re-run if you see `Session expired` or `HTTP 401` (sessions last ~30 min).
+Sessions expire after ~30 min. Re-run `interactive` on `Session expired` or `HTTP 401`. No re-login needed if Chrome is still logged in to Pitchbook.
 
 ## Available skills
 
@@ -51,7 +38,7 @@ This captures your browser cookies for API access. Re-run if you see `Session ex
 
 ## Agent guidance
 
-- If session is missing or expired, run `interactive` login. If Chrome is not reachable, ask the user to enable remote debugging.
+- On auth failure: re-run `interactive`. If CDP is unreachable, follow chrome-cdp agent guidance (launch the dedicated Chrome instance yourself).
 - Redirect script output to files — responses can be large (500KB+). Read cached results from `~/.local/share/showrun/data/pitchbook/cache/` with truncation.
 - Wait at least 8 seconds between API calls to avoid rate limiting.
 - Summarize findings in your own words. Never dump full JSON into the conversation.
