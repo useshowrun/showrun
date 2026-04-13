@@ -1,0 +1,258 @@
+{
+  "_description": "PitchBook deal feed API filter codes. Used by pitchbook-deal-feed script.",
+  "_endpoint": "POST /web-api/dashboard-platform-service/v3/private/data-sourcing/recent-deals?limit={n}",
+
+  "assetClasses": {
+    "_type": "multi-select",
+    "_description": "Top-level deal category. Selecting an asset class should also send the corresponding dealTypes codes.",
+    "VENTURE_CAPITAL": "Venture Capital",
+    "MNA": "Mergers & Acquisitions",
+    "PRIVATE_EQUITY": "Private Equity"
+  },
+
+  "dealTypes": {
+    "_type": "multi-select, hierarchical",
+    "_description": "Detailed deal type codes. Grouped by asset class. Sub-codes use suffixes: _A through _K (series letter), _1 through _3 (round number), _ND (not disclosed). Prefix R = re-up/follow-on round.",
+
+    "VENTURE_CAPITAL": {
+      "_byStage": {
+        "BYSTG": "By Stage (grouping header)",
+        "PAI": "Product/Accelerator/Incubator",
+        "POF": "Proof of Concept",
+        "EC": "Equity Crowdfunding",
+        "SeedA": "Seed/Accelerator",
+        "Cap": "Capitalization",
+        "SEED": "Seed Round",
+        "ANG": { "_label": "Angel", "_subCodes": ["ANG_A","ANG_B","ANG_C","ANG_D","ANG_E","ANG_F","ANG_G","ANG_H","ANG_I","ANG_J","ANG_K","ANG_1","ANG_2","ANG_3","ANG_ND"] },
+        "EVC": { "_label": "Early Stage VC", "_subCodes": ["EVC_A","EVC_B","EVC_1","EVC_2","EVC_3","EVC_ND"] },
+        "LVC": { "_label": "Later Stage VC", "_subCodes": ["LVC_A","LVC_B","LVC_C","LVC_D","LVC_E","LVC_F","LVC_G","LVC_H","LVC_I","LVC_J","LVC_K","LVC_1","LVC_2","LVC_3","LVC_ND"] },
+        "OTHSTG": "Other Stage",
+        "OTHER_VC": "Other VC",
+        "RANG": { "_label": "Re-Angel (follow-on)", "_subCodes": ["RANG_A","RANG_B","RANG_C","RANG_D","RANG_E","RANG_F","RANG_G","RANG_H","RANG_I","RANG_J","RANG_K","RANG_1","RANG_2","RANG_3","RANG_ND"] },
+        "REVC": { "_label": "Re-Early Stage VC (follow-on)", "_subCodes": ["REVC_A","REVC_B","REVC_C","REVC_1","REVC_2","REVC_3","REVC_ND"] },
+        "RLVC": { "_label": "Re-Later Stage VC (follow-on)", "_subCodes": ["RLVC_A","RLVC_B","RLVC_C","RLVC_D","RLVC_E","RLVC_F","RLVC_G","RLVC_H","RLVC_I","RLVC_J","RLVC_K","RLVC_1","RLVC_2","RLVC_3","RLVC_ND"] },
+        "EQS": "Equity Crowdfunding/Secondary",
+        "GRANT": "Grant"
+      },
+      "_byRoundNumber": {
+        "BYRN": "By Round Number (grouping header)",
+        "RN1": "Round 1",
+        "RN2": "Round 2",
+        "RN3": "Round 3",
+        "LRN": "Late Round",
+        "RN4": "Round 4",
+        "RN5": "Round 5",
+        "RN6": "Round 6",
+        "RN7": "Round 7",
+        "RN8": "Round 8",
+        "RN9": "Round 9",
+        "RN10M": "Round 10+"
+      },
+      "_bySeries": {
+        "BYSER": "By Series (grouping header)",
+        "SRSEED": "Series Seed",
+        "A": "Series A",
+        "B": "Series B",
+        "C": "Series C",
+        "D": "Series D",
+        "LSER": "Late Series",
+        "1": "Series 1",
+        "2": "Series 2",
+        "3": "Series 3",
+        "E": "Series E",
+        "F": "Series F",
+        "G": "Series G",
+        "H": "Series H",
+        "I": "Series I",
+        "J": "Series J",
+        "K": "Series K"
+      },
+      "_allCodes": ["BYSTG","PAI","POF","EC","SeedA","ANG","ANG_A","ANG_B","ANG_C","ANG_D","ANG_E","ANG_F","ANG_G","ANG_H","ANG_I","ANG_J","ANG_K","ANG_1","ANG_2","ANG_3","ANG_ND","Cap","SEED","EVC","EVC_A","EVC_B","EVC_1","EVC_2","EVC_3","EVC_ND","LVC","LVC_A","LVC_B","LVC_C","LVC_D","LVC_E","LVC_F","LVC_G","LVC_H","LVC_I","LVC_J","LVC_K","LVC_1","LVC_2","LVC_3","LVC_ND","OTHSTG","OTHER_VC","RANG","RANG_A","RANG_B","RANG_C","RANG_D","RANG_E","RANG_F","RANG_G","RANG_H","RANG_I","RANG_J","RANG_K","RANG_1","RANG_2","RANG_3","RANG_ND","REVC","REVC_A","REVC_B","REVC_C","REVC_1","REVC_2","REVC_3","REVC_ND","RLVC","RLVC_A","RLVC_B","RLVC_C","RLVC_D","RLVC_E","RLVC_F","RLVC_G","RLVC_H","RLVC_I","RLVC_J","RLVC_K","RLVC_1","RLVC_2","RLVC_3","RLVC_ND","EQS","GRANT","BYRN","RN1","RN2","RN3","LRN","RN4","RN5","RN6","RN7","RN8","RN9","RN10M","BYSER","SRSEED","A","B","C","D","LSER","1","2","3","E","F","G","H","I","J","K"]
+    },
+
+    "MNA": {
+      "CTRL_TRAN": "Controlling Transaction (grouping)",
+      "ACQ": "Acquisition (all)",
+      "ACQ_STRAcq": "Strategic Acquisition",
+      "ACQ_PEAcq": "PE Acquisition",
+      "ACQ_VCAcq": "VC Acquisition",
+      "MER": "Merger",
+      "RMER": "Reverse Merger",
+      "NON_CTRL_TRAN": "Non-Controlling Transaction (grouping)",
+      "CORP": { "_label": "Corporate", "_subCodes": ["CORP_A","CORP_B","CORP_C","CORP_D","CORP_E","CORP_F","CORP_G","CORP_H","CORP_I","CORP_J","CORP_K","CORP_1","CORP_2","CORP_3","CORP_ND"] },
+      "RCORP": { "_label": "Re-Corporate (follow-on)", "_subCodes": ["RCORP_A","RCORP_B","RCORP_C","RCORP_D","RCORP_E","RCORP_F","RCORP_G","RCORP_H","RCORP_I","RCORP_J","RCORP_K","RCORP_1","RCORP_2","RCORP_3","RCORP_ND"] },
+      "OTHER_MA_TRAN": "Other M&A Transaction",
+      "JointV": "Joint Venture",
+      "_allCodes": ["CTRL_TRAN","ACQ","ACQ_STRAcq","ACQ_PEAcq","ACQ_VCAcq","MER","RMER","NON_CTRL_TRAN","CORP","CORP_A","CORP_B","CORP_C","CORP_D","CORP_E","CORP_F","CORP_G","CORP_H","CORP_I","CORP_J","CORP_K","CORP_1","CORP_2","CORP_3","CORP_ND","RCORP","RCORP_A","RCORP_B","RCORP_C","RCORP_D","RCORP_E","RCORP_F","RCORP_G","RCORP_H","RCORP_I","RCORP_J","RCORP_K","RCORP_1","RCORP_2","RCORP_3","RCORP_ND","OTHER_MA_TRAN","JointV"]
+    },
+
+    "PRIVATE_EQUITY": {
+      "ALL_BO": "All Buyouts (grouping)",
+      "LBO_": "Leveraged Buyout (generic)",
+      "LBO_MBO": "Management Buyout",
+      "LBO_MBI": "Management Buy-In",
+      "LBO_AO": "Add-On/Bolt-On",
+      "LBO_SBO": "Secondary Buyout",
+      "LBO_PTP": "Public to Private",
+      "LBO_PRIV": "Privatization",
+      "LBO_CDIV": "Corporate Divestiture",
+      "LBO_OTH": "Other LBO",
+      "OTH_PE": "Other PE",
+      "PEGTH": "PE Growth/Expansion",
+      "PIPE": "PIPE",
+      "IBO": "Institutional Buyout",
+      "GPS": "GP Stakes",
+      "_allCodes": ["ALL_BO","LBO_","LBO_MBO","LBO_MBI","LBO_AO","LBO_SBO","LBO_PTP","LBO_PRIV","LBO_CDIV","LBO_OTH","OTH_PE","PEGTH","PIPE","IBO","GPS"]
+    }
+  },
+
+  "verticals": {
+    "_type": "multi-select",
+    "_description": "Industry verticals (59 total). Multiple can be combined.",
+    "3D": "3D Printing",
+    "AT": "AdTech",
+    "ADC": "Advanced Manufacturing",
+    "AGTCH": "AgTech",
+    "AIML": "Artificial Intelligence & Machine Learning",
+    "AUDTCH": "AudioTech",
+    "AGTRLT": "Augmented Reality",
+    "ATNMSCRS": "Autonomous Cars",
+    "BAN": "B2B Payments",
+    "BAT": "Beauty",
+    "BD": "Big Data",
+    "CNBS": "Cannabis",
+    "CHN": "Car-Sharing",
+    "CT": "CleanTech",
+    "CAE": "Climate Tech",
+    "CUE": "CloudTech & DevOps",
+    "CTN": "Construction Technology",
+    "CCBC": "Cryptocurrency/Blockchain",
+    "SEC": "Cybersecurity",
+    "DTLHL": "Digital Health",
+    "ECOMM": "E-Commerce",
+    "ET": "EdTech",
+    "EPHMRL": "Ephemeral Content",
+    "EOS": "Esports",
+    "FTH": "FemTech",
+    "FT": "FinTech",
+    "FDC": "FoodTech",
+    "GMN": "Gaming",
+    "HT": "HealthTech",
+    "HRTCH": "HR Tech",
+    "ITS": "Impact Investing",
+    "ISA": "Industrials",
+    "INFR": "Infrastructure",
+    "IT": "InsurTech",
+    "IOT": "Internet of Things",
+    "LAE": "Legal Tech",
+    "LSCI": "Life Sciences",
+    "LOHAS": "LOHAS & Wellness",
+    "MNF": "Manufacturing",
+    "MT": "Marketing Tech",
+    "MMI": "Micro-Mobility",
+    "MOBILE": "Mobile",
+    "MEE": "Mobile Commerce",
+    "MLT": "Mobility Tech",
+    "MGT": "Mortgage Tech",
+    "NANO": "Nanotechnology",
+    "OLA": "Oil & Gas",
+    "ONCO": "Oncology",
+    "PCO": "Pet Technology",
+    "RAN": "Real Estate Technology",
+    "RSTCLG": "Restaurant Technology",
+    "RSI": "Ridesharing",
+    "RAD": "Robotics and Drones",
+    "SAAS": "SaaS",
+    "SPTEC": "Space Technology",
+    "SYN": "Supply Chain Tech",
+    "TMT": "TMT",
+    "VRTLRLT": "Virtual Reality",
+    "WQS": "Wearables & Quantified Self"
+  },
+
+  "locations": {
+    "_type": "multi-select, hierarchical tree",
+    "_description": "Location codes. Prefix convention: g=region, sg=subregion, s=US state, c=country, a=US area code, C_=Canadian province, UK_=UK region, A_=Australian state. Suffix _1/_2 on state codes = same state appearing under a different subregion.",
+
+    "gUS": {
+      "_label": "United States",
+      "sgMidAtlantic": { "_label": "Mid-Atlantic", "_codes": ["sDE","sDC","sMD","sNJ","sNY","sPA","sVA","sWV"] },
+      "sgNewEngland": { "_label": "New England", "_codes": ["sCT","sME","sMA","sNH","sRI","sVT"] },
+      "sgSoutheast": { "_label": "Southeast", "_codes": ["sAL","sFL","sGA","sKY","sMS","sNC","sPR","sSC","sTN","sVI"] },
+      "sgSouth": { "_label": "South", "_codes": ["sAR","sLA","sOK","sTX"] },
+      "sgMidwest": { "_label": "Midwest", "_codes": ["sIA","sKS","sMO","sNE","sND","sSD"] },
+      "sgGreatLakes": { "_label": "Great Lakes", "_codes": ["sIL","sIN","sMI","sMN","sOH","sWI"] },
+      "sgMountain": { "_label": "Mountain", "_codes": ["sAZ","sCO","sID","sMT","sNV","sNM","sUT","sWY"] },
+      "sgWestCoast": { "_label": "West Coast", "_codes": ["sAK","sCA","sGU","sHI","sOR","sWA"] },
+      "sgBayArea": { "_label": "Bay Area", "_codes": ["a209","a408","a415","a510","a650","a669","a707","a831","a916","a925","aBA$"] },
+      "sgDCMetro": { "_label": "DC Metro", "_codes": ["sDC_1","sMD_1","sVA_1"] },
+      "sgNewYorkMetro": { "_label": "New York Metro", "_codes": ["a201","a203","a212","a347","a516","a551","a646","a718","a914","a917","a929","aNY$"] },
+      "sgNortheast": { "_label": "Northeast", "_codes": ["sCT_1","sDC_2","sDE_1","sME_1","sMD_2","sMA_1","sNH_1","sNJ_1","sNY_1","sPA_1","sRI_1","sVT_1","sVA_2"] },
+      "sgNorthwest": { "_label": "Northwest", "_codes": ["sID_1","sMT_1","sOR_1","sWA_1","sWY_1"] },
+      "sgSouthernCalifornia": { "_label": "Southern California", "_codes": ["a213","a310","a323","a424","a562","a619","a626","a657","a661","a714","a747","a760","a805","a818","a858","a909","a949","a951","aSC$"] },
+      "sgSouthwest": { "_label": "Southwest", "_codes": ["sAZ_1","sNM_1","sOK_1","sTX_1","sUT_1"] },
+      "sgUSTerritories": { "_label": "US Territories", "_codes": ["sOT"] },
+      "_allCodes": ["gUS","sgMidAtlantic","sDE","sDC","sMD","sNJ","sNY","sPA","sVA","sWV","sgNewEngland","sCT","sME","sMA","sNH","sRI","sVT","sgSoutheast","sAL","sFL","sGA","sKY","sMS","sNC","sPR","sSC","sTN","sVI","sgSouth","sAR","sLA","sOK","sTX","sgMidwest","sIA","sKS","sMO","sNE","sND","sSD","sgGreatLakes","sIL","sIN","sMI","sMN","sOH","sWI","sgMountain","sAZ","sCO","sID","sMT","sNV","sNM","sUT","sWY","sgWestCoast","sAK","sCA","sGU","sHI","sOR","sWA","sgBayArea","a209","a408","a415","a510","a650","a669","a707","a831","a916","a925","aBA$","sgDCMetro","sDC_1","sMD_1","sVA_1","sgNewYorkMetro","a201","a203","a212","a347","a516","a551","a646","a718","a914","a917","a929","aNY$","sgNortheast","sCT_1","sDC_2","sDE_1","sME_1","sMD_2","sMA_1","sNH_1","sNJ_1","sNY_1","sPA_1","sRI_1","sVT_1","sVA_2","sgNorthwest","sID_1","sMT_1","sOR_1","sWA_1","sWY_1","sgSouthernCalifornia","a213","a310","a323","a424","a562","a619","a626","a657","a661","a714","a747","a760","a805","a818","a858","a909","a949","a951","aSC$","sgSouthwest","sAZ_1","sNM_1","sOK_1","sTX_1","sUT_1","sgUSTerritories","sOT"]
+    },
+    "gCA": {
+      "_label": "Canada",
+      "_provinces": ["C_AB","C_BC","C_MB","C_NB","C_NEWF","C_NS","C_ON","C_PE","C_QC","C_SK"],
+      "sgTerritories": { "_label": "Territories", "_codes": ["C_NW","C_NU","C_YU"] },
+      "_allCodes": ["gCA","C_AB","C_BC","C_MB","C_NB","C_NEWF","C_NS","C_ON","C_PE","C_QC","C_SK","sgTerritories","C_NW","C_NU","C_YU"]
+    },
+    "gEu": {
+      "_label": "Europe",
+      "sgEasternEurope": { "_label": "Eastern Europe", "_codes": ["cAX","cBLR","cBUL","cCYP","cCR","cHUN","cKSV","cMOL","cPOL","cROM","cRUS","cSLO","cUKR"] },
+      "sgNorthernEurope": { "_label": "Northern Europe", "_codes": ["cDEN","cEST","cFO","cFIN","cICE","cLAT","cLIT","cNOR","cSWE"] },
+      "sgSouthernEurope": { "_label": "Southern Europe", "_codes": ["cALB","cBOS","cCRO","cGIB","cGRE","cITA","cMLT","cMontenegro","cMAC","cPOR","cSMR","cSerbia","cSLV","cSPA"] },
+      "sgWesternEurope": { "_label": "Western Europe", "_codes": ["cAD","cAUS","cBEL","cFRA","cGER","cIRE","cLIE","cLUX","cMC","cNET","cSWI","cUK","UK_EN","UK_EN_EM","UK_EN_EE","UK_EN_LD","UK_EN_NE","UK_EN_NW","UK_EN_SE","UK_EN_SW","UK_EN_WM","UK_EN_YH","UK_EN_OR","UK_SC","UK_WL","UK_NI","UK_JR","UK_GU","UK_IM","UK_CI"] },
+      "_allCodes": ["gEu","sgEasternEurope","cAX","cBLR","cBUL","cCYP","cCR","cHUN","cKSV","cMOL","cPOL","cROM","cRUS","cSLO","cUKR","sgNorthernEurope","cDEN","cEST","cFO","cFIN","cICE","cLAT","cLIT","cNOR","cSWE","sgSouthernEurope","cALB","cBOS","cCRO","cGIB","cGRE","cITA","cMLT","cMontenegro","cMAC","cPOR","cSMR","cSerbia","cSLV","cSPA","sgWesternEurope","cAD","cAUS","cBEL","cFRA","cGER","cIRE","cLIE","cLUX","cMC","cNET","cSWI","cUK","UK_EN","UK_EN_EM","UK_EN_EE","UK_EN_LD","UK_EN_NE","UK_EN_NW","UK_EN_SE","UK_EN_SW","UK_EN_WM","UK_EN_YH","UK_EN_OR","UK_SC","UK_WL","UK_NI","UK_JR","UK_GU","UK_IM","UK_CI"]
+    },
+    "gAm": {
+      "_label": "Americas",
+      "sgNorthAmerica": { "_label": "North America", "_codes": ["cBER","cCAN","cGL","cMEX","cUS"] },
+      "sgCentralAmerica": { "_label": "Central America & Caribbean", "_codes": ["cAIA","cATG","cBAHA","cBRB","cBZ","cBES","cBVI","cCAYM","cCUB","cCSTA","cDMA","cDOR","cSV","cGRD","cGT","cHAI","cHON","cMSR","cJAMA","cNI","cPA","cKNA","cLCA","cVCT","cSGS","cSXM","cTCA"] },
+      "sgSouthAmerica": { "_label": "South America", "_codes": ["cARG","cABW","cBOL","cBRA","cCHIL","cCOLO","cCUW","cEC","cFLK","cGY","cPY","cPE","cSR","cTAT","cURUG","cVEN"] },
+      "_allCodes": ["gAm","sgNorthAmerica","cBER","cCAN","cGL","cMEX","cUS","sgCentralAmerica","cAIA","cATG","cBAHA","cBRB","cBZ","cBES","cBVI","cCAYM","cCUB","cCSTA","cDMA","cDOR","cSV","cGRD","cGT","cHAI","cHON","cMSR","cJAMA","cNI","cPA","cKNA","cLCA","cVCT","cSGS","cSXM","cTCA","sgSouthAmerica","cARG","cABW","cBOL","cBRA","cCHIL","cCOLO","cCUW","cEC","cFLK","cGY","cPY","cPE","cSR","cTAT","cURUG","cVEN"]
+    },
+    "gAs": {
+      "_label": "Asia",
+      "sgCaucasus": { "_label": "Caucasus", "_codes": ["cARM","cAZE","cChechnya","cGEO"] },
+      "sgCentralAsia": { "_label": "Central Asia", "_codes": ["cKZ","cKG","cTJ","cTM","cUZ"] },
+      "sgEastAsia": { "_label": "East Asia", "_codes": ["cCHI","cHK","cJAP","cMO","cMN","cKP","cSKOR","cTAI"] },
+      "sgSouthAsia": { "_label": "South Asia", "_codes": ["cAF","cBD","cBT","cIOT","cIND","cMD","cNP","cPK","cLK"] },
+      "sgSoutheastAsia": { "_label": "Southeast Asia", "_codes": ["cBN","cKH","cTP","cINO","cLA","cMAL","cMM","cPH","cSIN","cTHA","cVIE"] },
+      "_allCodes": ["gAs","sgCaucasus","cARM","cAZE","cChechnya","cGEO","sgCentralAsia","cKZ","cKG","cTJ","cTM","cUZ","sgEastAsia","cCHI","cHK","cJAP","cMO","cMN","cKP","cSKOR","cTAI","sgSouthAsia","cAF","cBD","cBT","cIOT","cIND","cMD","cNP","cPK","cLK","sgSoutheastAsia","cBN","cKH","cTP","cINO","cLA","cMAL","cMM","cPH","cSIN","cTHA","cVIE"]
+    },
+    "gAf": {
+      "_label": "Africa",
+      "sgNorthernAfrica": { "_label": "Northern Africa", "_codes": ["cDZ","cEGY","cLY","cMOR","cSD","cTN","cESH"] },
+      "sgWesternAfrica": { "_label": "Western Africa", "_codes": ["cBJ","cBF","cCV","cGH","cGN","cGW","cCI","cLR","cML","cMR","cNE","cNG","cSHN","cSN","cSL","cGM","cTG"] },
+      "sgMiddleAfrica": { "_label": "Middle Africa", "_codes": ["cAO","cBI","cCM","cCF","cGNQ","cTD","cCG","cGAB","cSTP"] },
+      "sgEasternAfrica": { "_label": "Eastern Africa", "_codes": ["cKM","cDJ","cER","cET","cKENY","cMG","cMW","cMU","cYT","cMZ","cRE","cRW","cSC","cSO","cTZ","cUG","cZM","cZW"] },
+      "sgSouthernAfrica": { "_label": "Southern Africa", "_codes": ["cBW","cLS","cNA","cSAF","cSZ"] },
+      "_allCodes": ["gAf","sgNorthernAfrica","cDZ","cEGY","cLY","cMOR","cSD","cTN","cESH","sgWesternAfrica","cBJ","cBF","cCV","cGH","cGN","cGW","cCI","cLR","cML","cMR","cNE","cNG","cSHN","cSN","cSL","cGM","cTG","sgMiddleAfrica","cAO","cBI","cCM","cCF","cGNQ","cTD","cCG","cGAB","cSTP","sgEasternAfrica","cKM","cDJ","cER","cET","cKENY","cMG","cMW","cMU","cYT","cMZ","cRE","cRW","cSC","cSO","cTZ","cUG","cZM","cZW","sgSouthernAfrica","cBW","cLS","cNA","cSAF","cSZ"]
+    },
+    "gME": {
+      "_label": "Middle East",
+      "_codes": ["cBAHR","cSG","cIR","cIQ","cIL","cJOR","cKUW","cLB","cOM","cPAL","cQA","cSAU","cSY","cTUR","cUAE","cWestBank","cYE"],
+      "_allCodes": ["gME","cBAHR","cSG","cIR","cIQ","cIL","cJOR","cKUW","cLB","cOM","cPAL","cQA","cSAU","cSY","cTUR","cUAE","cWestBank","cYE"]
+    },
+    "gOc": {
+      "_label": "Oceania",
+      "_codes": ["cAS","cAUST","A_ACT","A_NSW","A_NT","A_QLD","A_SA","A_TIS","A_VIC","A_WA","cCK","cFJ","cPF","cKI","cMH","cMelanesia","cFM","cNR","cNC","cNEZ","cNU","cMP","cPW","cPG","cPN","cPF_1","cWS","cSB","cTK","cTO","cTV","cVU","cWF"],
+      "_allCodes": ["gOc","cAS","cAUST","A_ACT","A_NSW","A_NT","A_QLD","A_SA","A_TIS","A_VIC","A_WA","cCK","cFJ","cPF","cKI","cMH","cMelanesia","cFM","cNR","cNC","cNEZ","cNU","cMP","cPW","cPG","cPN","cPF_1","cWS","cSB","cTK","cTO","cTV","cVU","cWF"]
+    }
+  },
+
+  "presets": {
+    "_description": "Convenience presets that expand to the correct dealTypes codes. Use with --deal-types flag.",
+    "vc-all": { "_description": "All Venture Capital deal types", "_assetClass": "VENTURE_CAPITAL" },
+    "vc-early": { "_description": "Pre-seed through Series A", "_codes": ["PAI","POF","EC","SeedA","Cap","SEED","ANG","ANG_A","ANG_B","ANG_C","ANG_D","ANG_E","ANG_F","ANG_G","ANG_H","ANG_I","ANG_J","ANG_K","ANG_1","ANG_2","ANG_3","ANG_ND","EVC","EVC_A","EVC_B","EVC_1","EVC_2","EVC_3","EVC_ND","SRSEED","A","RN1","RN2"] },
+    "vc-late": { "_description": "Series B+ and later stage", "_codes": ["LVC","LVC_A","LVC_B","LVC_C","LVC_D","LVC_E","LVC_F","LVC_G","LVC_H","LVC_I","LVC_J","LVC_K","LVC_1","LVC_2","LVC_3","LVC_ND","B","C","D","E","F","G","H","I","J","K","LSER","LRN","RN3","RN4","RN5","RN6","RN7","RN8","RN9","RN10M"] },
+    "vc-seed": { "_description": "Seed and pre-seed only", "_codes": ["PAI","POF","SeedA","Cap","SEED","SRSEED","RN1"] },
+    "vc-series-a": { "_description": "Series A only", "_codes": ["EVC_A","A"] },
+    "mna-all": { "_description": "All M&A deal types", "_assetClass": "MNA" },
+    "pe-all": { "_description": "All Private Equity deal types", "_assetClass": "PRIVATE_EQUITY" }
+  }
+}

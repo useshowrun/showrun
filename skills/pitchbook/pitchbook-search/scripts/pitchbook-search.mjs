@@ -24,8 +24,8 @@ import {
 // Search
 // ---------------------------------------------------------------------------
 
-function doSearch(query, limit = 5) {
-  const auth = getAuth();
+async function doSearch(query, limit = 5) {
+  const auth = await getAuth();
   checkCurl();
   console.log(`Searching Pitchbook for: ${query}`);
 
@@ -35,7 +35,7 @@ function doSearch(query, limit = 5) {
     excludeProhibitedWords: true,
   };
 
-  const result = curlPost(
+  const result = await curlPost(
     'https://my.pitchbook.com/web-api/general-search/search/mixed',
     auth,
     payload,
@@ -79,7 +79,7 @@ switch (command) {
       process.exit(1);
     }
     const limit = parseInt(flags.limit || '5', 10);
-    doSearch(query, limit);
+    await doSearch(query, limit);
     break;
   }
   default:
