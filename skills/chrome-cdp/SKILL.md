@@ -82,10 +82,10 @@ When a skill requires Chrome CDP and connection fails:
 
 1. **Try the command first** — `scripts/cdp.mjs list` will auto-discover Chrome via DevToolsActivePort
 2. **If connection fails** — launch a dedicated Chrome instance yourself. The binary name varies by system:
-   - **macOS:** `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir=~/Library/Application\ Support/showrun/chrome-profile --no-first-run &`
+   - **macOS:** `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir=$HOME/Library/Application\ Support/showrun/chrome-profile --no-first-run &`
    - **Linux:** try `google-chrome-stable`, `google-chrome`, or `chromium` — whichever is available:
      ```bash
-     google-chrome-stable --remote-debugging-port=9222 --user-data-dir=~/.local/share/showrun/chrome-profile --no-first-run &
+     google-chrome-stable --remote-debugging-port=9222 --user-data-dir=$HOME/.local/share/showrun/chrome-profile --no-first-run &
      ```
    Wait a few seconds, then retry. This profile persists across sessions — users only need to log in once.
 3. **If the user is not logged in** to the required platform — ask them to log in in the Chrome window you just opened, then retry.
