@@ -5,9 +5,8 @@ Fetch detailed school profiles from Crunchbase including type, program, enrollme
 ## Prerequisites
 
 - Node.js 22+
-- Chrome with remote debugging enabled (only for `auth` step)
-- chrome-cdp skill (only for `auth` step)
-- Crunchbase account (logged in via Chrome)
+- If CDP connection fails during `auth`, follow the chrome-cdp agent guidance (launch the dedicated Chrome instance yourself)
+- If the user is not logged in to Crunchbase, ask them to open `crunchbase.com` and log in, then re-run `auth`
 
 ## Setup
 
