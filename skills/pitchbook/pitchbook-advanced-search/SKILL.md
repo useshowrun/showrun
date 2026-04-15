@@ -1,18 +1,28 @@
 # pitchbook-advanced-search
 
-Run advanced/screener searches on Pitchbook. Takes ~36 seconds (6 API steps with rate-limit delays).
+Run advanced/screener searches on Pitchbook with programmatic filter criteria. Takes ~40 seconds (multi-step API flow with rate-limit delays).
 
 ## Usage
 
-### Run a default search
+### Run a filtered search
 
 ```bash
-node scripts/pitchbook-advanced-search.mjs search [--type=COMPANIES|DEALS|INVESTORS] [--page=1] [--page-size=25]
+node scripts/pitchbook-advanced-search.mjs search \
+  --type=COMPANIES \
+  --criteria='[{"field":"company.location.codes","op":"collection","body":{"value":["gUS"],"requestType":"COLLECTION","updateType":"SET_VALUE"}}]'
 ```
 
-### Fetch results for an existing search
+Without `--criteria`, the search returns ALL entities (11M+ companies). Always pass filters for useful results.
 
-If you set up filters in the Pitchbook UI, copy the `searchId` from the URL and fetch results:
+### Discover available filter fields
+
+```bash
+node scripts/pitchbook-advanced-search.mjs criteria-schema --type=COMPANIES
+```
+
+Dumps the full criteria field tree (JSON) to `cache/criteria-schema-<TYPE>-<searchId>.json`. Use this to learn field paths like `company.dateFounded`, `company.financial.revenue`, `company.ownershipStatus`.
+
+### Fetch results for an existing search
 
 ```bash
 node scripts/pitchbook-advanced-search.mjs results <searchId> [--page=1] [--page-size=25] [--tab=companies|deals|investors]
@@ -24,19 +34,42 @@ node scripts/pitchbook-advanced-search.mjs results <searchId> [--page=1] [--page
 node scripts/pitchbook-advanced-search.mjs count <searchId>
 ```
 
+## `--criteria` format
+
+Array of `{field, op, body}` objects — one entry per filter. `field` is a dot-path (from `criteria-schema`), `op` is the URL operation segment, `body` is the raw request body. Known ops and body shapes are documented in [`filter-codes.json`](filter-codes.json).
+
+**Quick reference (common ops):**
+- `collection` — array-valued filters (locations, statuses, deal types)
+- `industry-query` — tree filter for industries + verticals + keywords + emerging spaces (only for `company.industryQueryCriteria`)
+
+For filter types not yet documented, inspect the PitchBook screener UI via Chrome DevTools Network tab — apply the filter manually and copy the request body shape.
+
 ## Examples
 
+**US-only companies:**
 ```bash
-node scripts/pitchbook-advanced-search.mjs search
-node scripts/pitchbook-advanced-search.mjs search --type=DEALS --page-size=50
-node scripts/pitchbook-advanced-search.mjs results s637561838 --page=2 --page-size=100
+--criteria='[{"field":"company.location.codes","op":"collection","body":{"value":["gUS"],"requestType":"COLLECTION","updateType":"SET_VALUE"}}]'
 ```
+
+**Keyword "devtools" OR SaaS vertical:**
+```bash
+--criteria='[{"field":"company.industryQueryCriteria","op":"industry-query","body":{"value":{"queryMode":"OR","expandedKeywordsEnabled":false,"industryQueryItem":{"type":"OR","queryItemDiscriminator":"LOGICAL_OPERATION","queryItems":[{"type":"KEYWORD","code":"devtools","queryItemDiscriminator":"TERM_ITEM","primaryIndustry":false},{"type":"VERTICAL","code":"SAAS","queryItemDiscriminator":"TERM_ITEM","primaryIndustry":false}]}},"requestType":"INDUSTRY_QUERY","updateType":"SET_VALUE"}}]'
+```
+
+**Pre-Series B only (deal types):**
+```bash
+--criteria='[{"field":"deal.newTypes","op":"collection","body":{"value":["PAI","POF","EC","SeedA","Cap","SEED","ANG","ANG_A","ANG_B","ANG_C","ANG_D","ANG_E","ANG_F","ANG_G","ANG_H","ANG_I","ANG_J","ANG_K","ANG_1","ANG_2","ANG_3","ANG_ND","EVC","EVC_A","EVC_B","EVC_1","EVC_2","EVC_3","EVC_ND","SRSEED","A","RN1","RN2"],"requestType":"COLLECTION","updateType":"SET_VALUE"}}]'
+```
+
+(See `filter-codes.json` → `dealNewTypes._presets` for `pre-series-b`, `series-b-plus`, `seed-only`.)
+
+Filters combine with AND at the top level. Nested boolean trees are supported inside `industry-query` via LOGICAL_OPERATION (see `filter-codes.json`).
 
 ## Notes
 
-- A default search with no criteria returns ALL entities (11M+ companies). For filtered results, set criteria in the Pitchbook web UI first, then use `results <searchId>`.
 - The `searchId` is in the Pitchbook URL: `https://my.pitchbook.com/search/companies?searchId=s637561838`
 - If session expires mid-flow, re-authenticate and use `results <searchId>` to resume — no need to re-run the full search.
+- For a new filter type: run `criteria-schema` to find the field path, then inspect the UI network tab for the body shape.
 
 ## Output
 

@@ -7,9 +7,10 @@
  *
  * Usage:
  *   node pitchbook-advanced-search.mjs auth
- *   node pitchbook-advanced-search.mjs search [--type=COMPANIES] [--page=1] [--page-size=25]
+ *   node pitchbook-advanced-search.mjs search [--type=COMPANIES] [--page=1] [--page-size=25] [--criteria=<json>]
  *   node pitchbook-advanced-search.mjs count <searchId>
  *   node pitchbook-advanced-search.mjs results <searchId> [--page=1] [--page-size=25] [--tab=companies]
+ *   node pitchbook-advanced-search.mjs criteria-schema [--type=COMPANIES]
  */
 
 import { resolve } from 'path';
@@ -52,6 +53,42 @@ async function createSearch(auth, type) {
   console.log(`[Step 1/6] Creating search session (type=${type})...`);
   const url = `${BASE}/web-api/advanced-search-api/searches?ignoreUserPreferences=true`;
   return await curlPost(url, auth, body, REFERER);
+}
+
+// ---------------------------------------------------------------------------
+// Step 1b: Create criteria key (for filter application)
+// ---------------------------------------------------------------------------
+async function createCriteriaKey(auth, searchId) {
+  console.log(`  Creating criteria key for ${searchId}...`);
+  const url = `${BASE}/web-api/advanced-search-api/search-criteria/${searchId}/key`;
+  const res = await curlPost(url, auth, {}, REFERER);
+  return res?.value || res?.intValue?.toString();
+}
+
+// ---------------------------------------------------------------------------
+// Step 1c: Set a single filter field
+// ---------------------------------------------------------------------------
+async function setCriteriaField(auth, searchId, criteriaKey, field, op, body) {
+  console.log(`  Setting filter: ${field} (${op})`);
+  const url = `${BASE}/web-api/advanced-search-api-bff/api/v1/search-criteria/${searchId}/fields/${field}/${op}?criteriaKey=${criteriaKey}`;
+  return await curlPost(url, auth, body, REFERER);
+}
+
+// ---------------------------------------------------------------------------
+// Step 1d: Apply criteria to the search
+// ---------------------------------------------------------------------------
+async function applyCriteria(auth, searchId, criteriaKey) {
+  console.log(`  Applying criteria...`);
+  const url = `${BASE}/web-api/advanced-search-api-bff/api/v1/search-criteria/${searchId}/key/${criteriaKey}/apply`;
+  return await curlPost(url, auth, {}, REFERER);
+}
+
+// ---------------------------------------------------------------------------
+// Get criteria state (for schema discovery)
+// ---------------------------------------------------------------------------
+async function getCriteriaState(auth, searchId, criteriaKey) {
+  const url = `${BASE}/web-api/advanced-search-api-bff/api/v1/search-criteria/${searchId}?criteriaKey=${criteriaKey}`;
+  return await curlGet(url, auth, REFERER);
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +165,7 @@ function printSummary(data, count) {
 // ---------------------------------------------------------------------------
 // Full search flow
 // ---------------------------------------------------------------------------
-async function doFullSearch(auth, type, page, pageSize) {
+async function doFullSearch(auth, type, page, pageSize, criteria) {
   // Step 1: Create
   const createResult = await createSearch(auth, type);
   const searchId = createResult?.id || createResult?.searchId;
@@ -138,6 +175,30 @@ async function doFullSearch(auth, type, page, pageSize) {
   }
   console.log(`  searchId: ${searchId}`);
   await delay(6000);
+
+  // Step 1b–1d: Apply filter criteria (if provided)
+  if (Array.isArray(criteria) && criteria.length > 0) {
+    console.log(`[Step 1b/6] Applying ${criteria.length} filter(s)...`);
+    const criteriaKey = await createCriteriaKey(auth, searchId);
+    if (!criteriaKey) {
+      console.error('Failed to create criteria key.');
+      process.exit(1);
+    }
+    console.log(`  criteriaKey: ${criteriaKey}`);
+    await delay(2000);
+
+    for (const filter of criteria) {
+      if (!filter?.field || !filter?.op || !filter?.body) {
+        console.error(`Invalid filter (needs {field, op, body}): ${JSON.stringify(filter)}`);
+        process.exit(1);
+      }
+      await setCriteriaField(auth, searchId, criteriaKey, filter.field, filter.op, filter.body);
+      await delay(2000);
+    }
+
+    await applyCriteria(auth, searchId, criteriaKey);
+    await delay(4000);
+  }
 
   // Step 2: Run
   await runSearch(auth, searchId);
@@ -225,7 +286,42 @@ switch (command) {
     const type = (flags.type || 'COMPANIES').toUpperCase();
     const page = parseInt(flags.page || '1', 10);
     const pageSize = parseInt(flags['page-size'] || '25', 10);
-    await doFullSearch(auth, type, page, pageSize);
+    let criteria;
+    if (flags.criteria) {
+      try {
+        criteria = JSON.parse(flags.criteria);
+      } catch (err) {
+        console.error(`Invalid --criteria JSON: ${err.message}`);
+        process.exit(1);
+      }
+    }
+    await doFullSearch(auth, type, page, pageSize, criteria);
+    break;
+  }
+  case 'criteria-schema': {
+    const auth = await getAuth();
+    checkCurl();
+    const type = (flags.type || 'COMPANIES').toUpperCase();
+    const createResult = await createSearch(auth, type);
+    const searchId = createResult?.id || createResult?.searchId;
+    if (!searchId) {
+      console.error('Failed to create search session.');
+      process.exit(1);
+    }
+    console.log(`  searchId: ${searchId}`);
+    await delay(2000);
+    const criteriaKey = await createCriteriaKey(auth, searchId);
+    if (!criteriaKey) {
+      console.error('Failed to create criteria key.');
+      process.exit(1);
+    }
+    console.log(`  criteriaKey: ${criteriaKey}`);
+    await delay(1500);
+    const state = await getCriteriaState(auth, searchId, criteriaKey);
+    const outFile = resolve(CACHE_DIR, `criteria-schema-${type}-${searchId}.json`);
+    saveJson(outFile, state);
+    console.log(`\nCriteria schema saved to: ${outFile}`);
+    console.log(`Top-level fields: ${Object.keys(state || {}).join(', ')}`);
     break;
   }
   case 'count': {
@@ -258,18 +354,23 @@ Run advanced/screener searches on Pitchbook via multi-step API flow.
 
 Commands:
   auth                                        Capture session from Chrome via CDP
-  search [--type=COMPANIES] [--page=1] [--page-size=25]
-                                              Run a full search (create -> run -> fetch)
+  search [--type=COMPANIES] [--page=1] [--page-size=25] [--criteria=<json>]
+                                              Run a full search (create -> apply criteria -> run -> fetch)
   count <searchId>                            Get result count for an existing search
   results <searchId> [--page=1] [--page-size=25] [--tab=companies]
                                               Fetch results for an existing search session
+  criteria-schema [--type=COMPANIES]          Create an empty search and dump the criteria field tree
 
 Search types: COMPANIES, DEALS, INVESTORS
 Tab options:   companies, deals, investors
+
+--criteria format: JSON array of {field, op, body} objects. Example (US-only location):
+  [{"field":"company.location.codes","op":"collection","body":{"value":["gUS"],"requestType":"COLLECTION","updateType":"SET_VALUE"}}]
 
 Examples:
   node pitchbook-advanced-search.mjs search
   node pitchbook-advanced-search.mjs search --type=DEALS --page=1 --page-size=50
   node pitchbook-advanced-search.mjs count s637561838
-  node pitchbook-advanced-search.mjs results s637561838 --page=2 --page-size=100 --tab=companies`);
+  node pitchbook-advanced-search.mjs results s637561838 --page=2 --page-size=100 --tab=companies
+  node pitchbook-advanced-search.mjs criteria-schema --type=COMPANIES`);
 }
