@@ -487,6 +487,7 @@ async function cmdDmInbox(session, flags) {
     convList.push({
       conversation_id: convId,
       type: conv.type,
+      name: conv.name || undefined,
       sort_timestamp: conv.sort_timestamp,
       participants,
       last_message: lastMessage,
@@ -553,9 +554,9 @@ async function cmdDmHistory(session, conversationId, flags) {
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function cmdDmSend(session, userId, text) {
-  if (!userId || !text) {
-    console.error('Usage: dm-send <user_id> <text>');
+async function cmdDmSend(session, target, text) {
+  if (!target || !text) {
+    console.error('Usage: dm-send <user_id|conversation_id> <text>');
     process.exit(1);
   }
 
@@ -565,12 +566,25 @@ async function cmdDmSend(session, userId, text) {
     process.exit(1);
   }
 
-  // Build conversation_id from the two user IDs (sorted: lower-higher)
-  const ids = [myId, userId].sort((a, b) => {
-    if (a.length !== b.length) return a.length - b.length;
-    return a < b ? -1 : 1;
-  });
-  const conversationId = `${ids[0]}-${ids[1]}`;
+  // Detect if target is a conversation ID (group DM) or a user ID
+  // Group conversation IDs are long numeric strings (not containing '-')
+  // 1-on-1 conversation IDs are built from two user IDs: "lower-higher"
+  let conversationId;
+  const isGroupOrConvId = target.includes('-') || target.length > 16;
+  if (target.includes('-')) {
+    // Already a conversation ID (e.g. "173806600-123456789")
+    conversationId = target;
+  } else if (target.length > 16) {
+    // Likely a group conversation ID (long numeric)
+    conversationId = target;
+  } else {
+    // User ID — build 1-on-1 conversation ID
+    const ids = [myId, target].sort((a, b) => {
+      if (a.length !== b.length) return a.length - b.length;
+      return a < b ? -1 : 1;
+    });
+    conversationId = `${ids[0]}-${ids[1]}`;
+  }
 
   const body = {
     conversation_id: conversationId,
@@ -588,7 +602,7 @@ async function cmdDmSend(session, userId, text) {
   const result = {
     ok: true,
     conversation_id: conversationId,
-    recipient_id: userId,
+    target,
   };
 
   // Extract message details from response if available
@@ -879,7 +893,7 @@ Commands:
   notifications [--type=all] [--count=20]   Notifications (all|mentions|verified)
   dm-inbox                                  DM inbox overview
   dm-history <conv_id> [--count=50]         DM conversation
-  dm-send <user_id> <text>                  Send DM
+  dm-send <user_id|conv_id> <text>           Send DM (user ID or group conv ID)
   lists [--count=20]                        Your lists
   list <list_id>                            List info
   list-tweets <list_id> [--count=20]        Tweets in a list
