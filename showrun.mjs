@@ -353,6 +353,10 @@ async function cmdConfig(key, value) {
 function flattenSkills(platforms) {
   const result = {};
   for (const [name, value] of Object.entries(platforms)) {
+    // Platform-level SKILL.md (e.g. showrun, chrome-cdp)
+    if (value.skill_md) {
+      result[name] = value.skill_md;
+    }
     if (value.apps) {
       for (const [appName, appValue] of Object.entries(value.apps)) {
         if (appValue.skills) {
@@ -361,7 +365,8 @@ function flattenSkills(platforms) {
           }
         }
       }
-    } else if (value.skills) {
+    }
+    if (value.skills) {
       for (const [skillName, version] of Object.entries(value.skills)) {
         result[`${name}/${skillName}`] = version;
       }
