@@ -7,10 +7,11 @@
  *
  * Usage:
  *   node pitchbook-advanced-search.mjs auth
- *   node pitchbook-advanced-search.mjs search [--type=COMPANIES] [--page=1] [--page-size=25] [--criteria=<json>]
+ *   node pitchbook-advanced-search.mjs search [--type=COMPANIES] [--page=1] [--page-size=25] [--criteria=<json>] [--sort=<columnId>] [--sort-order=DESC]
  *   node pitchbook-advanced-search.mjs count <searchId>
- *   node pitchbook-advanced-search.mjs results <searchId> [--page=1] [--page-size=25] [--tab=companies]
+ *   node pitchbook-advanced-search.mjs results <searchId> [--page=1] [--page-size=25] [--tab=companies] [--sort=<columnId>] [--sort-order=DESC]
  *   node pitchbook-advanced-search.mjs criteria-schema [--type=COMPANIES]
+ *   node pitchbook-advanced-search.mjs columns <searchId> [--tab=companies]
  */
 
 import { resolve } from 'path';
@@ -119,6 +120,21 @@ async function getView(auth, viewId) {
 }
 
 // ---------------------------------------------------------------------------
+// Sorting: set the sort order on a result set (optional)
+// ---------------------------------------------------------------------------
+async function setSorting(auth, dataSetId, columnId, order) {
+  console.log(`  Sorting by ${columnId} ${order}...`);
+  const url = `${BASE}/web-api/advanced-search-api/tables/${dataSetId}/columns/sorting`;
+  const body = [{ order, columnId, hidden: false, nullsFirst: false }];
+  return await curlPost(url, auth, body, REFERER);
+}
+
+async function getColumns(auth, dataSetId) {
+  const url = `${BASE}/web-api/advanced-search-api/tables/${dataSetId}/columns?alertMode=false&recentUpdatesMode=false`;
+  return await curlGet(url, auth, REFERER);
+}
+
+// ---------------------------------------------------------------------------
 // Step 5: Get result count
 // ---------------------------------------------------------------------------
 async function getCount(auth, dataSetId) {
@@ -165,7 +181,7 @@ function printSummary(data, count) {
 // ---------------------------------------------------------------------------
 // Full search flow
 // ---------------------------------------------------------------------------
-async function doFullSearch(auth, type, page, pageSize, criteria) {
+async function doFullSearch(auth, type, page, pageSize, criteria, sortColumn, sortOrder) {
   // Step 1: Create
   const createResult = await createSearch(auth, type);
   const searchId = createResult?.id || createResult?.searchId;
@@ -216,6 +232,12 @@ async function doFullSearch(auth, type, page, pageSize, criteria) {
   console.log(`  dataSetId: ${dataSetId}`);
   await delay(6000);
 
+  // Optional sort before count/fetch
+  if (sortColumn) {
+    await setSorting(auth, dataSetId, sortColumn, sortOrder || 'DESC');
+    await delay(2000);
+  }
+
   // Step 5: Count
   const countResult = await getCount(auth, dataSetId);
   const count = countResult?.count;
@@ -237,10 +259,15 @@ async function doFullSearch(auth, type, page, pageSize, criteria) {
 // ---------------------------------------------------------------------------
 // Results for existing search
 // ---------------------------------------------------------------------------
-async function doResults(auth, searchId, page, pageSize, tab) {
+async function doResults(auth, searchId, page, pageSize, tab, sortColumn, sortOrder) {
   checkCurl();
   const tabType = TAB_TYPE_MAP[tab] || 'company';
   const dataSetId = `${searchId}.${tabType}.data_set`;
+
+  if (sortColumn) {
+    await setSorting(auth, dataSetId, sortColumn, sortOrder || 'DESC');
+    await delay(2000);
+  }
 
   const countResult = await getCount(auth, dataSetId);
   const count = countResult?.count;
@@ -295,7 +322,9 @@ switch (command) {
         process.exit(1);
       }
     }
-    await doFullSearch(auth, type, page, pageSize, criteria);
+    const sortColumn = flags.sort;
+    const sortOrder = (flags['sort-order'] || 'DESC').toUpperCase();
+    await doFullSearch(auth, type, page, pageSize, criteria, sortColumn, sortOrder);
     break;
   }
   case 'criteria-schema': {
@@ -344,7 +373,27 @@ switch (command) {
     const page = parseInt(flags.page || '1', 10);
     const pageSize = parseInt(flags['page-size'] || '25', 10);
     const tab = (flags.tab || 'companies').toLowerCase();
-    await doResults(auth, searchId, page, pageSize, tab);
+    const sortColumn = flags.sort;
+    const sortOrder = (flags['sort-order'] || 'DESC').toUpperCase();
+    await doResults(auth, searchId, page, pageSize, tab, sortColumn, sortOrder);
+    break;
+  }
+  case 'columns': {
+    const searchId = positional[0];
+    if (!searchId) {
+      console.error('Usage: node pitchbook-advanced-search.mjs columns <searchId> [--tab=companies]');
+      process.exit(1);
+    }
+    const auth = await getAuth();
+    checkCurl();
+    const tabType = TAB_TYPE_MAP[(flags.tab || 'companies').toLowerCase()] || 'company';
+    const dataSetId = `${searchId}.${tabType}.data_set`;
+    const data = await getColumns(auth, dataSetId);
+    const sortable = (data.columns || []).filter(c => c.sortable).map(c => ({ id: c.columnId, label: c.label, type: c.columnType }));
+    const outFile = resolve(CACHE_DIR, `columns-${searchId}-${tabType}.json`);
+    saveJson(outFile, data);
+    console.log(`\nSortable columns (${sortable.length}/${(data.columns || []).length}) saved to ${outFile}:\n`);
+    for (const c of sortable) console.log(`  ${c.id.padEnd(32)} ${(c.type || '').padEnd(14)} ${c.label}`);
     break;
   }
   default:
@@ -354,12 +403,13 @@ Run advanced/screener searches on Pitchbook via multi-step API flow.
 
 Commands:
   auth                                        Capture session from Chrome via CDP
-  search [--type=COMPANIES] [--page=1] [--page-size=25] [--criteria=<json>]
-                                              Run a full search (create -> apply criteria -> run -> fetch)
+  search [--type=COMPANIES] [--page=1] [--page-size=25] [--criteria=<json>] [--sort=<columnId>] [--sort-order=DESC]
+                                              Run a full search (create -> apply criteria -> run -> sort -> fetch)
   count <searchId>                            Get result count for an existing search
-  results <searchId> [--page=1] [--page-size=25] [--tab=companies]
-                                              Fetch results for an existing search session
+  results <searchId> [--page=1] [--page-size=25] [--tab=companies] [--sort=<columnId>] [--sort-order=DESC]
+                                              Fetch results for an existing search session (with optional sort)
   criteria-schema [--type=COMPANIES]          Create an empty search and dump the criteria field tree
+  columns <searchId> [--tab=companies]        List sortable result columns (run search first to get a searchId)
 
 Search types: COMPANIES, DEALS, INVESTORS
 Tab options:   companies, deals, investors
@@ -372,5 +422,15 @@ Examples:
   node pitchbook-advanced-search.mjs search --type=DEALS --page=1 --page-size=50
   node pitchbook-advanced-search.mjs count s637561838
   node pitchbook-advanced-search.mjs results s637561838 --page=2 --page-size=100 --tab=companies
-  node pitchbook-advanced-search.mjs criteria-schema --type=COMPANIES`);
+  node pitchbook-advanced-search.mjs criteria-schema --type=COMPANIES
+  node pitchbook-advanced-search.mjs columns s637561838
+  node pitchbook-advanced-search.mjs search --sort=vcRaised --sort-order=DESC
+
+Common sortable columns (run 'columns <searchId>' for the full list):
+  lastFinancingDate       Most recent round date (default sort)
+  lastFinancingSize       Deal size of the most recent round
+  vcRaised                Total raised across all rounds
+  lastFinancingValuation  Valuation at last round
+  employees               Headcount
+  yearFounded             Year founded`);
 }

@@ -321,6 +321,22 @@
     }
   },
 
+  "sorting": {
+    "_description": "Result set sorting. Uses a separate endpoint from criteria: POST /tables/{dataSetId}/columns/sorting with body [{order, columnId, hidden, nullsFirst}]. Set via --sort=<columnId> --sort-order=ASC|DESC on the search/results commands. Default sort is lastFinancingDate DESC. Discover all sortable columns with: node pitchbook-advanced-search.mjs columns <searchId>.",
+    "commonColumns": {
+      "lastFinancingDate": "Most recent financing round date (default)",
+      "lastFinancingSize": "Deal size of most recent round (MONEY)",
+      "lastFinancingValuation": "Valuation at last round (MONEY)",
+      "lastFinancingDealType": "Type of most recent round (e.g. Series A)",
+      "firstFinancingSize": "Deal size of first round",
+      "vcRaised": "Total raised across all rounds",
+      "employees": "Headcount",
+      "yearFounded": "Year founded",
+      "companyName": "Company name (alphabetical)",
+      "hqLocation": "HQ location string"
+    }
+  },
+
   "_exampleBodies": {
     "usOnly": {
       "_field": "company.location.codes",

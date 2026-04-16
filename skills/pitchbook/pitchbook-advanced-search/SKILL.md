@@ -28,6 +28,23 @@ Dumps the full criteria field tree (JSON) to `cache/criteria-schema-<TYPE>-<sear
 node scripts/pitchbook-advanced-search.mjs results <searchId> [--page=1] [--page-size=25] [--tab=companies|deals|investors]
 ```
 
+### Sort results
+
+Add `--sort=<columnId> --sort-order=DESC|ASC` to `search` or `results`. Default is `lastFinancingDate DESC` (most recent raise first).
+
+```bash
+# Sort by total raised, highest first
+node scripts/pitchbook-advanced-search.mjs search --criteria='[...]' --sort=vcRaised --sort-order=DESC
+```
+
+Common sort columns: `lastFinancingDate`, `lastFinancingSize`, `vcRaised` (total raised), `lastFinancingValuation`, `employees`, `yearFounded`. See `filter-codes.json` → `sorting` for the full list.
+
+### List all sortable columns for a search
+
+```bash
+node scripts/pitchbook-advanced-search.mjs columns <searchId>
+```
+
 ### Get result count
 
 ```bash
