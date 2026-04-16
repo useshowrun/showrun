@@ -7,8 +7,9 @@ Collect financial data from Pitchbook — company profiles, deals, investors, va
 ### Connecting to Chrome
 
 1. Run `node pitchbook-login/scripts/pitchbook-login.mjs interactive`
-2. If CDP connection fails, follow the chrome-cdp agent guidance (launch the dedicated Chrome instance yourself)
-3. If the user is not logged in to PitchBook, ask them to open `my.pitchbook.com` and log in, then re-run the interactive command
+2. If CDP connection fails, follow the chrome-cdp agent guidance — launch Chrome yourself with PitchBook as the target URL: `... --no-first-run "https://my.pitchbook.com" &`
+3. If CDP is connected but no PitchBook tab is open, open one: `node skills/chrome-cdp/scripts/cdp.mjs open https://my.pitchbook.com`
+4. If the user is not logged in to PitchBook, ask them to log in in the Chrome window, then re-run the interactive command
 
 ### Session expiry
 
@@ -38,7 +39,7 @@ Sessions expire after ~30 min. Re-run `interactive` on `Session expired` or `HTT
 
 ## Agent guidance
 
-- On auth failure: re-run `interactive`. If CDP is unreachable, follow chrome-cdp agent guidance (launch the dedicated Chrome instance yourself).
+- On auth failure: re-run `interactive`. If CDP is unreachable, follow chrome-cdp agent guidance — launch Chrome with `https://my.pitchbook.com` as the target URL, or `cdp.mjs open https://my.pitchbook.com` if Chrome is already running.
 - Redirect script output to files — responses can be large (500KB+). Read cached results from `~/.local/share/showrun/data/pitchbook/cache/` with truncation.
 - Wait at least 8 seconds between API calls to avoid rate limiting.
 - Summarize findings in your own words. Never dump full JSON into the conversation.

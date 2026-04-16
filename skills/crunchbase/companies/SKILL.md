@@ -5,8 +5,9 @@ Fetch detailed company profiles from Crunchbase including funding rounds, acquis
 ## Prerequisites
 
 - Node.js 22+
-- If CDP connection fails during `auth`, follow the chrome-cdp agent guidance (launch the dedicated Chrome instance yourself)
-- If the user is not logged in to Crunchbase, ask them to open `crunchbase.com` and log in, then re-run `auth`
+- If CDP connection fails during `auth`, launch Chrome yourself with `https://www.crunchbase.com` as the initial URL (see chrome-cdp agent guidance)
+- If Chrome is already running via CDP but no Crunchbase tab is open: `node skills/chrome-cdp/scripts/cdp.mjs open https://www.crunchbase.com`
+- If the user is not logged in to Crunchbase, ask them to log in in the Chrome window, then re-run `auth`
 
 ## Setup
 
