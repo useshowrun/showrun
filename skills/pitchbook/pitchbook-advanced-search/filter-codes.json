@@ -6,6 +6,18 @@
     "discoverSchema": "GET /web-api/advanced-search-api-bff/api/v1/search-criteria/{searchId}?criteriaKey={key}"
   },
 
+  "_groupingConvention": {
+    "_description": "Many collection filters have group codes that represent a parent plus all descendants (e.g. location 'gUS' = United States with every state/metro/area child).",
+    "rule": "When the PitchBook frontend selects a group, it sends the group code AND every child code together in one collection. Mirror this behavior — pass the group code plus all its children for parity with how the UI builds criteria. Passing only the group code often works too, but the safe default is to match the frontend's expansion.",
+    "knownGroupCodes": {
+      "company.location.codes": "Country groups (gUS, gEu, gAs, ...) expand to state/province (sXX), metro ($ suffix), and area (a###) codes. Example: selecting gUS in UI sends gUS + ~150 descendant codes.",
+      "company.businessStatus": "BUSINESS_STATUS = all statuses. The frontend sends BUSINESS_STATUS + every child when 'All' is checked.",
+      "company.financingStatus": "BACKING = all backing statuses. Same expansion rule as above.",
+      "deal.newTypes": "BYSTG (By Stage), BYSER (By Series), BYRN (By Round Number) are grouping headers. The UI sends the header + every child under it when a group-level checkbox is selected."
+    },
+    "agentGuidance": "If you need the precise UI behavior (e.g. for analytics parity with the web app), expand a group by inspecting the actual request in PitchBook's Network tab or by using the criteria-state GET endpoint after a manual UI selection. For typical filtering, passing just the group code is sufficient and well-tested."
+  },
+
   "ops": {
     "_description": "URL segment after the field path. Determines body shape. Range fields use separate '.min' and '.max' sub-fields, each set independently.",
     "collection": "Array-valued filter. Body: {value: [...codes], requestType: 'COLLECTION', updateType: 'SET_VALUE'}",
@@ -71,8 +83,8 @@
   },
 
   "industries": {
-    "_description": "Top-level PitchBook industry codes. Passed as TERM_ITEM with type=INDUSTRY.",
-    "_note": "Sub-industries use longer numeric codes (e.g. '102100', '207020'). Discover via PitchBook UI or the /industry/counts endpoint.",
+    "_description": "Top-level PitchBook industry codes. Passed as TERM_ITEM with type=INDUSTRY inside the industryQueryCriteria tree.",
+    "_note": "Sub-industries use longer numeric codes (e.g. '102100', '207020'). Discover via PitchBook UI or the /industry/counts endpoint. The industryQueryCriteria tree uses explicit TERM_ITEMs — it does not auto-expand groups the way collection filters do, so if you need a specific sub-industry, pass it directly.",
     "10": "Business Products and Services (B2B)",
     "20": "Consumer Products and Services (B2C)",
     "30": "Energy",
@@ -163,7 +175,7 @@
       "CBOA": "Corporate-backed/Acquired",
       "CORP": "Corporation",
       "OTHER": "Other Statuses",
-      "BACKING": "Has Backing (meta)",
+      "BACKING": "(Group — all backing statuses. Frontend sends BACKING + every child. See _groupingConvention.)",
       "FDF": "Formerly Debt Financed",
       "FORM_BACKING": "Formerly Backed",
       "NVCB": "Non-VC-Backed",
@@ -204,6 +216,33 @@
       "ACQ": "Acquired/Merged",
       "ACQOS": "Acquired/Merged (Operating Subsidiary)",
       "GONE": "Out of Business"
+    }
+  },
+
+  "locationCodes": {
+    "_field": "company.location.codes",
+    "_op": "collection",
+    "_description": "Location codes (countries, US states, metros, area codes). Same hierarchical catalog as pitchbook-deal-feed — see pitchbook-deal-feed/filter-codes.json > locations for the full tree with labels.",
+    "_usage": "Each group in the deal-feed tree has an `_allCodes` array that contains the group code + every descendant, pre-expanded. Pass that entire array to match the frontend's selection behavior (see _groupingConvention). For a simple all-of-US filter, `['gUS']` alone works too and returns the same results.",
+    "_topLevel": {
+      "gUS": "United States (see deal-feed _allCodes for all 101 descendants)",
+      "gCA": "Canada",
+      "gEu": "Europe",
+      "gAm": "Americas",
+      "gAs": "Asia",
+      "gAf": "Africa",
+      "gME": "Middle East",
+      "gOc": "Oceania"
+    },
+    "_codePrefixes": {
+      "g": "Region/country-group (gUS, gEu, gAs, ...)",
+      "sg": "Sub-region (sgBayArea, sgNewEngland, sgWesternEurope, ...)",
+      "c": "Country (cUK, cIND, cJAP, ...)",
+      "s": "US state (sCA, sNY, ...). Suffixes like _1/_2 indicate the same state under a different sub-region.",
+      "a": "US area code (a415, a212, ...) or metro (aBA$ = Bay Area metro, aNY$ = NYC metro).",
+      "C_": "Canadian province (C_ON, C_QC, ...)",
+      "UK_": "UK region (UK_EN_LD = London, UK_SC = Scotland, ...)",
+      "A_": "Australian state (A_NSW, A_VIC, ...)"
     }
   },
 

@@ -51,6 +51,12 @@ node scripts/pitchbook-advanced-search.mjs columns <searchId>
 node scripts/pitchbook-advanced-search.mjs count <searchId>
 ```
 
+## Grouping convention
+
+Many collection filters have group codes (e.g. location `gUS`, financingStatus `BACKING`, businessStatus `BUSINESS_STATUS`, deal.newTypes `BYSTG`/`BYSER`/`BYRN`). When the PitchBook frontend selects a group, it sends the group code AND every child code together.
+
+**Rule: to match the UI, send the group code plus all its children.** Passing only the group code often works too, but expanding matches what the web app does. See `filter-codes.json` → `_groupingConvention` for details.
+
 ## `--criteria` format
 
 Array of `{field, op, body}` objects — one entry per filter. `field` is a dot-path (from `criteria-schema`), `op` is the URL operation segment, `body` is the raw request body. Known ops and body shapes are documented in [`filter-codes.json`](filter-codes.json).
