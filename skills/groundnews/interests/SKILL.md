@@ -155,6 +155,12 @@ node scripts/groundnews-interests.mjs
     └── place-interest-<id>.json    # Place-interest mapping
 ```
 
+## Account tier
+
+All commands in this skill work on the free tier with no data stripping observed. `source <uuid>` returns `factuality`, `factualityRatings[]`, and `biasRatings[]` fully populated — the per-publisher factuality rating is **not** paywalled, unlike the per-source-per-story factuality in `feed sources` (see that skill's SKILL.md).
+
+For the authoritative free-tier feature matrix, call `user policies` (separate skill) — it returns 24 explicit feature flags with tier-specific `enabled` / `limit` values.
+
 ## API notes
 
 - **Base URL**: `https://web-api-cdn.ground.news/api`

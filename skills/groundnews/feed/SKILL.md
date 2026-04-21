@@ -150,6 +150,18 @@ node scripts/groundnews-feed.mjs
     └── editions.json                # Available editions
 ```
 
+## Account tier
+
+All commands work on the free tier. One silent paywall:
+
+- **`sources <event-id>` silently strips per-source factuality on free.** Every item in `sources[]` carries `hasLockedFactualityData: true` and the `factuality` key is omitted from the object (not null — entirely absent). Per-source `bias`, `originalBias`, `detailedBias`, `paywall`, `headline`, `summary`, and `location` are all populated. Matches the `factualityData` flag in `user policies`.
+  - Detection: `any(src.get('hasLockedFactualityData') for src in response['sources'])`.
+  - To get publisher-level factuality, call `interests source <sourceId>` instead — that endpoint returns `factuality` and `factualityRatings[]` populated even on free.
+
+**Not paywalled:** `story-full` aggregate `factuality` / `ownership` / `blindspotData` rollups are populated normally. The `policies` flags like `factualityData` / `ownershipData` gate UI features (per-source filtering and customization), not raw aggregate data. AI perspective summaries in `story-full` also come through.
+
+For the authoritative free-tier feature matrix, call `user policies` (separate skill).
+
 ## Auth endpoints vs public endpoints
 
 - **Auth required**: `top-feed`, `daily-briefing`, `interest-feed`, `sources`

@@ -127,6 +127,20 @@ node scripts/groundnews-user.mjs
 
 11. **`blindspot-email`** — Calls `GET /v04/mailing/isSubscribed/blindspot` to check blindspot email subscription status.
 
+## Account tier
+
+All read commands (`me`, `plans`, `policies`, `settings`, `my-interests`, `interest-count`, `story-status`, `blindspot-email`) work on the free tier.
+
+**`policies` is the authoritative free-vs-paid map.** The endpoint returns 24 feature flags with explicit `enabled` / `limit` fields. No guessing needed — query it first before assuming a feature is gated. On free, 16 binary features are disabled (e.g. `customizeBias`, `customizeFactuality`, `factualityData`, `ownershipData`, `canViewStoryLevelTimelines`, `createCustomFeeds`, `mnb-tier-1/2/3`, `newsRoomSrcFilterBias/Locality/Paywall`) and 4 hard limits apply (`altMediaMentionLimit: 1`, `customFeedInterestsLimit: 10`, `customFeedLimit: 1`, `interestLimit: 30`).
+
+Consequence for write ops:
+
+- `follow <uuid>` — succeeds until `policies.interestLimit` (30 on free) is hit. Beyond the cap the API rejects; prior follows remain.
+- `unfollow <uuid>` — always allowed.
+- `update-setting <k> <v>` — subject to the same per-key policy gates; some keys won't stick on free.
+
+**Note:** policy flags like `factualityData` and `ownershipData` gate UI features (customization, filtering), not raw data. Aggregate factuality and ownership numbers still come back through `feed story-full` and `interests source`. The genuine silent paywall is per-source factuality in the `feed sources` endpoint (see that skill's SKILL.md).
+
 ## API details
 
 - **Base URL**: `https://web-api-cdn.ground.news/api`
