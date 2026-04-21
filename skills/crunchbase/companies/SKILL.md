@@ -46,6 +46,10 @@ node crunchbase-companies.mjs news google --count=20
 node crunchbase-companies.mjs exits berkshire-hathaway
 ```
 
+## Account tier
+
+All commands work on the free Crunchbase account — `view` and every section command. Only the cross-entity `advanced-search search` (separate skill) requires Pro.
+
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP

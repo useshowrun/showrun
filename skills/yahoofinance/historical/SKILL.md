@@ -37,6 +37,10 @@ node yahoofinance-historical.mjs shares AAPL
 node yahoofinance-historical.mjs shares AAPL --start=2020-01-01 --end=2024-01-01
 ```
 
+## Account tier
+
+All commands (`prices`, `dividends`, `splits`, `shares`) work on the free Yahoo Finance account, including the full `--period=max` history.
+
 ## How it works
 
 1. `auth` -- Extracts cookies from Chrome via CDP, fetches crumb from `/v1/test/getcrumb`, saves session.json

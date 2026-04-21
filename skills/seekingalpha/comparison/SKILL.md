@@ -30,6 +30,10 @@ node seekingalpha-comparison.mjs compare AAPL MSFT NVDA GOOG AMZN
 
 Ticker input accepts uppercase (`AAPL`), lowercase (`aapl`), or full URLs (`https://seekingalpha.com/symbol/AAPL`).
 
+## Account tier
+
+`compare` works on the free (Basic) account. ⚠️ Quant Grades (Value/Growth/Profitability/Momentum/EPS Revisions) come back as `N/A` on Basic — those scores are a Premium feature. Company info and key metrics still populate.
+
 ## How it works
 
 1. **auth** — Uses CDP to extract all cookies from a Chrome tab open to seekingalpha.com. Stores the full cookie string (including PerimeterX cookies required for API access).

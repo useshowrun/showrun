@@ -36,6 +36,10 @@ node crunchbase-event.mjs news techcrunch-disrupt-2024 --count=20
 node crunchbase-event.mjs speakers techcrunch-disrupt-2024 --after-id=<UUID>
 ```
 
+## Account tier
+
+All commands work on the free Crunchbase account. Only the cross-entity `advanced-search search` (separate skill) requires Crunchbase Pro.
+
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP

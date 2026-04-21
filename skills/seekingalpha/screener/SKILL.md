@@ -42,6 +42,12 @@ node seekingalpha-screener.mjs top-stocks
 node seekingalpha-screener.mjs top-stocks --page=2
 ```
 
+## Account tier
+
+**Free (Basic)**: `list`, `filters` — you can enumerate saved and available screeners/filters.
+
+**Requires Premium**: `run <id>`, `top-stocks`. The `/api/v3/screener_results` endpoint returns HTTP 403 Forbidden on Basic accounts; the Seeking Alpha plan page lists "Stock screeners" and "Top Stocks" as the paid-tier differentiator.
+
 ## How it works
 
 1. **auth** — Connects to Chrome via CDP, extracts all seekingalpha.com cookies (including PerimeterX bot-protection cookies), saves to session file.

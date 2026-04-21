@@ -34,6 +34,10 @@ node yahoofinance-markets.mjs status --market=hk_market
 
 Common market identifiers: `us_market`, `gb_market`, `de_market`, `fr_market`, `jp_market`, `hk_market`, `ca_market`, `au_market`
 
+## Account tier
+
+Both commands (`summary`, `status`) work on the free Yahoo Finance account.
+
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP, fetches crumb from Yahoo Finance API

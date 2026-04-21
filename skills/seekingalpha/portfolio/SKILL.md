@@ -35,6 +35,10 @@ node seekingalpha-portfolio.mjs alerts
 ```
 Shows rating change notifications across all portfolios, including previous and new ratings.
 
+## Account tier
+
+All commands work on the free (Basic) Seeking Alpha account.
+
 ## How it works
 
 1. **auth** — Uses CDP `Network.getCookies` to extract the full cookie jar from a Seeking Alpha browser tab. Stores cookies and `user_cookie_key` (the account identifier used in API URLs) in `session.json`.

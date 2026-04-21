@@ -37,6 +37,10 @@ node similarweb-keywords.mjs gap chatgpt.com claude.ai grok.com
 node similarweb-keywords.mjs trends chatgpt.com
 ```
 
+## Account tier
+
+All commands work on the free (Basic) SimilarWeb account with the worldwide view. The Basic plan does not officially include keyword research, but the API returns data regardless on the default 1-month, `--country=999` window. Country-specific filters may be server-enforced.
+
 ## How it works
 
 1. **auth** -- Reuses the `similarweb-website` session if available, otherwise extracts cookies from Chrome.

@@ -37,6 +37,10 @@ node yahoofinance-screener.mjs search --query='[{"op":"is-in","field":"performan
 node yahoofinance-screener.mjs fields
 ```
 
+## Account tier
+
+All commands (`predefined`, `search` with custom query, `fields`) work on the free Yahoo Finance account. Yahoo Gold sells curated "Smart Money / Top Holdings / Analyst Ratings / Technical Events" screeners — those are saved presets; the underlying custom-query API exposed here is tier-free.
+
 ## How it works
 
 1. `auth` — Extracts cookies from your Chrome Yahoo Finance tab via CDP, then fetches a crumb token from the Yahoo API

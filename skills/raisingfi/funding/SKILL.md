@@ -43,6 +43,14 @@ Searches cached results. Run `fetch-all` first for complete data.
 node scripts/raisingfi-funding.mjs
 ```
 
+## Account tier
+
+All commands work on the free Raising.fi account (no login required) with two documented caps:
+- **`list` / `fetch-all` return at most the last 20 raises** — upgrading to Pro unlocks the full historical dataset.
+- **API rate limit is 10 requests per hour** on free (tracked via `x-ratelimit-remaining`). The script pauses automatically as it approaches the limit.
+
+The `search` command filters whatever is currently cached, so its coverage is limited to the 20 rows free tier returns.
+
 ## How it works
 
 1. **`list`** — GETs `https://raising.fi/api/funding?page=N&limit=N`. Returns funding rounds with company name, raise type, amount, lead investor, other investors, industry, website, and location.

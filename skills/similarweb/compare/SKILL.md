@@ -29,6 +29,10 @@ node similarweb-compare.mjs channels chatgpt.com claude.ai grok.com
 node similarweb-compare.mjs channels spotify.com apple.com --country=826
 ```
 
+## Account tier
+
+Both commands work on the free (Basic) SimilarWeb account with the default worldwide (`--country=999`) view. Country-specific filters are a Basic-tier restriction ("cannot filter by specific country" per the Basic plan bullet) and may be server-enforced.
+
 ## How it works
 
 1. **auth** -- Reuses the `similarweb-website` session if available, otherwise connects to Chrome via CDP and extracts SimilarWeb session cookies.

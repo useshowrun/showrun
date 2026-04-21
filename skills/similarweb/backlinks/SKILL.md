@@ -30,6 +30,10 @@ node similarweb-backlinks.mjs links chatgpt.com
 node similarweb-backlinks.mjs links shopify.com --count=50 --sort=PageScore --duration=3m
 ```
 
+## Account tier
+
+All commands work on the free (Basic) SimilarWeb account.
+
 ## How it works
 
 1. **auth** -- Reuses the `similarweb-website` session if available, otherwise extracts cookies from Chrome.

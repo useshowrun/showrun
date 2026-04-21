@@ -31,6 +31,10 @@ node similarweb-search.mjs favorites
 node similarweb-search.mjs recent
 ```
 
+## Account tier
+
+All commands work on the free (Basic) SimilarWeb account.
+
 ## How it works
 
 1. **auth** -- Reuses the `similarweb-website` session if available, otherwise extracts cookies from Chrome.

@@ -51,6 +51,10 @@ node seekingalpha-news.mjs for-ticker TSLA --count=20 --page=1
 
 Ticker input accepts uppercase (`AAPL`), lowercase (`aapl`), or full URLs (`https://seekingalpha.com/symbol/AAPL`).
 
+## Account tier
+
+All commands work on the free (Basic) Seeking Alpha account.
+
 ## How it works
 
 1. **auth** -- Uses CDP to extract all cookies from a Chrome tab open to seekingalpha.com. Stores the full cookie string (including PerimeterX cookies required for API access) and the `user_cookie_key` for account endpoints.

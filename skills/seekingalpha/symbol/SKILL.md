@@ -62,6 +62,10 @@ node seekingalpha-symbol.mjs analysis AAPL --count=5
 
 Ticker input accepts uppercase (`AAPL`), lowercase (`aapl`), or full URLs (`https://seekingalpha.com/symbol/AAPL`).
 
+## Account tier
+
+All commands work on the free (Basic) account. ⚠️ `quantRating` and `authorsRating` fields are `null` on Basic (Premium feature per the plan page); `sellSideRating` and all numeric metrics (financials, earnings, dividends, valuation, growth, profitability, momentum, peers) are available.
+
 ## How it works
 
 1. **auth** — Uses CDP to extract all cookies from a Chrome tab open to seekingalpha.com. Stores the full cookie string (including PerimeterX cookies required for API access) and the `user_cookie_key` for account endpoints.

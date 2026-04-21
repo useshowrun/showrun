@@ -28,6 +28,10 @@ node crunchbase-acquisition.mjs view 6acfa7da-1dbd-936e-d985-cf07a1b27711
 node crunchbase-acquisition.mjs news google-acquires-fitbit --count=20
 ```
 
+## Account tier
+
+All commands work on the free Crunchbase account. Only the cross-entity `advanced-search search` (separate skill) requires Crunchbase Pro.
+
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP

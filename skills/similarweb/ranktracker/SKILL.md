@@ -31,6 +31,12 @@ node similarweb-ranktracker.mjs ranks hubspot
 node similarweb-ranktracker.mjs keywords hubspot --count=10
 ```
 
+## Account tier
+
+**Works on free (Basic)**: `details`, `ranks`, `keywords` — but only against SimilarWeb's demo campaigns (e.g. `hubspot`, `ahrefs`). These hit the `/demo/` variant of the API, which is open.
+
+**Requires paid SEO tier** ($399+): `campaigns` (list) — HTTP 403 Forbidden on Basic. Listing your own user campaigns is the paid feature. The demo campaign IDs are hard-coded into the `details`/`ranks`/`keywords` commands.
+
 ## How it works
 
 1. **auth** -- Reuses the `similarweb-website` session if available, otherwise extracts cookies from Chrome.

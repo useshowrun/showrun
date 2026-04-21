@@ -64,6 +64,10 @@ Ticker formats accepted: `AAPL`, `aapl`, `https://seekingalpha.com/symbol/AAPL`.
 
 Short aliases are also supported: `top`, `editors`, `picks`, `stocks`, `etfs`, `etf`, `funds`, `macro`, `outlook`, `strategy`.
 
+## Account tier
+
+All commands work on the free (Basic) Seeking Alpha account. `top-authors` and `saved` typically return empty lists until the account rates/saves articles.
+
 ## How it works
 
 1. **auth** — Uses CDP to extract cookies from a Seeking Alpha browser tab (including PerimeterX `_pxvid`/`pxcts` cookies required for API access). Saves session to disk.

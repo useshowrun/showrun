@@ -36,6 +36,10 @@ node crunchbase-school.mjs advisors stanford-university
 node crunchbase-school.mjs sub_organizations stanford-university
 ```
 
+## Account tier
+
+All commands work on the free Crunchbase account. Only the cross-entity `advanced-search search` (separate skill) requires Crunchbase Pro.
+
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP

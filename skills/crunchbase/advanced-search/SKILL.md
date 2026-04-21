@@ -39,6 +39,12 @@ node crunchbase-advanced-search.mjs search companies --after-id=<last-uuid>
 node crunchbase-advanced-search.mjs fields companies
 ```
 
+## Account tier
+
+**Free / standard account**: `fields` works.
+
+**Requires Crunchbase Pro**: `search` on any entity type. The API rejects the default field list with HTTP 400 and `entitlement_ids: ["pro"]` on fields like `operating_status`, `first_name`, `num_investors`, etc. — "Search 4M+ private companies with full results" is Crunchbase Pro's marquee feature.
+
 ## How it works
 
 1. `auth` — Extracts cookies from your Chrome Crunchbase tab via CDP

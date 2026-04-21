@@ -49,6 +49,10 @@ node similarweb-market.mjs benchmarks AI_Chatbots_and_Tools
 node similarweb-market.mjs benchmarks "News and Media" --country=826
 ```
 
+## Account tier
+
+All commands work on the free (Basic) SimilarWeb account with the default `--country=999` view.
+
 ## How it works
 
 1. **auth** -- Reuses the `similarweb-website` session if available, otherwise extracts cookies from a Chrome tab open to pro.similarweb.com.

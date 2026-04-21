@@ -69,6 +69,17 @@ Domain input accepts `google.com`, `www.google.com`, or full URLs like `https://
 
 Country codes: 999 = Worldwide (default), 840 = US, 826 = UK, 276 = Germany, 392 = Japan.
 
+## Account tier
+
+**Works on free (Basic) account** with the default worldwide (`--country=999`) 1-month window: `overview`, `traffic`, `channels`, `referrals`, `similar`, `social`, `display`, `ads`.
+
+**Requires paid tier** (server-enforced — HTTP 403 or 406 on Basic):
+- `geography` — HTTP 403 (Customer Demographics — Competitive Intel / $199+)
+- `search-traffic` — HTTP 406 (Organic Search Overview — SEO tier / $399+)
+- `keywords` — HTTP 406 (Keyword Research — SEO tier / $399+)
+
+**Likely paid-only** (not tested by default): country-specific queries (`--country=840` etc.). The Basic plan explicitly says "cannot filter by specific country." Requests outside the 1-month window also fail server-side on Basic.
+
 ## How it works
 
 1. **auth** -- Uses CDP to extract all cookies from a Chrome tab open to pro.similarweb.com. Stores the full cookie string (including the AWS WAF token and SGTOKEN cookies required for API access).

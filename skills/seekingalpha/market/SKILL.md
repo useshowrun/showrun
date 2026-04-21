@@ -63,6 +63,10 @@ Returns ETF performance data organized into sections. Each category contains one
 
 **Short aliases**: `key`, `bond`, `commodity`, `country`, `currency`/`forex`/`fx`, `dividend`, `emerging`/`em`, `global`/`regions`, `growth`/`value`, `cap`, `realestate`/`reit`, `sector`, `strategy`, `beta`, `themes`/`subsectors`, `crypto`, `aristocrats`, `champions`
 
+## Account tier
+
+All commands work on the free (Basic) account. `top-rated` returns an empty list on Basic — the Top Stocks rankings are a Premium feature; the endpoint still returns 200.
+
 ## How it works
 
 1. **auth** -- Uses CDP to extract cookies (including PerimeterX `_pxvid`/`pxcts` tokens) from an open Seeking Alpha tab in Chrome. Saves them to `session.json`.

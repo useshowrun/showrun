@@ -32,6 +32,10 @@ node yahoofinance-sectors.mjs industry financial-services/banks-diversified
 node yahoofinance-sectors.mjs industry healthcare/biotechnology
 ```
 
+## Account tier
+
+All commands (`list`, `view`, `industry`) work on the free Yahoo Finance account.
+
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP, fetches crumb from Yahoo API

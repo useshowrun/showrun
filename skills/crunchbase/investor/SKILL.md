@@ -30,6 +30,10 @@ node crunchbase-investor.mjs investments y-combinator --count=50
 node crunchbase-investor.mjs investments y-combinator --after-id=<uuid>
 ```
 
+## Account tier
+
+All commands work on the free Crunchbase account. Only the cross-entity `advanced-search search` (separate skill) requires Crunchbase Pro.
+
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP

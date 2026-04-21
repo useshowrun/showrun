@@ -44,6 +44,13 @@ node yahoofinance-quote.mjs news GOOG
 node yahoofinance-quote.mjs news GOOG --count=20
 ```
 
+## Account tier
+
+All commands work on the free Yahoo Finance account. Notes:
+- `sustainability` endpoint works on Free but Yahoo no longer populates ESG data for most (possibly all) symbols — expect "No ESG data available" for anything you try.
+- `analysis` returns earnings history, estimates, and recommendation trends; alerts for analyst changes are a Silver ($19.95/mo) feature, but the underlying data is free.
+- `holders` returns major-holder breakdowns; Silver adds "Insider trades + hiring scores" streams not exposed by this endpoint.
+
 ## How it works
 
 1. `auth` -- Extracts cookies from Chrome via CDP (Network.getCookies for yahoo.com domains), then fetches a crumb token from `/v1/test/getcrumb`. Saves session.json with cookies, crumb, and userAgent.

@@ -52,6 +52,10 @@ node seekingalpha-search.mjs lookup AAPL
 node seekingalpha-search.mjs lookup MSFT,NVDA,AAPL
 ```
 
+## Account tier
+
+All commands work on the free (Basic) Seeking Alpha account.
+
 ## How it works
 
 1. **auth** -- Uses CDP to extract cookies (including PerimeterX tokens) from a Seeking Alpha browser tab. Saves session to disk.

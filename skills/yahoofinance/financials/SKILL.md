@@ -35,6 +35,12 @@ node yahoofinance-financials.mjs cashflow GOOG --period=trailing
 node yahoofinance-financials.mjs
 ```
 
+## Account tier
+
+All commands (`income`, `balance`, `cashflow` × annual/quarterly/trailing) work on the free Yahoo Finance account.
+
+⚠️ **Data depth is tier-gated.** Free accounts receive roughly the last 4 fiscal periods. Yahoo Finance Gold ($39.95/mo) advertises "~40 years of income statements / balance sheets / cash flow reports" — that extended history is not available through this endpoint on Free tier. If you need more than ~4 years, you need Gold (and the official product there is CSV download, not the JSON we parse).
+
 ## How it works
 
 1. `auth` -- Extracts cookies from Chrome via CDP, then fetches a crumb from `https://query1.finance.yahoo.com/v1/test/getcrumb`

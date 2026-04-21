@@ -37,6 +37,10 @@ node yahoofinance-etf.mjs bond-holdings BND
 node yahoofinance-etf.mjs bond-holdings AGG
 ```
 
+## Account tier
+
+All commands work on the free Yahoo Finance account. Paid tiers (Silver/Gold) add Morningstar ratings and longer historical depth, but the endpoints exposed here return the same data to Free users.
+
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP, fetches crumb from Yahoo API

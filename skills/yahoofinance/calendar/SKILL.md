@@ -36,6 +36,10 @@ node yahoofinance-calendar.mjs splits --start=2026-03-17 --end=2026-03-24
 node yahoofinance-calendar.mjs economic --start=2026-03-17 --end=2026-03-21
 ```
 
+## Account tier
+
+All commands work on the free Yahoo Finance account.
+
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP, fetches crumb from Yahoo API

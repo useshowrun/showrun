@@ -53,6 +53,10 @@ Types: `all`, `equity`, `mutualfund`, `etf`, `index`, `future`, `currency`, `cry
 
 Returns `[{symbol, shortName, exchange, quoteType, regularMarketPrice, ...}]`
 
+## Account tier
+
+Both commands (`search`, `lookup`) work on the free Yahoo Finance account.
+
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP, then fetches a crumb token from Yahoo Finance API

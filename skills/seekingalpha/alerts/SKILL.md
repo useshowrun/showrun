@@ -56,6 +56,10 @@ node seekingalpha-alerts.mjs market
 
 Returns whether the US market is currently open, plus next open/close times.
 
+## Account tier
+
+All commands work on the free (Basic) Seeking Alpha account.
+
 ## How it works
 
 1. **auth** -- Uses CDP to extract cookies from a Seeking Alpha browser tab. Saves `cookie` string and `userCookieKey` to `session.json`.

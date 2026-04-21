@@ -30,6 +30,10 @@ node yahoofinance-options.mjs chain AAPL --date=2026-04-17
 node yahoofinance-options.mjs chain TSLA --date=2026-06-19
 ```
 
+## Account tier
+
+Both commands (`expirations`, `chain`) work on the free Yahoo Finance account.
+
 ## How it works
 
 1. `auth` — Extracts A3 cookie from Chrome via CDP, then fetches a crumb from Yahoo's `/v1/test/getcrumb` endpoint
