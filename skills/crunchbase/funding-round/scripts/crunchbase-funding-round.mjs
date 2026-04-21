@@ -48,7 +48,7 @@ function findCdpScript() {
 }
 
 function cdp(...args) {
-  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
+  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000, maxBuffer: 100 * 1024 * 1024 }).trim();
 }
 
 function findCrunchbaseTab() {
@@ -242,10 +242,20 @@ const SECTIONS = {
   timeline: {
     listCard: 'timeline',
     defaultCount: 50,
+    // `timeline` exists as a card on the direct entity endpoint but not as a
+    // section on the overrides endpoint — use card_ids fetch instead.
+    useCardEndpoint: true,
     display(item) {
-      return JSON.stringify(item);
+      const title = item.properties?.identifier?.value || 'Untitled';
+      const kind = item.properties?.entity_def_id || '';
+      const url = item.activity_properties?.url?.value || '';
+      const date = item.activity_properties?.posted_on || '';
+      return `[${date || kind}] ${title}${url ? `\n      ${url}` : ''}`;
     },
-    summary() { return []; },
+    summary(cards) {
+      const count = cards.timeline_meta?.count;
+      return count != null ? [`Timeline events: ${count}`] : [];
+    },
   },
 };
 
@@ -254,9 +264,24 @@ async function fetchSection(auth, input, sectionName, { count, afterId } = {}) {
   if (!config) throw new Error(`Unknown section: ${sectionName}`);
 
   const permalink = await resolveToPermalink(auth, input);
-  const sectionId = config.sectionId || sectionName;
   const limit = count || config.defaultCount;
 
+  if (config.useCardEndpoint) {
+    const uuid = await resolvePermalink(auth, input);
+    const cardIds = encodeURIComponent(JSON.stringify([config.listCard]));
+    const data = await apiFetch(auth,
+      `/v4/data/entities/funding_rounds/${uuid}?card_ids=${cardIds}`);
+    // Normalize to the shape `printSection` expects: cards[listCard] = items[]
+    const card = data.cards?.[config.listCard];
+    const entities = card?.entities || card || [];
+    const trimmed = entities.slice(0, limit);
+    return {
+      properties: data.properties,
+      cards: { [config.listCard]: trimmed, ...(card?.count != null ? { [config.listCard + '_meta']: { count: card.count } } : {}) },
+    };
+  }
+
+  const sectionId = config.sectionId || sectionName;
   const fieldIds = encodeURIComponent(JSON.stringify(
     ['identifier', 'layout_id', 'facet_ids', 'title', 'short_description', 'is_locked']));
   const sectionIds = encodeURIComponent(JSON.stringify([sectionId]));

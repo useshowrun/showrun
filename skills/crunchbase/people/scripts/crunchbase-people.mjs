@@ -49,7 +49,7 @@ function findCdpScript() {
 }
 
 function cdp(...args) {
-  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
+  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000, maxBuffer: 100 * 1024 * 1024 }).trim();
 }
 
 function findCrunchbaseTab() {
@@ -203,6 +203,8 @@ const SECTIONS = {
   education: {
     listCard: 'education_image_list',
     defaultCount: 50,
+    // Crunchbase rejects a `limit` on this card ("could not override limit").
+    noLimit: true,
     display(item) {
       const degree = item.type_name || '';
       const subject = item.subject || '';
@@ -242,7 +244,8 @@ function fetchSection(session, input, sectionName, { count, afterId } = {}) {
     ['identifier', 'layout_id', 'facet_ids', 'title', 'short_description', 'is_locked']));
   const sectionIds = encodeURIComponent(JSON.stringify([sectionId]));
 
-  const cardLookup = { card_id: config.listCard, limit };
+  const cardLookup = { card_id: config.listCard };
+  if (!config.noLimit) cardLookup.limit = limit;
   if (afterId) cardLookup.after_id = afterId;
 
   return apiFetch(session,

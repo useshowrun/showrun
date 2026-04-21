@@ -30,11 +30,16 @@ node crunchbase-funding-round.mjs news series-a--abc-company --count=20
 node crunchbase-funding-round.mjs timeline series-a--abc-company
 ```
 
+## Account tier
+
+All commands work on the free Crunchbase account. Only the cross-entity `advanced-search search` (separate skill) requires Crunchbase Pro.
+
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
 2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/funding_rounds/{uuid}`
-3. Section commands (`investors`, `news`, `timeline`) — Use the overrides endpoint `POST /v4/data/entities/funding_rounds/{permalink}/overrides?field_ids=[...]&section_ids=[...]` to fetch paginated section data
+3. `investors`, `news` — POST `/v4/data/entities/funding_rounds/{permalink}/overrides?field_ids=[...]&section_ids=[...]` with paginated `card_lookups`.
+4. `timeline` — GETs the direct entity endpoint with `card_ids=["timeline"]`. The overrides endpoint rejects `timeline` as a section; it's only exposed as a card.
 
 Available cards: investors_list, news_list, timeline
 

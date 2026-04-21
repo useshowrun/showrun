@@ -25,7 +25,9 @@ node crunchbase-people.mjs view elon-musk
 # View by UUID
 node crunchbase-people.mjs view 6acfa7da-1dbd-936e-d985-cf07a1b27711
 
-# Section commands (all support --count=N --after-id=UUID)
+# Section commands (all support --count=N --after-id=UUID,
+# except `education` — Crunchbase's education card rejects a limit,
+# so the script always returns the full education list)
 node crunchbase-people.mjs investments marc-andreessen --count=50
 node crunchbase-people.mjs exits elon-musk
 node crunchbase-people.mjs education mark-zuckerberg
@@ -42,6 +44,10 @@ node crunchbase-people.mjs news elon-musk --count=20
 | `exits <permalink\|uuid>` | IPO and acquisition exits |
 | `education <permalink\|uuid>` | Education history (degree, school, year) |
 | `news <permalink\|uuid>` | Press and news articles |
+
+## Account tier
+
+All commands work on the free Crunchbase account. Only the cross-entity `advanced-search search` (separate skill) requires Crunchbase Pro.
 
 ## How it works
 

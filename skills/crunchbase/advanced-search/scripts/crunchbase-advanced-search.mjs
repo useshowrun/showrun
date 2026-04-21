@@ -47,7 +47,7 @@ function findCdpScript() {
 }
 
 function cdp(...args) {
-  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
+  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000, maxBuffer: 100 * 1024 * 1024 }).trim();
 }
 
 function findCrunchbaseTab() {
@@ -271,11 +271,25 @@ function listFields(entityType) {
     process.exit(1);
   }
 
-  return entityDef.fields.map(f => ({
-    id: f.id,
-    label: f.label,
-    type: f.type,
-  }));
+  return entityDef.fields.map(f => {
+    // Collect entitlement tiers mentioned on any permission (is_readable,
+    // is_selectable, is_searchable, is_orderable, is_preview, …). Surfacing
+    // these lets callers see which fields are Pro/Business/Enterprise-gated.
+    const tiers = new Set();
+    for (const p of Object.values(f.permissions || {})) {
+      for (const t of p?.entitlement_ids || []) tiers.add(t);
+    }
+    return {
+      id: f.id,
+      label: f.labels?.name,
+      description: f.labels?.description,
+      type: f.type_id,
+      searchable: f.permissions?.is_searchable?.allowed ?? null,
+      selectable: f.permissions?.is_selectable?.allowed ?? null,
+      orderable: f.permissions?.is_orderable?.allowed ?? null,
+      tiers: [...tiers],
+    };
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -370,7 +384,9 @@ switch (command) {
     const fields = listFields(entityType);
     console.log(`Fields for ${entityType} (${fields.length}):\n`);
     for (const f of fields) {
-      console.log(`  ${f.id} (${f.type || 'unknown'})`);
+      const gate = f.tiers.length ? ` [${f.tiers.join(',')}]` : '';
+      const label = f.label ? ` — ${f.label}` : '';
+      console.log(`  ${f.id} (${f.type || 'unknown'})${gate}${label}`);
     }
     break;
   }
