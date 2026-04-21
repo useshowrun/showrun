@@ -196,17 +196,25 @@ const FUNDING_ROUND_FIELDS = [
   'target_money_raised', 'is_equity',
 ];
 
-async function viewFundingRound(auth, input) {
-  const uuid = await resolvePermalink(auth, input);
-
+async function fetchFundingRoundForLayout(auth, uuid, layout) {
   const cardIds = encodeURIComponent(JSON.stringify(FUNDING_ROUND_CARDS));
   const fieldIds = encodeURIComponent(JSON.stringify(FUNDING_ROUND_FIELDS));
-  // `layout_mode=view_v3` triggers the full profile-page card set for a
-  // funding round. See crunchbase-companies for the same pattern.
-  const data = await apiFetch(auth,
-    `/v4/data/entities/funding_rounds/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=view_v3`);
-
-  return data;
+  return apiFetch(auth,
+    `/v4/data/entities/funding_rounds/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=${layout}`);
+}
+async function viewFundingRound(auth, input, view = 'v3') {
+  const uuid = await resolvePermalink(auth, input);
+  if (view === 'both') {
+    const [v2, v3] = await Promise.all([
+      fetchFundingRoundForLayout(auth, uuid, 'view_v2'),
+      fetchFundingRoundForLayout(auth, uuid, 'view_v3'),
+    ]);
+    return {
+      properties: { ...(v2.properties || {}), ...(v3.properties || {}) },
+      cards: { ...(v2.cards || {}), ...(v3.cards || {}) },
+    };
+  }
+  return fetchFundingRoundForLayout(auth, uuid, view === 'v2' ? 'view_v2' : 'view_v3');
 }
 
 // ---------------------------------------------------------------------------
@@ -345,16 +353,21 @@ const sectionCommand = SECTIONS[command];
 if (command === 'auth') {
   await doAuth();
 } else if (command === 'view') {
-  const { positional } = parseFlags(args);
+  const { flags, positional } = parseFlags(args);
   const input = positional[0];
   if (!input) {
-    console.error('Usage: node crunchbase-funding-round.mjs view <permalink|uuid>');
+    console.error('Usage: node crunchbase-funding-round.mjs view <permalink|uuid> [--view=v3|v2|both]');
+    process.exit(1);
+  }
+  const view = flags.view || 'v3';
+  if (!['v3','v2','both'].includes(view)) {
+    console.error(`--view must be one of: v3 (default), v2, both. Got: ${view}`);
     process.exit(1);
   }
 
   const session = getSession();
-  console.log(`Fetching funding round: ${input}...`);
-  const data = await viewFundingRound(session, input);
+  console.log(`Fetching funding round: ${input} (view=${view})...`);
+  const data = await viewFundingRound(session, input, view);
 
   const cacheFile = resolve(CACHE_DIR, `view-${input}.json`);
   saveJson(cacheFile, data);

@@ -194,15 +194,23 @@ const INVESTOR_FIELDS = [
   'num_funds', 'funds_total', 'num_exits_ipo',
 ];
 
-function viewInvestor(session, input) {
-  const uuid = resolvePermalink(session, input);
+function fetchInvestorForLayout(session, uuid, layout) {
   const cardIds = encodeURIComponent(JSON.stringify(INVESTOR_CARDS));
   const fieldIds = encodeURIComponent(JSON.stringify(INVESTOR_FIELDS));
-  // `layout_mode=view_v3` triggers the full profile-page card set (~90+ cards
-  // for an investor-type org) instead of only the cards we name. See
-  // crunchbase-companies for the same pattern.
   return apiFetch(session,
-    `/v4/data/entities/organizations/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=view_v3`);
+    `/v4/data/entities/organizations/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=${layout}`);
+}
+function viewInvestor(session, input, view = 'v3') {
+  const uuid = resolvePermalink(session, input);
+  if (view === 'both') {
+    const v2 = fetchInvestorForLayout(session, uuid, 'view_v2');
+    const v3 = fetchInvestorForLayout(session, uuid, 'view_v3');
+    return {
+      properties: { ...(v2.properties || {}), ...(v3.properties || {}) },
+      cards: { ...(v2.cards || {}), ...(v3.cards || {}) },
+    };
+  }
+  return fetchInvestorForLayout(session, uuid, view === 'v2' ? 'view_v2' : 'view_v3');
 }
 
 // ---------------------------------------------------------------------------
@@ -454,16 +462,21 @@ const sectionCommand = SECTIONS[command];
 if (command === 'auth') {
   doAuth();
 } else if (command === 'view') {
-  const { positional } = parseFlags(args);
+  const { flags, positional } = parseFlags(args);
   const input = positional[0];
   if (!input) {
-    console.error('Usage: node crunchbase-investor.mjs view <permalink|uuid>');
+    console.error('Usage: node crunchbase-investor.mjs view <permalink|uuid> [--view=v3|v2|both]');
+    process.exit(1);
+  }
+  const view = flags.view || 'v3';
+  if (!['v3','v2','both'].includes(view)) {
+    console.error(`--view must be one of: v3 (default), v2, both. Got: ${view}`);
     process.exit(1);
   }
 
   const session = getSession();
-  console.log(`Fetching investor: ${input}...`);
-  const data = viewInvestor(session, input);
+  console.log(`Fetching investor: ${input} (view=${view})...`);
+  const data = viewInvestor(session, input, view);
 
   const cacheFile = resolve(CACHE_DIR, `view-${input}.json`);
   saveJson(cacheFile, data);

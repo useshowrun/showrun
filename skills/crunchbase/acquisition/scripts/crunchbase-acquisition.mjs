@@ -196,19 +196,23 @@ const ACQUISITION_FIELDS = [
   'acquirer_funding_total', 'acquiree_num_funding_rounds', 'acquirer_num_funding_rounds',
 ];
 
-function viewAcquisition(session, input) {
-  const uuid = resolvePermalink(session, input);
-
+function fetchAcquisitionForLayout(session, uuid, layout) {
   const cardIds = encodeURIComponent(JSON.stringify(ACQUISITION_CARDS));
   const fieldIds = encodeURIComponent(JSON.stringify(ACQUISITION_FIELDS));
-  // `layout_mode=view_v3` triggers the full profile-page card set. See
-  // crunchbase-companies for the same pattern. If the server doesn't
-  // recognize it on this entity type, unknown params are ignored, so the
-  // worst case is the same behaviour as before.
-  const data = apiFetch(session,
-    `/v4/data/entities/acquisitions/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=view_v3`);
-
-  return data;
+  return apiFetch(session,
+    `/v4/data/entities/acquisitions/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=${layout}`);
+}
+function viewAcquisition(session, input, view = 'v3') {
+  const uuid = resolvePermalink(session, input);
+  if (view === 'both') {
+    const v2 = fetchAcquisitionForLayout(session, uuid, 'view_v2');
+    const v3 = fetchAcquisitionForLayout(session, uuid, 'view_v3');
+    return {
+      properties: { ...(v2.properties || {}), ...(v3.properties || {}) },
+      cards: { ...(v2.cards || {}), ...(v3.cards || {}) },
+    };
+  }
+  return fetchAcquisitionForLayout(session, uuid, view === 'v2' ? 'view_v2' : 'view_v3');
 }
 
 // ---------------------------------------------------------------------------
@@ -300,16 +304,21 @@ const sectionCommand = SECTIONS[command];
 if (command === 'auth') {
   doAuth();
 } else if (command === 'view') {
-  const { positional } = parseFlags(args);
+  const { flags, positional } = parseFlags(args);
   const input = positional[0];
   if (!input) {
-    console.error('Usage: node crunchbase-acquisition.mjs view <permalink|uuid>');
+    console.error('Usage: node crunchbase-acquisition.mjs view <permalink|uuid> [--view=v3|v2|both]');
+    process.exit(1);
+  }
+  const view = flags.view || 'v3';
+  if (!['v3','v2','both'].includes(view)) {
+    console.error(`--view must be one of: v3 (default), v2, both. Got: ${view}`);
     process.exit(1);
   }
 
   const session = getSession();
-  console.log(`Fetching acquisition: ${input}...`);
-  const data = viewAcquisition(session, input);
+  console.log(`Fetching acquisition: ${input} (view=${view})...`);
+  const data = viewAcquisition(session, input, view);
 
   const cacheFile = resolve(CACHE_DIR, `view-${input}.json`);
   saveJson(cacheFile, data);

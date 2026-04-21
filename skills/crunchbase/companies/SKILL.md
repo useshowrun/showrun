@@ -22,6 +22,15 @@ node crunchbase-companies.mjs auth
 node crunchbase-companies.mjs view google
 node crunchbase-companies.mjs view anthropic
 
+# Pick which profile-page layout to request.
+# Default is v3 (what crunchbase.com's web UI currently uses).
+# v2 is an alternate layout with a different set of cards (more people/investor
+# fields, fewer activity/FAQ cards).
+# `both` fires v2 AND v3 in parallel and merges — ~117 unique cards on a
+# mature company vs 92 for v3 alone. Costs one extra HTTP call.
+node crunchbase-companies.mjs view anthropic --view=v2
+node crunchbase-companies.mjs view anthropic --view=both
+
 # View by UUID
 node crunchbase-companies.mjs view 6acfa7da-1dbd-936e-d985-cf07a1b27711
 
@@ -49,7 +58,7 @@ node crunchbase-companies.mjs exits berkshire-hathaway
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
-2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/organizations/{uuid}?layout_mode=view_v3`. The `layout_mode=view_v3` parameter triggers the server's full profile-page card set (~92 cards for a mature company) regardless of which `card_ids` you pass — the `card_ids` parameter is additive for anything not in that default set (e.g. `news_list`).
+2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/organizations/{uuid}?layout_mode=view_v3` (or `view_v2` or both, per `--view` flag). The `layout_mode` parameter triggers the server's full profile-page card set regardless of which `card_ids` you pass — the `card_ids` parameter is additive for anything not in that default set (e.g. `news_list`). Per-layout counts on a mature company (Anthropic): v3 → 92 cards, v2 → 94 cards, both merged → 117 unique cards. v2 and v3 each have ~25 cards the other doesn't: v2 emphasises people/investor/event-appearance data, v3 emphasises activity (awards, offices, partnerships, product launches), FAQ cards, and growth/prediction cards.
 3. Section commands — Use the overrides endpoint `POST /v4/data/entities/organizations/{permalink}/overrides?field_ids=[...]&section_ids=[...]` to fetch paginated section data
 
 Cards returned by `view` (indicative list for a large company like Anthropic):

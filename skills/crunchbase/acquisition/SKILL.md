@@ -21,6 +21,10 @@ node crunchbase-acquisition.mjs auth
 # View acquisition by permalink (from Crunchbase URL)
 node crunchbase-acquisition.mjs view google-acquires-fitbit
 
+# Pick layout: v3 (default), v2, or both. For acquisitions v2 and v3 return
+# identical card sets — the flag exists for API consistency.
+node crunchbase-acquisition.mjs view google-acquires-fitbit --view=v2
+
 # View by UUID
 node crunchbase-acquisition.mjs view 6acfa7da-1dbd-936e-d985-cf07a1b27711
 
@@ -31,7 +35,7 @@ node crunchbase-acquisition.mjs news google-acquires-fitbit --count=20
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
-2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/acquisitions/{uuid}?layout_mode=view_v3`. `layout_mode=view_v3` triggers the server's full profile card set (~4 cards for an acquisition: `overview_fields`, `acquiree_image_list`, `acquirer_image_list`, `timeline`).
+2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/acquisitions/{uuid}?layout_mode=view_v3` (or `view_v2` or both, per `--view` flag, default `v3`). `layout_mode` triggers the server's full profile card set (~4 cards for an acquisition: `overview_fields`, `acquiree_image_list`, `acquirer_image_list`, `timeline`). Note: for acquisitions, v2 and v3 return identical card sets — `--view=both` provides no extra data (available for API consistency).
 3. Section commands — Use the overrides endpoint `POST /v4/data/entities/acquisitions/{permalink}/overrides?field_ids=[...]&section_ids=[...]` to fetch paginated section data
 
 Available cards (via `view`, with `layout_mode=view_v3`): `overview_fields`, `acquiree_image_list`, `acquirer_image_list`, `timeline`. Plus any additional cards you pass in `card_ids` like `news_list`.

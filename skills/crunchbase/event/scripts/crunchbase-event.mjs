@@ -326,20 +326,25 @@ const EVENT_FIELDS = [
   'rank_event',
 ];
 
-function viewEvent(auth, input) {
-  const uuid = resolvePermalink(auth, input);
-
+function fetchEventForLayout(auth, uuid, layout) {
   const fieldIds = encodeURIComponent(JSON.stringify(EVENT_FIELDS));
-  let url = `/v4/data/entities/events/${uuid}?field_ids=${fieldIds}`;
+  let url = `/v4/data/entities/events/${uuid}?field_ids=${fieldIds}&layout_mode=${layout}`;
   if (EVENT_CARDS.length) {
     url += `&card_ids=${encodeURIComponent(JSON.stringify(EVENT_CARDS))}`;
   }
-  // `layout_mode=view_v3` triggers the server's full profile-page card set.
-  // See crunchbase-companies for the same pattern.
-  url += `&layout_mode=view_v3`;
-  const data = apiFetch(auth, url);
-
-  return data;
+  return apiFetch(auth, url);
+}
+function viewEvent(auth, input, view = 'v3') {
+  const uuid = resolvePermalink(auth, input);
+  if (view === 'both') {
+    const v2 = fetchEventForLayout(auth, uuid, 'view_v2');
+    const v3 = fetchEventForLayout(auth, uuid, 'view_v3');
+    return {
+      properties: { ...(v2.properties || {}), ...(v3.properties || {}) },
+      cards: { ...(v2.cards || {}), ...(v3.cards || {}) },
+    };
+  }
+  return fetchEventForLayout(auth, uuid, view === 'v2' ? 'view_v2' : 'view_v3');
 }
 
 // ---------------------------------------------------------------------------
@@ -363,16 +368,21 @@ const sectionCommand = SECTIONS[command];
 if (command === 'auth') {
   doAuth();
 } else if (command === 'view') {
-  const { positional } = parseFlags(args);
+  const { flags, positional } = parseFlags(args);
   const input = positional[0];
   if (!input) {
-    console.error('Usage: node crunchbase-event.mjs view <permalink|uuid>');
+    console.error('Usage: node crunchbase-event.mjs view <permalink|uuid> [--view=v3|v2|both]');
+    process.exit(1);
+  }
+  const view = flags.view || 'v3';
+  if (!['v3','v2','both'].includes(view)) {
+    console.error(`--view must be one of: v3 (default), v2, both. Got: ${view}`);
     process.exit(1);
   }
 
   const auth = getSession();
-  console.log(`Fetching event: ${input}...`);
-  const data = viewEvent(auth, input);
+  console.log(`Fetching event: ${input} (view=${view})...`);
+  const data = viewEvent(auth, input, view);
 
   const cacheFile = resolve(CACHE_DIR, `view-${input}.json`);
   saveJson(cacheFile, data);

@@ -446,25 +446,32 @@ const COMPANY_FIELDS = [
   'rank_org_company', 'rank_org', 'hubs', 'num_alumni',
 ];
 
-async function viewCompany(auth, input) {
-  const uuid = await resolvePermalink(auth, input);
-
-  // `layout_mode=view_v3` is what the Crunchbase web UI sends when you open an
-  // organization profile page. The server treats it as "load the full profile
-  // layout's default card set" and returns ~97 cards for a mature company —
-  // including aggregates (semrush, builtwith, bombora, ipqwery, apptopia),
-  // activity lists (awards, offices, layoffs, partnership_announcements,
-  // product_launches, key_employee_change_list), similar orgs
-  // (`org_similarity_list: list[100]`), headlines/summaries, and FAQ cards —
-  // regardless of what we pass in card_ids. We still pass an additive
-  // card_ids list so we can pull in cards not in view_v3's default set
-  // (e.g. news_list).
+// `layout_mode=view_v3` is what the Crunchbase web UI sends when you open an
+// organization profile page. The server treats it as "load the full profile
+// layout's default card set" and returns ~91 cards for a mature company.
+// `view_v2` is the alternate layout with a partly overlapping but distinct
+// set (~93 cards, more people/investor/event-appearance cards, fewer
+// activity/FAQ cards). Together the two layouts cover ~116 unique cards.
+async function fetchOrgForLayout(auth, uuid, layout) {
   const cardIds = encodeURIComponent(JSON.stringify(COMPANY_CARDS));
   const fieldIds = encodeURIComponent(JSON.stringify(COMPANY_FIELDS));
-  const data = await apiFetch(auth,
-    `/v4/data/entities/organizations/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=view_v3`);
-
-  return data;
+  return apiFetch(auth,
+    `/v4/data/entities/organizations/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=${layout}`);
+}
+async function viewCompany(auth, input, view = 'v3') {
+  const uuid = await resolvePermalink(auth, input);
+  if (view === 'both') {
+    const [v2, v3] = await Promise.all([
+      fetchOrgForLayout(auth, uuid, 'view_v2'),
+      fetchOrgForLayout(auth, uuid, 'view_v3'),
+    ]);
+    return {
+      properties: { ...(v2.properties || {}), ...(v3.properties || {}) },
+      cards: { ...(v2.cards || {}), ...(v3.cards || {}) },
+    };
+  }
+  const layout = view === 'v2' ? 'view_v2' : 'view_v3';
+  return fetchOrgForLayout(auth, uuid, layout);
 }
 
 // ---------------------------------------------------------------------------
@@ -488,16 +495,21 @@ const sectionCommand = SECTIONS[command];
 if (command === 'auth') {
   await doAuth();
 } else if (command === 'view') {
-  const { positional } = parseFlags(args);
+  const { flags, positional } = parseFlags(args);
   const input = positional[0];
   if (!input) {
-    console.error('Usage: node crunchbase-companies.mjs view <permalink|uuid>');
+    console.error('Usage: node crunchbase-companies.mjs view <permalink|uuid> [--view=v3|v2|both]');
+    process.exit(1);
+  }
+  const view = flags.view || 'v3';
+  if (!['v3','v2','both'].includes(view)) {
+    console.error(`--view must be one of: v3 (default), v2, both. Got: ${view}`);
     process.exit(1);
   }
 
   const session = getSession();
-  console.log(`Fetching company: ${input}...`);
-  const data = await viewCompany(session, input);
+  console.log(`Fetching company: ${input} (view=${view})...`);
+  const data = await viewCompany(session, input, view);
 
   const cacheFile = resolve(CACHE_DIR, `view-${input}.json`);
   saveJson(cacheFile, data);

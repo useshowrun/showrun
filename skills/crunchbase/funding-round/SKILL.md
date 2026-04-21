@@ -21,6 +21,10 @@ node crunchbase-funding-round.mjs auth
 # View funding round by permalink (from Crunchbase URL)
 node crunchbase-funding-round.mjs view series-a--abc-company
 
+# Pick layout: v3 (default), v2, or both. For funding rounds v2 and v3
+# return identical card sets — the flag exists for API consistency.
+node crunchbase-funding-round.mjs view series-a--abc-company --view=v2
+
 # View by UUID
 node crunchbase-funding-round.mjs view 6acfa7da-1dbd-936e-d985-cf07a1b27711
 
@@ -37,7 +41,7 @@ All commands work on the free Crunchbase account. Only the cross-entity `advance
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
-2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/funding_rounds/{uuid}?layout_mode=view_v3`. `layout_mode=view_v3` triggers the server's full profile-page card set (~5 cards for a round: `overview_fields_v2`, `investors_headline`, `investors_list`, `lead_investors_image_list`, `timeline`).
+2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/funding_rounds/{uuid}?layout_mode=view_v3` (or `view_v2` or both, per `--view` flag, default `v3`). `layout_mode` triggers the server's full profile-page card set (~5 cards for a round: `overview_fields_v2`, `investors_headline`, `investors_list`, `lead_investors_image_list`, `timeline`). Note: for funding rounds, v2 and v3 return identical card sets — `--view=both` provides no extra data (available for API consistency).
 3. `investors`, `news` — POST `/v4/data/entities/funding_rounds/{permalink}/overrides?field_ids=[...]&section_ids=[...]` with paginated `card_lookups`.
 4. `timeline` — GETs the direct entity endpoint with `card_ids=["timeline"]`. The overrides endpoint rejects `timeline` as a section; it's only exposed as a card.
 

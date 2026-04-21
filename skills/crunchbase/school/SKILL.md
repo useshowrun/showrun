@@ -22,6 +22,11 @@ node crunchbase-school.mjs auth
 node crunchbase-school.mjs view stanford-university
 node crunchbase-school.mjs view massachusetts-institute-of-technology
 
+# Pick layout: v3 (default), v2, or both. Schools benefit from `--view=both`
+# — v2 exposes school-specific cards, v3 exposes activity/prediction cards.
+# Merged: ~116 unique cards for Stanford (vs 91 for v3 alone).
+node crunchbase-school.mjs view stanford-university --view=both
+
 # View by UUID
 node crunchbase-school.mjs view 6acfa7da-1dbd-936e-d985-cf07a1b27711
 
@@ -39,7 +44,7 @@ node crunchbase-school.mjs sub_organizations stanford-university
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
-2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/organizations/{uuid}?layout_mode=view_v3`. `layout_mode=view_v3` triggers the server's full profile-page card set (~91 cards for a mature school) regardless of `card_ids`. See crunchbase-companies SKILL.md for the full list of card categories.
+2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/organizations/{uuid}?layout_mode=view_v3` (or `view_v2` or both, per `--view` flag, default `v3`). The `layout_mode` parameter triggers the server's full profile-page card set (~91 cards on v3, ~89 on v2, ~116 unique on `both`) regardless of `card_ids`. v2 surfaces school-specific cards like `school_about_fields1/2` and `overview_school_fields`; v3 emphasises activity/signal cards. See crunchbase-companies SKILL.md for full card categories.
 3. Section commands — Use the overrides endpoint `POST /v4/data/entities/organizations/{permalink}/overrides?field_ids=[...]&section_ids=[...]` to fetch paginated section data
 
 Available fields: identifier, short_description, description, operating_status, school_type, school_method, school_program, location_identifiers, categories, num_enrollments, founded_on, website_url, num_alumni, num_founder_alumni, rank_org_school

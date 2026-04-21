@@ -22,6 +22,10 @@ node crunchbase-people.mjs auth
 node crunchbase-people.mjs view mark-zuckerberg
 node crunchbase-people.mjs view elon-musk
 
+# Pick layout: v3 (default), v2, or both. For people, v2 and v3 return
+# identical card sets — flag is provided for API consistency only.
+node crunchbase-people.mjs view mark-zuckerberg --view=v2
+
 # View by UUID
 node crunchbase-people.mjs view 6acfa7da-1dbd-936e-d985-cf07a1b27711
 
@@ -52,7 +56,7 @@ All commands work on the free Crunchbase account. Only the cross-entity `advance
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
-2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/people/{uuid}?layout_mode=view_v3`. The `layout_mode=view_v3` parameter triggers the server's full profile-page card set (~31 cards for a well-known person) regardless of which `card_ids` you pass.
+2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/people/{uuid}?layout_mode=view_v3` (or `view_v2` or both, per `--view` flag, default `v3`). The `layout_mode` parameter triggers the server's full profile-page card set (~31 cards for a well-known person) regardless of which `card_ids` you pass. Note: for people, `view_v2` and `view_v3` return identical card sets — `--view=both` provides no extra data (it's available for API consistency with the other skills).
 3. Section commands — Use the overrides endpoint `POST /v4/data/entities/people/{permalink}/overrides?field_ids=[...]&section_ids=[...]` to fetch paginated section data
 
 Cards returned by `view` (~31 for a well-known person): overview, bio, education, investments/exits summaries, news, social fields, prediction cards, contact fields, and FAQ cards. List cards (e.g. education, investments, news) still cap at ~10 items — use the section commands for paginated full lists.
