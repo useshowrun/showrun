@@ -51,7 +51,17 @@ node similarweb-market.mjs benchmarks "News and Media" --country=826
 
 ## Account tier
 
-All commands work on the free (Basic) SimilarWeb account with the default `--country=999` view.
+All commands work on the free (Basic) SimilarWeb account, **but `leaders`, `trends`, and `benchmarks` are silently paywalled**.
+
+**Silent paywall — `leaders`**: The API returns `domains[]` of whatever length you requested (default 50), but **only positions 1–5 are real**. Indexes `[5..]` ship back with `domain: "grid.upgrade"` and fake metrics. `totalDomains` shows the true industry size (e.g. 70) while free tier sees 5 names. Verified across `--country=999` and `--country=840`.
+
+**Silent paywall — `trends`**: `rising[]` and `declining[]` are almost entirely `grid.upgrade` placeholders on free. For AI_Chatbots_and_Tools, only 1 of 10 rising domains and 0 of 10 declining domains were real.
+
+**Silent paywall — `benchmarks`**: The script computes averages, medians, and concentration locally from `leaders` output. On free tier, `grid.upgrade` placeholders are included in the math, so **all benchmarks are numerically meaningless** — treat them as useless until upgraded.
+
+**Country filter is NOT enforced on `leaders`** (verified `--country=840` returned data), though the result still has placeholder-padded lists past position 5.
+
+Detection pattern: filter out any item whose `domain` contains `grid.upgrade` before trusting the data.
 
 ## How it works
 

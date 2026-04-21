@@ -32,7 +32,12 @@ Ticker input accepts uppercase (`AAPL`), lowercase (`aapl`), or full URLs (`http
 
 ## Account tier
 
-`compare` works on the free (Basic) account. ⚠️ Quant Grades (Value/Growth/Profitability/Momentum/EPS Revisions) come back as `N/A` on Basic — those scores are a Premium feature. Company info and key metrics still populate.
+`compare` works on the free (Basic) account with a silent paywall:
+
+- Every ticker's `grades` object is returned as `{value: null, growth: null, profitability: null, momentum: null, epsRevisions: null}` on Basic — Quant Grades are a Premium feature.
+- Numeric `metrics` (market cap, P/E, dividend yield, revenue/EPS growth, margins, ROE, TEV, employee/analyst/author counts) and the company info block all populate normally.
+
+Detection: if every `grades.*` value is `null` across all tickers in the payload, you're on Basic — that's not a bug.
 
 ## How it works
 

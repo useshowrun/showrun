@@ -41,9 +41,23 @@ node crunchbase-advanced-search.mjs fields companies
 
 ## Account tier
 
-**Free / standard account**: `fields` works.
+**Free / standard account**:
+- `fields` — full metadata, including which fields are Pro-gated.
+- `search` — works as a **preview**. Three caveats:
+  1. **Only non-Pro fields** are selectable. Pass `--field-ids=<csv>` containing only fields that don't carry a `[pro]` tag in `fields <entity>` output. The script's default field list is Pro-heavy and will fail with HTTP 400 `entitlement_ids: ["pro"]`.
+  2. **Per-page limit is 15.** `--count=16+` returns HTTP 400 `"search limit cannot exceed 15"`.
+  3. **Pagination is Pro-only.** `--after-id=...` returns HTTP 400 `entitlement_ids: ["pro"]`, so free tier sees the first 15 matches per query and no further.
 
-**Requires Crunchbase Pro**: `search` on any entity type. The API rejects the default field list with HTTP 400 and `entitlement_ids: ["pro"]` on fields like `operating_status`, `first_name`, `num_investors`, etc. — "Search 4M+ private companies with full results" is Crunchbase Pro's marquee feature.
+Safe free-tier field sets (verified Round 3):
+- `companies`: `identifier,short_description,categories,location_identifiers,founded_on,funding_total,website_url,founder_identifiers,ipo_status`
+- `people`: `identifier,location_identifiers`
+- `investors`: `identifier,location_identifiers,investor_type`
+- `funding_rounds`: `identifier,investment_type,money_raised,announced_on`
+- `acquisitions`: `identifier,announced_on,price`
+- `schools`: `identifier,location_identifiers,categories,founded_on`
+- `events`: `identifier,starts_on,ends_on,location_identifiers`
+
+**Requires Crunchbase Pro**: the default field set, per-page counts above 15, and any cross-page pagination. "Search 4M+ private companies with full results" is Pro's marquee feature.
 
 ## How it works
 

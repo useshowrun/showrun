@@ -30,7 +30,7 @@ node crunchbase-acquisition.mjs news google-acquires-fitbit --count=20
 
 ## Account tier
 
-All commands work on the free Crunchbase account. Only the cross-entity `advanced-search search` (separate skill) requires Crunchbase Pro.
+Works on free. **Section commands (currently just `news`) cap at `--count=10`** on free (HTTP 400 `"could not override limit"` above 10). The script defaults to 50, which fails — always use `--count=10` and paginate with `--after-id`. Cross-entity `advanced-search search` is documented separately.
 
 ## How it works
 

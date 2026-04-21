@@ -39,7 +39,9 @@ node similarweb-keywords.mjs trends chatgpt.com
 
 ## Account tier
 
-All commands work on the free (Basic) SimilarWeb account with the worldwide view. The Basic plan does not officially include keyword research, but the API returns data regardless on the default 1-month, `--country=999` window. Country-specific filters may be server-enforced.
+All commands work on the free (Basic) SimilarWeb account with the worldwide view. The Basic plan does not officially include keyword research, but the API returns data regardless on the default 1-month, `--country=999` window.
+
+**Country filter is server-enforced on `overview`** (HTTP 400 `{"Country":["Country must be one of: '999'."]}` for `--country=840` etc.). Other subcommands (`ranks`, `pages`, `gap`, `trends`) weren't exercised with a country flag in Round 3 — assume the same enforcement applies.
 
 ## How it works
 

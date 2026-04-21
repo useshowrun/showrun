@@ -47,7 +47,11 @@ node crunchbase-people.mjs news elon-musk --count=20
 
 ## Account tier
 
-All commands work on the free Crunchbase account. Only the cross-entity `advanced-search search` (separate skill) requires Crunchbase Pro.
+Works on free with one silent-paywall caveat:
+
+- **Section commands cap at `--count=10`** (HTTP 400 `"could not override limit"`/`MD101` above 10). Default is 50, which always fails on free. Pass `--count=10` and paginate with `--after-id` for full coverage. `education` is unaffected (the card rejects a limit on any tier, so the script already returns the full list).
+
+The cross-entity `advanced-search search` is documented separately (also has free-tier caveats).
 
 ## How it works
 

@@ -38,7 +38,11 @@ node crunchbase-school.mjs sub_organizations stanford-university
 
 ## Account tier
 
-All commands work on the free Crunchbase account. Only the cross-entity `advanced-search search` (separate skill) requires Crunchbase Pro.
+Works on free with one silent-paywall caveat:
+
+- **Section commands cap at `--count=10`** on free (HTTP 400 `"could not override limit"` above 10). The example above `alumni --count=50` fails on free — always use `--count=10` and paginate with `--after-id` for full coverage.
+
+Cross-entity `advanced-search search` is documented separately.
 
 ## How it works
 

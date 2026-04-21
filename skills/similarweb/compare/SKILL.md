@@ -31,7 +31,9 @@ node similarweb-compare.mjs channels spotify.com apple.com --country=826
 
 ## Account tier
 
-Both commands work on the free (Basic) SimilarWeb account with the default worldwide (`--country=999`) view. Country-specific filters are a Basic-tier restriction ("cannot filter by specific country" per the Basic plan bullet) and may be server-enforced.
+Both commands work on the free (Basic) SimilarWeb account with the default worldwide (`--country=999`) view.
+
+**Country filter is server-enforced** (HTTP 400 `{"Country":["Country must be one of: '999'."]}`) on both `compare` and `channels`. The Basic plan's "cannot filter by specific country" bullet maps directly to this 400.
 
 ## How it works
 

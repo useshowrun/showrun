@@ -66,7 +66,13 @@ Short aliases are also supported: `top`, `editors`, `picks`, `stocks`, `etfs`, `
 
 ## Account tier
 
-All commands work on the free (Basic) Seeking Alpha account. `top-authors` and `saved` typically return empty lists until the account rates/saves articles.
+All commands work on the free (Basic) Seeking Alpha account, with silent-paywall caveats:
+
+- **`top-authors` returns `{authors: []}` on Basic** (not an empty list because there are no authors — it's Premium-only data). Round 3 verified this. No HTTP error.
+- **`latest` / `for-ticker` articles have `sentiments: null` and `structuredInsights: null` on every item**. Article metadata (title, author, URL, publish date, comment count, `isPaywalled`) works fine; the sentiment-tagging and structured insights are Premium.
+- `saved` returns user-specific saved articles — empty until the account bookmarks something.
+
+Detection: if every article has `sentiments: null` **and** `top-authors` gives `[]`, you're on Basic — that's not a bug.
 
 ## How it works
 

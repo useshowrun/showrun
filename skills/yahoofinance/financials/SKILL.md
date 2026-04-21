@@ -39,7 +39,9 @@ node yahoofinance-financials.mjs
 
 All commands (`income`, `balance`, `cashflow` × annual/quarterly/trailing) work on the free Yahoo Finance account.
 
-⚠️ **Data depth is tier-gated.** Free accounts receive roughly the last 4 fiscal periods. Yahoo Finance Gold ($39.95/mo) advertises "~40 years of income statements / balance sheets / cash flow reports" — that extended history is not available through this endpoint on Free tier. If you need more than ~4 years, you need Gold (and the official product there is CSV download, not the JSON we parse).
+⚠️ **Silent data-depth cap — 5 fiscal periods.** Round 3 measured exactly 5 periods returned for every statement type (annual or quarterly), regardless of symbol. No error, no marker — just a short list. Yahoo Finance Gold ($39.95/mo) advertises "~40 years of income statements / balance sheets / cash flow reports"; that history is simply not included in the free-tier response. If you need more than 5 periods, you need Gold (and the official product there is CSV download, not the JSON we parse).
+
+Detection: `len(periods) == 5` on this endpoint means you're seeing the free-tier cap, not the real data depth.
 
 ## How it works
 

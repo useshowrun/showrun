@@ -64,7 +64,28 @@ Ticker input accepts uppercase (`AAPL`), lowercase (`aapl`), or full URLs (`http
 
 ## Account tier
 
-All commands work on the free (Basic) account. ⚠️ `quantRating` and `authorsRating` fields are `null` on Basic (Premium feature per the plan page); `sellSideRating` and all numeric metrics (financials, earnings, dividends, valuation, growth, profitability, momentum, peers) are available.
+All commands work on the free (Basic) account, but several fields are **silently stripped** (null) rather than returning an HTTP error.
+
+**Ratings (`ratings`, `summary`):**
+- `quantRating` and `authorsRating` → `null` at `current` and `3m_ago` (Premium feature). `6m_ago` may still be populated from legacy data.
+- `sellSideRating` → populated on all three horizons (Basic-tier feature).
+
+**Factor grades (`valuation`, `growth`, `profitability`, `momentum`):**
+- Every `metrics.*.grade` field returns `null` on Basic. The underlying numeric value (`metrics.*.value`) is populated — only Seeking Alpha's proprietary letter grade is stripped.
+- `comparison compare` (separate skill) has the same pattern: `metrics.*` populated, `grades.*` null across all tickers.
+
+**Dividends (`dividends`):**
+- Only `grades.dividend_yield` is populated. `grades.dividend_safety`, `grades.dividend_growth`, `grades.dividend_consistency` are absent from the response entirely (Premium-only).
+
+**Analysis (`analysis`):**
+- Article metadata (title, author, url, publish date, commentCount, isPaywalled) is returned.
+- `sentiments` and `structuredInsights` are `null` on every article on Basic (Premium features).
+
+**Works without degradation on Basic:**
+- `summary`, `financials` (income/balance/cashflow, annual and quarterly), `earnings`, `peers`, `news`.
+- All numeric metrics across commands (P/E, margins, growth rates, market cap, volume, etc.).
+
+Detection: check for `null` on `grades.*`, `quantRating`, `authorsRating`, `sentiments`, `structuredInsights` — they're Basic-tier silent paywalls, not errors.
 
 ## How it works
 

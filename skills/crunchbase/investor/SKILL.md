@@ -32,7 +32,12 @@ node crunchbase-investor.mjs investments y-combinator --after-id=<uuid>
 
 ## Account tier
 
-All commands work on the free Crunchbase account. Only the cross-entity `advanced-search search` (separate skill) requires Crunchbase Pro.
+Works on free with silent-paywall caveats:
+
+- **Section commands cap at `--count=10`** on free (HTTP 400 `"could not override limit"` above 10). The example above (`--count=50`) fails on free — always use `--count=10` and paginate with `--after-id`.
+- **`view` list cards (`investments_list`, `funding_rounds_list`) cap at 10 items** regardless of underlying `num_*` totals — use the section command for full lists.
+
+The cross-entity `advanced-search search` is documented separately (also has free-tier caveats).
 
 ## How it works
 

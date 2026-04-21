@@ -32,7 +32,11 @@ node crunchbase-funding-round.mjs timeline series-a--abc-company
 
 ## Account tier
 
-All commands work on the free Crunchbase account. Only the cross-entity `advanced-search search` (separate skill) requires Crunchbase Pro.
+Works on free with one silent-paywall caveat:
+
+- **`investors` / `news` sections cap at `--count=10`** on free (HTTP 400 `"could not override limit"` above 10). The script default is higher than 10 — always pass `--count=10` and paginate with `--after-id`. `timeline` uses the direct card endpoint and isn't subject to this cap.
+
+Cross-entity `advanced-search search` is documented separately.
 
 ## How it works
 

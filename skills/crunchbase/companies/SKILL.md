@@ -48,7 +48,12 @@ node crunchbase-companies.mjs exits berkshire-hathaway
 
 ## Account tier
 
-All commands work on the free Crunchbase account — `view` and every section command. Only the cross-entity `advanced-search search` (separate skill) requires Pro.
+Works on free with two silent-paywall caveats (both verified Round 3):
+
+- **Section commands cap at `--count=10`.** Anything higher returns HTTP 400 `"could not override limit"` (`MD101`). The script's default count is 50, which fails every time — always pass `--count=10` (or lower) on free. Pagination via `--after-id` still works at 10 items per page, so full lists are reachable, just slowly.
+- **`view` is silently capped at 10 per list-card.** `cards.investors_list`, `funding_rounds_list`, `investments_list`, `acquisitions_list`, `current_employees_*` max out at 10 entries regardless of `properties.num_investors` / `num_funding_rounds`. Anthropic's 119 investors show as `investors_list: 10`. Free tier cannot reach the rest; there's **no `investors` section command**, so those 109 investors are simply unreachable without Pro.
+
+Every command except `view` supports `--after-id` pagination at 10/page on free. Cross-entity `advanced-search search` is documented separately (also works with caveats).
 
 ## How it works
 

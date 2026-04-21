@@ -65,7 +65,11 @@ Returns ETF performance data organized into sections. Each category contains one
 
 ## Account tier
 
-All commands work on the free (Basic) account. `top-rated` returns an empty list on Basic — the Top Stocks rankings are a Premium feature; the endpoint still returns 200.
+All commands work on the free (Basic) account, but **`top-rated` is silently paywalled** — the API returns HTTP 200 with `{"command": "top-rated", "cap": "...", "count": 0, "stocks": []}` on Basic. Top Stocks rankings are Premium.
+
+Detection: if `stocks: []` and `count: 0`, you're on Basic — not a missing-data bug.
+
+`indices`, `movers`, `trending`, `top-yielding`, and `tables` all return real data on Basic.
 
 ## How it works
 
