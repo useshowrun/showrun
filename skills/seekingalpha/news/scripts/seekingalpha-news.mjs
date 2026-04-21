@@ -50,7 +50,7 @@ function findCdpScript() {
     || (() => { throw new Error('chrome-cdp skill not found.'); })();
 }
 function cdp(...args) {
-  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 15000 }).trim();
+  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 15000, maxBuffer: 100 * 1024 * 1024 }).trim();
 }
 
 // ---------------------------------------------------------------------------

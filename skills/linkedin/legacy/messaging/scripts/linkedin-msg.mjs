@@ -57,7 +57,7 @@ function findCdpScript() {
 
 function cdp(...args) {
   const script = findCdpScript();
-  return execFileSync('node', [script, ...args], { encoding: 'utf8', timeout: 15000 }).trim();
+  return execFileSync('node', [script, ...args], { encoding: 'utf8', timeout: 15000, maxBuffer: 100 * 1024 * 1024 }).trim();
 }
 
 function findLinkedInTab() {
