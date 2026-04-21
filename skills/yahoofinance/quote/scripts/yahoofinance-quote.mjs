@@ -69,7 +69,7 @@ function findCdpScript() {
 }
 
 function cdp(...args) {
-  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
+  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000, maxBuffer: 100 * 1024 * 1024 }).trim();
 }
 
 function findYahooTab() {
@@ -705,7 +705,9 @@ async function cmdCalendar(session, symbol) {
 // ---------------------------------------------------------------------------
 
 async function cmdSustainability(session, symbol) {
-  const data = await fetchQuoteSummary(session, symbol, ['esgScores']);
+  // Yahoo's quoteSummary returns 404 when `esgScores` is requested on its own,
+  // so piggy-back on `summaryProfile` (always present for valid symbols).
+  const data = await fetchQuoteSummary(session, symbol, ['summaryProfile', 'esgScores']);
 
   printSectionHeader(`${symbol.toUpperCase()} - ESG / Sustainability`);
 

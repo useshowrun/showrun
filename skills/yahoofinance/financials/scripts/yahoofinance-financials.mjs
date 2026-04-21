@@ -209,7 +209,7 @@ function findCdpScript() {
 }
 
 function cdp(...args) {
-  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
+  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000, maxBuffer: 100 * 1024 * 1024 }).trim();
 }
 
 function findYahooTab() {
@@ -312,7 +312,12 @@ function fetchTimeseries(session, symbol, statementType, period) {
   // Build the type= param: prefix + each field name
   const typeParam = keys.map(k => prefix + k).join(',');
 
-  const url = `https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?symbol=${encodeURIComponent(symbol)}&type=${typeParam}&period1=0&period2=9999999999`;
+  // Yahoo's timeseries endpoint returns empty meta when period1=0; it requires
+  // a reasonable epoch. Use ~20 years ago to cover annual history for most tickers.
+  const now = Math.floor(Date.now() / 1000);
+  const period1 = now - (20 * 365 * 86400);
+  const period2 = now;
+  const url = `https://query2.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/${encodeURIComponent(symbol)}?symbol=${encodeURIComponent(symbol)}&type=${typeParam}&period1=${period1}&period2=${period2}`;
 
   console.log(`Fetching ${period} ${statementType} data for ${symbol}...`);
   const result = yahooFetch(session, url);

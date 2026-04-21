@@ -68,7 +68,7 @@ function findCdpScript() {
 }
 
 function cdp(...args) {
-  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
+  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000, maxBuffer: 100 * 1024 * 1024 }).trim();
 }
 
 function findYahooTab() {
@@ -417,7 +417,7 @@ async function cmdShares(session, symbol, flags) {
   const p1 = flags.start ? dateToUnix(flags.start) : now - (548 * 86400);
   const p2 = flags.end ? dateToUnix(flags.end) : now;
 
-  const types = 'quarterlySharesOutstanding,annualSharesOutstanding';
+  const types = 'quarterlyOrdinarySharesNumber,annualOrdinarySharesNumber';
   const url = `${TIMESERIES_BASE}/${encodeURIComponent(symbol)}?symbol=${encodeURIComponent(symbol)}&type=${types}&period1=${p1}&period2=${p2}&crumb=${encodeURIComponent(session.crumb)}`;
 
   const data = await yahooFetch(session, url);
@@ -431,8 +431,8 @@ async function cmdShares(session, symbol, flags) {
 
   for (const series of results) {
     // Check for quarterly or annual data
-    const quarterly = series.quarterlySharesOutstanding || [];
-    const annual = series.annualSharesOutstanding || [];
+    const quarterly = series.quarterlyOrdinarySharesNumber || [];
+    const annual = series.annualOrdinarySharesNumber || [];
     const combined = [...quarterly, ...annual];
 
     for (const entry of combined) {

@@ -63,7 +63,7 @@ function findCdpScript() {
 }
 
 function cdp(...args) {
-  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000 }).trim();
+  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 30000, maxBuffer: 100 * 1024 * 1024 }).trim();
 }
 
 function findYahooTab() {
@@ -202,11 +202,15 @@ function printSectionHeader(title) {
 // ---------------------------------------------------------------------------
 
 async function cmdSummary(session, market) {
+  // The v6 marketSummary endpoint expects a two-letter region code (US, GB, JP…),
+  // not the `*_market` identifier used by the status endpoint. Strip the suffix
+  // and uppercase to keep `--market=us_market` working for both commands.
+  const region = market.replace(/_market$/, '').toUpperCase();
   const params = new URLSearchParams({
     fields: 'shortName,regularMarketPrice,regularMarketChange,regularMarketChangePercent',
     formatted: 'false',
     lang: 'en-US',
-    market,
+    region,
     crumb: session.crumb,
   });
 
