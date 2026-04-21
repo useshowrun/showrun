@@ -33,10 +33,8 @@ node crunchbase-investor.mjs investments y-combinator --after-id=<uuid>
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
-2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/organizations/{uuid}`
+2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/organizations/{uuid}?layout_mode=view_v3`. `layout_mode=view_v3` triggers the server's full profile-page card set (~91 cards for a mature investor firm) regardless of `card_ids`. See crunchbase-companies SKILL.md for the full list of card categories.
 3. `investments` — Fetches paginated investments via POST to `/v4/data/entities/organizations/{permalink}/overrides` with `card_lookups: [{card_id: "investments_list", limit, after_id}]`
-
-Available cards: overview_fields_extended, investments_list, overview_company_fields, funding_rounds_list
 
 Available fields: identifier, short_description, investor_type, investor_stage, num_investments_funding_rounds, num_exits, num_portfolio_organizations, num_lead_investments, funding_total, location_identifiers, categories, num_funds, funds_total, num_exits_ipo
 

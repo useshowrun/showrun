@@ -425,17 +425,13 @@ function printSection(sectionName, data, count) {
 // Company detail
 // ---------------------------------------------------------------------------
 
+// Extra cards to request on top of whatever `layout_mode=view_v3` auto-loads.
+// The layout_mode parameter triggers the server's built-in "profile page"
+// card set (~97 cards for a company), so this list is just for cards that
+// aren't in that default set but are still useful — `news_list` being the
+// obvious one.
 const COMPANY_CARDS = [
-  'overview_fields_extended',
-  'overview_company_fields',
-  'funding_rounds_list',
-  'investments_list',
-  'acquisitions_list',
-  'investors_list',
-  'current_employees_featured_order_field',
-  'overview_timeline',
-  'semrush_summary',
-  'technology_highlights',
+  'news_list',
 ];
 
 const COMPANY_FIELDS = [
@@ -453,11 +449,20 @@ const COMPANY_FIELDS = [
 async function viewCompany(auth, input) {
   const uuid = await resolvePermalink(auth, input);
 
-  // Fetch entity with cards
+  // `layout_mode=view_v3` is what the Crunchbase web UI sends when you open an
+  // organization profile page. The server treats it as "load the full profile
+  // layout's default card set" and returns ~97 cards for a mature company —
+  // including aggregates (semrush, builtwith, bombora, ipqwery, apptopia),
+  // activity lists (awards, offices, layoffs, partnership_announcements,
+  // product_launches, key_employee_change_list), similar orgs
+  // (`org_similarity_list: list[100]`), headlines/summaries, and FAQ cards —
+  // regardless of what we pass in card_ids. We still pass an additive
+  // card_ids list so we can pull in cards not in view_v3's default set
+  // (e.g. news_list).
   const cardIds = encodeURIComponent(JSON.stringify(COMPANY_CARDS));
   const fieldIds = encodeURIComponent(JSON.stringify(COMPANY_FIELDS));
   const data = await apiFetch(auth,
-    `/v4/data/entities/organizations/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}`);
+    `/v4/data/entities/organizations/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=view_v3`);
 
   return data;
 }

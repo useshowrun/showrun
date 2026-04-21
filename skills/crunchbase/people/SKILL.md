@@ -52,10 +52,10 @@ All commands work on the free Crunchbase account. Only the cross-entity `advance
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
-2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/people/{uuid}`
+2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/people/{uuid}?layout_mode=view_v3`. The `layout_mode=view_v3` parameter triggers the server's full profile-page card set (~31 cards for a well-known person) regardless of which `card_ids` you pass.
 3. Section commands — Use the overrides endpoint `POST /v4/data/entities/people/{permalink}/overrides?field_ids=[...]&section_ids=[...]` to fetch paginated section data
 
-Available cards: overview_fields
+Cards returned by `view` (~31 for a well-known person): overview, bio, education, investments/exits summaries, news, social fields, prediction cards, contact fields, and FAQ cards. List cards (e.g. education, investments, news) still cap at ~10 items — use the section commands for paginated full lists.
 
 Available fields: identifier, first_name, last_name, primary_job_title, primary_organization, location_identifiers, short_description, description, gender, linkedin, twitter, facebook, num_founded_organizations, num_investments_funding_rounds, num_exits, num_current_jobs, num_past_jobs, born_on, died_on, rank_person, current_organizations, attended_schools, featured_job
 

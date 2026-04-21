@@ -31,10 +31,10 @@ node crunchbase-acquisition.mjs news google-acquires-fitbit --count=20
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
-2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/acquisitions/{uuid}`
+2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/acquisitions/{uuid}?layout_mode=view_v3`. `layout_mode=view_v3` triggers the server's full profile card set (~4 cards for an acquisition: `overview_fields`, `acquiree_image_list`, `acquirer_image_list`, `timeline`).
 3. Section commands — Use the overrides endpoint `POST /v4/data/entities/acquisitions/{permalink}/overrides?field_ids=[...]&section_ids=[...]` to fetch paginated section data
 
-Available cards: overview_fields
+Available cards (via `view`, with `layout_mode=view_v3`): `overview_fields`, `acquiree_image_list`, `acquirer_image_list`, `timeline`. Plus any additional cards you pass in `card_ids` like `news_list`.
 
 Available fields: identifier, acquiree_identifier, acquirer_identifier, announced_on, price, acquisition_type, status, terms, disposition_of_acquired, completed_on, acquiree_categories, acquirer_categories, acquiree_short_description, acquirer_short_description, acquiree_locations, acquirer_locations, short_description, acquiree_funding_total, acquirer_funding_total, acquiree_num_funding_rounds, acquirer_num_funding_rounds
 

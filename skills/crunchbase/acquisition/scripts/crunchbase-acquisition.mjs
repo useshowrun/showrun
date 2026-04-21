@@ -201,8 +201,12 @@ function viewAcquisition(session, input) {
 
   const cardIds = encodeURIComponent(JSON.stringify(ACQUISITION_CARDS));
   const fieldIds = encodeURIComponent(JSON.stringify(ACQUISITION_FIELDS));
+  // `layout_mode=view_v3` triggers the full profile-page card set. See
+  // crunchbase-companies for the same pattern. If the server doesn't
+  // recognize it on this entity type, unknown params are ignored, so the
+  // worst case is the same behaviour as before.
   const data = apiFetch(session,
-    `/v4/data/entities/acquisitions/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}`);
+    `/v4/data/entities/acquisitions/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=view_v3`);
 
   return data;
 }

@@ -37,11 +37,11 @@ All commands work on the free Crunchbase account. Only the cross-entity `advance
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
-2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/funding_rounds/{uuid}`
+2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/funding_rounds/{uuid}?layout_mode=view_v3`. `layout_mode=view_v3` triggers the server's full profile-page card set (~5 cards for a round: `overview_fields_v2`, `investors_headline`, `investors_list`, `lead_investors_image_list`, `timeline`).
 3. `investors`, `news` — POST `/v4/data/entities/funding_rounds/{permalink}/overrides?field_ids=[...]&section_ids=[...]` with paginated `card_lookups`.
 4. `timeline` — GETs the direct entity endpoint with `card_ids=["timeline"]`. The overrides endpoint rejects `timeline` as a section; it's only exposed as a card.
 
-Available cards: investors_list, news_list, timeline
+Available cards (via `view`, with `layout_mode=view_v3`): `overview_fields_v2`, `investors_headline`, `investors_list` (10), `lead_investors_image_list`, `timeline`. Plus any additional cards you pass in `card_ids` like `news_list`.
 
 Available fields: identifier, funded_organization_identifier, money_raised, investment_type, announced_on, investor_identifiers, num_investors, lead_investor_identifiers, pre_money_valuation, post_money_valuation, short_description, closed_on, target_money_raised, is_equity
 

@@ -201,8 +201,10 @@ async function viewFundingRound(auth, input) {
 
   const cardIds = encodeURIComponent(JSON.stringify(FUNDING_ROUND_CARDS));
   const fieldIds = encodeURIComponent(JSON.stringify(FUNDING_ROUND_FIELDS));
+  // `layout_mode=view_v3` triggers the full profile-page card set for a
+  // funding round. See crunchbase-companies for the same pattern.
   const data = await apiFetch(auth,
-    `/v4/data/entities/funding_rounds/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}`);
+    `/v4/data/entities/funding_rounds/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=view_v3`);
 
   return data;
 }

@@ -39,10 +39,8 @@ node crunchbase-school.mjs sub_organizations stanford-university
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
-2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/organizations/{uuid}`
+2. `view` — Resolves permalink to UUID via search API, then fetches entity with cards from `/v4/data/entities/organizations/{uuid}?layout_mode=view_v3`. `layout_mode=view_v3` triggers the server's full profile-page card set (~91 cards for a mature school) regardless of `card_ids`. See crunchbase-companies SKILL.md for the full list of card categories.
 3. Section commands — Use the overrides endpoint `POST /v4/data/entities/organizations/{permalink}/overrides?field_ids=[...]&section_ids=[...]` to fetch paginated section data
-
-Available cards: overview_fields_extended, overview_company_fields
 
 Available fields: identifier, short_description, description, operating_status, school_type, school_method, school_program, location_identifiers, categories, num_enrollments, founded_on, website_url, num_alumni, num_founder_alumni, rank_org_school
 

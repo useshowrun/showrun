@@ -39,7 +39,7 @@ node crunchbase-event.mjs speakers techcrunch-disrupt-2024 --after-id=<UUID>
 ## How it works
 
 1. `auth` — Extracts cookies from Chrome via CDP
-2. `view` — Resolves permalink to UUID via search API, then fetches entity from `/v4/data/entities/events/{uuid}`
+2. `view` — Resolves permalink to UUID via search API, then fetches entity from `/v4/data/entities/events/{uuid}?layout_mode=view_v3`. `layout_mode=view_v3` triggers the server's full profile-page card set (~17 cards for a mature event). Cards include: `overview_fields_v2`, `overview_description`, `overview_headline`, `speakers_*` (headline/image_list/summary), `sponsors_*`, `exhibitors_*`, `contestants_*`, `hubs_list`, `timeline`.
 3. Section commands — Use the overrides endpoint (`POST /v4/data/entities/events/{permalink}/overrides`) to fetch paginated section data (speakers, sponsors, exhibitors, contestants, news)
 
 Available fields: identifier, starts_on, ends_on, location_identifiers, short_description, description, event_url, venue_name, categories, category_groups, num_speakers, num_sponsors, num_exhibitors, num_contestants, num_organizers, organizer_identifiers, registration_url, event_type, rank_event

@@ -334,6 +334,9 @@ function viewEvent(auth, input) {
   if (EVENT_CARDS.length) {
     url += `&card_ids=${encodeURIComponent(JSON.stringify(EVENT_CARDS))}`;
   }
+  // `layout_mode=view_v3` triggers the server's full profile-page card set.
+  // See crunchbase-companies for the same pattern.
+  url += `&layout_mode=view_v3`;
   const data = apiFetch(auth, url);
 
   return data;

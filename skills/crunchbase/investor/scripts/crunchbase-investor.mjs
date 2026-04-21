@@ -198,8 +198,11 @@ function viewInvestor(session, input) {
   const uuid = resolvePermalink(session, input);
   const cardIds = encodeURIComponent(JSON.stringify(INVESTOR_CARDS));
   const fieldIds = encodeURIComponent(JSON.stringify(INVESTOR_FIELDS));
+  // `layout_mode=view_v3` triggers the full profile-page card set (~90+ cards
+  // for an investor-type org) instead of only the cards we name. See
+  // crunchbase-companies for the same pattern.
   return apiFetch(session,
-    `/v4/data/entities/organizations/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}`);
+    `/v4/data/entities/organizations/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=view_v3`);
 }
 
 // ---------------------------------------------------------------------------

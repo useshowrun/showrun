@@ -285,6 +285,10 @@ function printSection(sectionName, data, count) {
 // Person detail
 // ---------------------------------------------------------------------------
 
+// `layout_mode=view_v3` (sent below in viewPerson) triggers the server's
+// full profile-page layout for people (~31 cards: bio, investments, exits,
+// education, news, predictions, etc.). This list is additive — use it for
+// any card that isn't in the view_v3 default set.
 const PERSON_CARDS = [
   'overview_fields',
 ];
@@ -303,7 +307,7 @@ function viewPerson(session, input) {
   const cardIds = encodeURIComponent(JSON.stringify(PERSON_CARDS));
   const fieldIds = encodeURIComponent(JSON.stringify(PERSON_FIELDS));
   const data = apiFetch(session,
-    `/v4/data/entities/people/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}`);
+    `/v4/data/entities/people/${uuid}?card_ids=${cardIds}&field_ids=${fieldIds}&layout_mode=view_v3`);
 
   return data;
 }
