@@ -47,7 +47,7 @@ function findCdpScript() {
     || (() => { throw new Error('chrome-cdp skill not found.'); })();
 }
 function cdp(...args) {
-  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 15000 }).trim();
+  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 15000, maxBuffer: 100 * 1024 * 1024 }).trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -179,12 +179,13 @@ function dateParam(date) {
 }
 
 function defaultDateRange() {
-  // Last 3 complete months: to = 1st of last month, from = 3 months before that
-  // SimilarWeb data lags ~1 month, so current month is never available
+  // Most recent complete month. SimilarWeb data lags ~1 month, so the current
+  // month is never available, and standard/free accounts only allow a 1-month
+  // window (requests spanning multiple months return HTTP 400).
   const now = new Date();
-  const toDate = new Date(now.getFullYear(), now.getMonth() - 1, 1); // 1st of last month
-  const fromDate = new Date(toDate.getFullYear(), toDate.getMonth() - 2, 1); // 3 months total
-  return { from: dateParam(fromDate), to: dateParam(toDate) };
+  const monthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const d = dateParam(monthDate);
+  return { from: d, to: d };
 }
 
 function fmtLarge(val) {

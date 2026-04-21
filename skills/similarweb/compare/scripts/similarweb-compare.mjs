@@ -46,7 +46,7 @@ function findCdpScript() {
     || (() => { throw new Error('chrome-cdp skill not found.'); })();
 }
 function cdp(...args) {
-  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 15000 }).trim();
+  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 15000, maxBuffer: 100 * 1024 * 1024 }).trim();
 }
 
 // ---------------------------------------------------------------------------
@@ -175,10 +175,11 @@ function dateParam(date) {
 }
 
 function defaultDateRange() {
+  // Most recent complete month - standard/free accounts only allow a 1-month window.
   const now = new Date();
-  const toDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
-  const fromDate = new Date(toDate.getFullYear(), toDate.getMonth() - 2, 1);
-  return { from: dateParam(fromDate), to: dateParam(toDate) };
+  const monthDate = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+  const d = dateParam(monthDate);
+  return { from: d, to: d };
 }
 
 function fmtLarge(val) {
