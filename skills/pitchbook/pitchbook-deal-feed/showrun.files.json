@@ -1,0 +1,8 @@
+{
+  "files": [
+    "SKILL.md",
+    "scripts/pitchbook-deal-feed.mjs",
+    "filter-codes.json",
+    "../lib/utils.mjs"
+  ]
+}

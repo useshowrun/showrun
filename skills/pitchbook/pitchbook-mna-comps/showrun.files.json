@@ -1,0 +1,7 @@
+{
+  "files": [
+    "SKILL.md",
+    "scripts/pitchbook-mna-comps.mjs",
+    "../lib/utils.mjs"
+  ]
+}

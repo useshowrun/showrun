@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { join, dirname, resolve, sep, isAbsolute } from 'node:path';
 import { createInterface } from 'node:readline';
 import { createHash } from 'node:crypto';
 
@@ -254,6 +254,42 @@ async function cmdCheck() {
   saveConfig({ ...loadConfig(), last_check: new Date().toISOString() });
 }
 
+function lockedFiles(entry) {
+  if (entry && Array.isArray(entry.files)) return entry.files;
+  if (entry && typeof entry === 'object') {
+    const files = ['SKILL.md'];
+    if (entry.script_name) files.push(`scripts/${entry.script_name}`);
+    return files;
+  }
+  return ['SKILL.md'];
+}
+
+function safeDestPath(skillsDir, skillPath, relPath) {
+  if (typeof relPath !== 'string' || !relPath) return null;
+  if (isAbsolute(relPath) || /^[a-zA-Z]:[\\/]/.test(relPath)) return null;
+
+  const platform = skillPath.split('/')[0];
+  const platformRoot = resolve(skillsDir, platform);
+  const destDir = resolve(skillsDir, skillPath);
+  const destPath = resolve(destDir, relPath);
+
+  if (destPath !== platformRoot && !destPath.startsWith(platformRoot + sep)) return null;
+  return destPath;
+}
+
+async function downloadFile(skillPath, relPath, destAbsPath) {
+  const url = `${getApiUrl()}/skills/${skillPath}/file?path=${encodeURIComponent(relPath)}`;
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${getApiKey()}` },
+  });
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status} fetching ${relPath}`);
+  }
+  const buf = Buffer.from(await res.arrayBuffer());
+  mkdirSync(dirname(destAbsPath), { recursive: true });
+  writeFileSync(destAbsPath, buf);
+}
+
 async function cmdSync(filter, silent = false) {
   const remote = await apiAuth('/skills');
   const remoteSkills = flattenSkills(remote.platforms);
@@ -274,39 +310,74 @@ async function cmdSync(filter, silent = false) {
 
   for (const skillPath of paths) {
     const lockEntry = lock[skillPath];
+    const destDir = join(skillsDir, skillPath);
+
     if (!filter && lockEntry && lockVersion(lockEntry) === remoteSkills[skillPath]) {
-      // Verify all expected files actually exist on disk
-      const hasSkillMd = existsSync(join(skillsDir, skillPath, 'SKILL.md'));
-      const expectedScript = typeof lockEntry === 'object' ? lockEntry.script_name : null;
-      const hasScript = !expectedScript ||
-        existsSync(join(skillsDir, skillPath, 'scripts', expectedScript));
-      if (hasSkillMd && hasScript) {
+      const expectedFiles = lockedFiles(lockEntry);
+      const allPresent = expectedFiles.every((rel) => {
+        const destPath = safeDestPath(skillsDir, skillPath, rel);
+        return destPath && existsSync(destPath);
+      });
+      if (allPresent) {
         skipped++;
         continue;
       }
     }
 
     const skill = await apiAuth(`/skills/${skillPath}`);
-    const destDir = join(skillsDir, skillPath);
     mkdirSync(destDir, { recursive: true });
 
-    writeFileSync(join(destDir, 'SKILL.md'), skill.skill_md);
+    let writtenFiles = [];
+    let failed = false;
 
-    if (skill.script_name) {
-      const scriptsDir = join(destDir, 'scripts');
-      mkdirSync(scriptsDir, { recursive: true });
-      const scriptRes = await fetch(`${getApiUrl()}/skills/${skillPath}/script`, {
-        headers: { Authorization: `Bearer ${getApiKey()}` },
-      });
-      if (scriptRes.ok) {
-        writeFileSync(join(scriptsDir, skill.script_name), await scriptRes.text());
-      } else {
-        console.error(`  ✗ Failed to download script for ${skillPath} (HTTP ${scriptRes.status})`);
-        continue;
+    if (Array.isArray(skill.files) && skill.files.length) {
+      // New mode: download every file listed by the API, preserving relative layout.
+      for (const f of skill.files) {
+        const destPath = safeDestPath(skillsDir, skillPath, f.path);
+        if (!destPath) {
+          console.error(`  ✗ Unsafe path in response for ${skillPath}: ${f.path}`);
+          failed = true;
+          break;
+        }
+        try {
+          await downloadFile(skillPath, f.path, destPath);
+          writtenFiles.push(f.path);
+        } catch (err) {
+          console.error(`  ✗ Failed to download ${f.path} for ${skillPath}: ${err.message}`);
+          failed = true;
+          break;
+        }
       }
+    } else if (skill.skill_md != null) {
+      // Legacy fallback for older API versions without `files`.
+      writeFileSync(join(destDir, 'SKILL.md'), skill.skill_md);
+      writtenFiles.push('SKILL.md');
+      if (skill.script_name) {
+        const scriptsDir = join(destDir, 'scripts');
+        mkdirSync(scriptsDir, { recursive: true });
+        const scriptRes = await fetch(`${getApiUrl()}/skills/${skillPath}/script`, {
+          headers: { Authorization: `Bearer ${getApiKey()}` },
+        });
+        if (scriptRes.ok) {
+          writeFileSync(join(scriptsDir, skill.script_name), await scriptRes.text());
+          writtenFiles.push(`scripts/${skill.script_name}`);
+        } else {
+          console.error(`  ✗ Failed to download script for ${skillPath} (HTTP ${scriptRes.status})`);
+          failed = true;
+        }
+      }
+    } else {
+      console.error(`  ✗ Empty response for ${skillPath}`);
+      failed = true;
     }
 
-    lock[skillPath] = { version: remoteSkills[skillPath], script_name: skill.script_name || null };
+    if (failed) continue;
+
+    lock[skillPath] = {
+      version: remoteSkills[skillPath],
+      files: writtenFiles,
+      script_name: skill.script_name || null,
+    };
     synced++;
   }
 
