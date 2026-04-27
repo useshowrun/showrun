@@ -2,6 +2,7 @@
   "files": [
     "SKILL.md",
     "scripts/pitchbook-advanced-search.mjs",
+    "filter-codes.json",
     "../lib/utils.mjs"
   ]
 }
