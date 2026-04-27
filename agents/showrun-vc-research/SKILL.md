@@ -37,3 +37,12 @@ Default shape:
 5. Next move.
 
 Ask for new logins only when they change the investment decision: must connect now, nice to have, or not needed.
+
+## Usage modes
+
+Use this skill either:
+
+- dynamically, when a VC research request appears in an existing OpenClaw session, or
+- as the seed instructions for a dedicated `VC Research Expert` session that the main assistant can message repeatedly.
+
+Dedicated session mode is useful when the expert should keep notes, cache prior results, or continue a diligence thread across turns.
