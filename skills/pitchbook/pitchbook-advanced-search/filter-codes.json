@@ -1,0 +1,410 @@
+{
+  "_description": "PitchBook advanced-search criteria codes. Used by pitchbook-advanced-search script (--criteria flag).",
+  "_endpoints": {
+    "setField": "POST /web-api/advanced-search-api-bff/api/v1/search-criteria/{searchId}/fields/{field}/{op}?criteriaKey={key}",
+    "apply": "POST /web-api/advanced-search-api-bff/api/v1/search-criteria/{searchId}/key/{key}/apply",
+    "discoverSchema": "GET /web-api/advanced-search-api-bff/api/v1/search-criteria/{searchId}?criteriaKey={key}"
+  },
+
+  "_groupingConvention": {
+    "_description": "Many collection filters have group codes that represent a parent plus all descendants (e.g. location 'gUS' = United States with every state/metro/area child).",
+    "rule": "When the PitchBook frontend selects a group, it sends the group code AND every child code together in one collection. Mirror this behavior — pass the group code plus all its children for parity with how the UI builds criteria. Passing only the group code often works too, but the safe default is to match the frontend's expansion.",
+    "knownGroupCodes": {
+      "company.location.codes": "Country groups (gUS, gEu, gAs, ...) expand to state/province (sXX), metro ($ suffix), and area (a###) codes. Example: selecting gUS in UI sends gUS + ~150 descendant codes.",
+      "company.businessStatus": "BUSINESS_STATUS = all statuses. The frontend sends BUSINESS_STATUS + every child when 'All' is checked.",
+      "company.financingStatus": "BACKING = all backing statuses. Same expansion rule as above.",
+      "deal.newTypes": "BYSTG (By Stage), BYSER (By Series), BYRN (By Round Number) are grouping headers. The UI sends the header + every child under it when a group-level checkbox is selected."
+    },
+    "agentGuidance": "If you need the precise UI behavior (e.g. for analytics parity with the web app), expand a group by inspecting the actual request in PitchBook's Network tab or by using the criteria-state GET endpoint after a manual UI selection. For typical filtering, passing just the group code is sufficient and well-tested."
+  },
+
+  "ops": {
+    "_description": "URL segment after the field path. Determines body shape. Range fields use separate '.min' and '.max' sub-fields, each set independently.",
+    "collection": "Array-valued filter. Body: {value: [...codes], requestType: 'COLLECTION', updateType: 'SET_VALUE'}",
+    "string": "String-valued filter (dates as ISO 'YYYY-MM-DD'). Body: {value: '<string>', requestType: 'STRING', updateType: 'SET_VALUE'}. Used for range sub-fields like company.dateFounded.min / .max, and single-value strings like company.location.type.",
+    "money": "Currency-valued filter. Body: {value: {amount: <number>, currency: 'USD', asOfDate: 'YYYY-MM-DD'}, requestType: 'MONEY', updateType: 'SET_VALUE'}. Used for range sub-fields like deal.round.amount.min / .max, company.totalRaised.min / .max.",
+    "integer": "Integer-valued filter. Body: {value: <int>, requestType: 'INTEGER', updateType: 'SET_VALUE'}. Used for .trailingDays sub-fields on date ranges.",
+    "boolean": "Boolean-valued filter. Body: {value: true|false, requestType: 'BOOLEAN', updateType: 'SET_VALUE'}. Used for .trailing toggles on date ranges.",
+    "industry-query": "Tree/logical-operation filter for industries, verticals, keywords, emerging spaces. Only used with company.industryQueryCriteria. Body shape: see industryQuery below."
+  },
+
+  "trailingDateRanges": {
+    "_description": "Instead of min/max dates, use a trailing window ('last N days'). Send TWO criteria entries per date range: set .trailingDays (integer op) then set .trailing=true (boolean op). Any pre-existing .min/.max values stay ignored while .trailing=true. Works on any date range field (deal.round.localDateRange, company.dateFounded, etc.).",
+    "_example": [
+      {"field": "deal.round.localDateRange.trailingDays", "op": "integer", "body": {"value": 365, "requestType": "INTEGER", "updateType": "SET_VALUE"}},
+      {"field": "deal.round.localDateRange.trailing", "op": "boolean", "body": {"value": true, "requestType": "BOOLEAN", "updateType": "SET_VALUE"}}
+    ]
+  },
+
+  "businessStatus": {
+    "_field": "company.businessStatus",
+    "_op": "collection",
+    "_description": "Operational status of the business. 'Company Status' tab > 'Business Status' section in UI.",
+    "codes": {
+      "PROF": "Profitable",
+      "REV_GREV": "Generating revenue / not profitable",
+      "DEVT": "Product Development",
+      "CH11": "Bankruptcy (Chapter 11)",
+      "STLH": "Stealth",
+      "STAR": "Startup",
+      "BUSINESS_STATUS": "(Meta — 'All Business Statuses' checkbox. Only pass if selecting all, otherwise omit.)"
+    }
+  },
+
+  "industryQuery": {
+    "_description": "Body shape for field=company.industryQueryCriteria op=industry-query. Supports boolean trees across keywords, industries, verticals, emerging spaces.",
+    "_bodyTemplate": {
+      "value": {
+        "queryMode": "OR | AND | CUSTOM",
+        "expandedKeywordsEnabled": false,
+        "industryQueryItem": {
+          "type": "OR | AND",
+          "queryItemDiscriminator": "LOGICAL_OPERATION",
+          "queryItems": [
+            {
+              "type": "KEYWORD | INDUSTRY | VERTICAL | EMERGING_SPACE",
+              "code": "<code>",
+              "queryItemDiscriminator": "TERM_ITEM",
+              "primaryIndustry": false
+            }
+          ]
+        }
+      },
+      "requestType": "INDUSTRY_QUERY",
+      "updateType": "SET_VALUE"
+    },
+    "_notes": [
+      "queryItems can contain a mix of TERM_ITEM entries and nested LOGICAL_OPERATION subtrees (for CUSTOM mode).",
+      "For a KEYWORD term, code is the literal keyword string (e.g. 'devtools', 'developer tools').",
+      "primaryIndustry=true restricts the match to a company's primary classification.",
+      "Simple OR-of-terms: use queryMode='OR' with a flat queryItems list.",
+      "Mixed AND/OR: use queryMode='CUSTOM' and nest LOGICAL_OPERATION items."
+    ]
+  },
+
+  "industries": {
+    "_description": "Top-level PitchBook industry codes. Passed as TERM_ITEM with type=INDUSTRY inside the industryQueryCriteria tree.",
+    "_note": "Sub-industries use longer numeric codes (e.g. '102100', '207020'). Discover via PitchBook UI or the /industry/counts endpoint. The industryQueryCriteria tree uses explicit TERM_ITEMs — it does not auto-expand groups the way collection filters do, so if you need a specific sub-industry, pass it directly.",
+    "10": "Business Products and Services (B2B)",
+    "20": "Consumer Products and Services (B2C)",
+    "30": "Energy",
+    "40": "Financial Services",
+    "50": "Healthcare",
+    "60": "Information Technology",
+    "70": "Materials and Resources"
+  },
+
+  "verticals": {
+    "_description": "Industry vertical codes. Passed as TERM_ITEM with type=VERTICAL. Same set as pitchbook-deal-feed verticals.",
+    "3D": "3D Printing",
+    "AT": "AdTech",
+    "ADC": "Advanced Manufacturing",
+    "AGTCH": "AgTech",
+    "AIML": "Artificial Intelligence & Machine Learning",
+    "AUDTCH": "AudioTech",
+    "AGTRLT": "Augmented Reality",
+    "ATNMSCRS": "Autonomous Cars",
+    "BAN": "B2B Payments",
+    "BAT": "Beauty",
+    "BD": "Big Data",
+    "CNBS": "Cannabis",
+    "CHN": "Car-Sharing",
+    "CT": "CleanTech",
+    "CAE": "Climate Tech",
+    "CUE": "CloudTech & DevOps",
+    "CTN": "Construction Technology",
+    "CCBC": "Cryptocurrency/Blockchain",
+    "SEC": "Cybersecurity",
+    "DTLHL": "Digital Health",
+    "ECOMM": "E-Commerce",
+    "ET": "EdTech",
+    "EPHMRL": "Ephemeral Content",
+    "EOS": "Esports",
+    "FTH": "FemTech",
+    "FT": "FinTech",
+    "FDC": "FoodTech",
+    "GMN": "Gaming",
+    "HT": "HealthTech",
+    "HRTCH": "HR Tech",
+    "ITS": "Impact Investing",
+    "ISA": "Industrials",
+    "INFR": "Infrastructure",
+    "IT": "InsurTech",
+    "IOT": "Internet of Things",
+    "LAE": "Legal Tech",
+    "LSCI": "Life Sciences",
+    "LOHAS": "LOHAS & Wellness",
+    "MNF": "Manufacturing",
+    "MT": "Marketing Tech",
+    "MMI": "Micro-Mobility",
+    "MOBILE": "Mobile",
+    "MEE": "Mobile Commerce",
+    "MLT": "Mobility Tech",
+    "MGT": "Mortgage Tech",
+    "NANO": "Nanotechnology",
+    "OLA": "Oil & Gas",
+    "ONCO": "Oncology",
+    "PCO": "Pet Technology",
+    "RAN": "Real Estate Technology",
+    "RSTCLG": "Restaurant Technology",
+    "RSI": "Ridesharing",
+    "RAD": "Robotics and Drones",
+    "SAAS": "SaaS",
+    "SPTEC": "Space Technology",
+    "SYN": "Supply Chain Tech",
+    "TMT": "TMT",
+    "VRTLRLT": "Virtual Reality",
+    "WQS": "Wearables & Quantified Self"
+  },
+
+  "emergingSpaces": {
+    "_description": "PitchBook emerging space codes. Passed as TERM_ITEM with type=EMERGING_SPACE. Codes are numeric; discover labels via PitchBook UI.",
+    "_example": "10, 20, 30, 40, 50, 60, 70"
+  },
+
+  "financingStatus": {
+    "_field": "company.financingStatus",
+    "_op": "collection",
+    "_description": "Company backing status. 'Company Status' tab > 'Backing Status' section in UI. Pass one or more codes as a collection.",
+    "codes": {
+      "VCB": "VC-backed",
+      "PEB": "PE-backed",
+      "ACCIB": "Accelerator/Incubator-backed",
+      "ANG": "Angel-backed",
+      "PDF": "Private Debt Financed",
+      "CBOA": "Corporate-backed/Acquired",
+      "CORP": "Corporation",
+      "OTHER": "Other Statuses",
+      "BACKING": "(Group — all backing statuses. Frontend sends BACKING + every child. See _groupingConvention.)",
+      "FDF": "Formerly Debt Financed",
+      "FORM_BACKING": "Formerly Backed",
+      "NVCB": "Non-VC-Backed",
+      "NPEB": "Non-PE-Backed",
+      "NoLAB": "No Longer Active Backing",
+      "NoLAIB": "No Longer Active Institutional Backing",
+      "POT": "Potential (candidate)",
+      "PEND": "Pending deal",
+      "PENDANG": "Pending Angel",
+      "PENDDE": "Pending Debt",
+      "PENDMNA": "Pending M&A",
+      "PENDVC": "Pending VC",
+      "PEND_TRAN": "Pending Transaction",
+      "FAILANG": "Failed Angel deal",
+      "FAILDE": "Failed Debt deal",
+      "FAILED_TRAN": "Failed Transaction",
+      "FAILMNA": "Failed M&A",
+      "FAILPE": "Failed PE deal",
+      "FAILVC": "Failed VC deal"
+    },
+    "_presets": {
+      "vc-backed-any": {
+        "_description": "Any venture-ish backing (VC, Angel, Accelerator).",
+        "_codes": ["VCB", "ANG", "ACCIB"]
+      }
+    }
+  },
+
+  "ownershipStatus": {
+    "_field": "company.ownershipStatus",
+    "_op": "collection",
+    "_description": "Company ownership status. 'Company Status' tab > 'Ownership Status' section in UI.",
+    "codes": {
+      "PVTB": "Privately Held (backing)",
+      "PVTNB": "Privately Held (no backing)",
+      "REG": "In IPO Registration",
+      "IPO": "Publicly Held",
+      "ACQ": "Acquired/Merged",
+      "ACQOS": "Acquired/Merged (Operating Subsidiary)",
+      "GONE": "Out of Business"
+    }
+  },
+
+  "locationCodes": {
+    "_field": "company.location.codes",
+    "_op": "collection",
+    "_description": "Location codes (countries, US states, metros, area codes). Same hierarchical catalog as pitchbook-deal-feed — see pitchbook-deal-feed/filter-codes.json > locations for the full tree with labels.",
+    "_usage": "Each group in the deal-feed tree has an `_allCodes` array that contains the group code + every descendant, pre-expanded. Pass that entire array to match the frontend's selection behavior (see _groupingConvention). For a simple all-of-US filter, `['gUS']` alone works too and returns the same results.",
+    "_topLevel": {
+      "gUS": "United States (see deal-feed _allCodes for all 101 descendants)",
+      "gCA": "Canada",
+      "gEu": "Europe",
+      "gAm": "Americas",
+      "gAs": "Asia",
+      "gAf": "Africa",
+      "gME": "Middle East",
+      "gOc": "Oceania"
+    },
+    "_codePrefixes": {
+      "g": "Region/country-group (gUS, gEu, gAs, ...)",
+      "sg": "Sub-region (sgBayArea, sgNewEngland, sgWesternEurope, ...)",
+      "c": "Country (cUK, cIND, cJAP, ...)",
+      "s": "US state (sCA, sNY, ...). Suffixes like _1/_2 indicate the same state under a different sub-region.",
+      "a": "US area code (a415, a212, ...) or metro (aBA$ = Bay Area metro, aNY$ = NYC metro).",
+      "C_": "Canadian province (C_ON, C_QC, ...)",
+      "UK_": "UK region (UK_EN_LD = London, UK_SC = Scotland, ...)",
+      "A_": "Australian state (A_NSW, A_VIC, ...)"
+    }
+  },
+
+  "locationType": {
+    "_field": "company.location.type (also available on investor.location.type, people.location.type)",
+    "_op": "string",
+    "_description": "How to interpret location codes. 'Location' tab > 'Headquarters' radio group in UI.",
+    "_bodyTemplate": {
+      "value": "HQ_ONLY | NON_HQ_ONLY | ANY",
+      "requestType": "STRING",
+      "updateType": "SET_VALUE"
+    },
+    "values": {
+      "HQ_ONLY": "Search HQ Only (default)",
+      "NON_HQ_ONLY": "Search Non-HQ Only",
+      "ANY": "Any Office Location"
+    }
+  },
+
+  "revenueRange": {
+    "_description": "Revenue range filter. 'Financial Data' tab in UI. Confirmed body shape.",
+    "_fields": {
+      "min": "company.financial.revenue.min",
+      "max": "company.financial.revenue.max"
+    },
+    "_op": "money",
+    "_bodyTemplate": {
+      "value": {"amount": 1000000, "currency": "USD", "asOfDate": "YYYY-MM-DD"},
+      "requestType": "MONEY",
+      "updateType": "SET_VALUE"
+    }
+  },
+
+  "totalRaisedRange": {
+    "_description": "Cumulative total capital raised across all rounds. Confirmed same shape as deal.round.amount.",
+    "_fields": {
+      "min": "company.totalRaised.min",
+      "max": "company.totalRaised.max"
+    },
+    "_op": "money",
+    "_bodyTemplate": {
+      "value": {"amount": 1000000, "currency": "USD", "asOfDate": "YYYY-MM-DD"},
+      "requestType": "MONEY",
+      "updateType": "SET_VALUE"
+    }
+  },
+
+  "dealDate": {
+    "_description": "Deal date range ('most recent deal in range'). 'Deal Criteria' tab > 'Deal Date' in UI. Confirmed ISO date range.",
+    "_fields": {
+      "min": "deal.round.localDateRange.min",
+      "max": "deal.round.localDateRange.max"
+    },
+    "_op": "string",
+    "_bodyTemplate": {
+      "value": "YYYY-MM-DD",
+      "requestType": "STRING",
+      "updateType": "SET_VALUE"
+    }
+  },
+
+  "dateFounded": {
+    "_description": "Company year-founded filter. 'Other Criteria' tab > 'Year Founded' in UI. Range uses TWO separate API calls — one for .min and one for .max.",
+    "_fields": {
+      "min": "company.dateFounded.min",
+      "max": "company.dateFounded.max"
+    },
+    "_op": "string",
+    "_bodyTemplate": {
+      "value": "YYYY-MM-DD",
+      "requestType": "STRING",
+      "updateType": "SET_VALUE"
+    },
+    "_example": "To filter companies founded between 2020-01-01 and 2026-01-01, send two criteria entries: one with field=company.dateFounded.min value='2020-01-01', one with field=company.dateFounded.max value='2026-01-01'."
+  },
+
+  "dealRoundAmount": {
+    "_description": "Deal round amount (per-round funding size). 'Deal Criteria' tab > 'Deal Size' in UI.",
+    "_fields": {
+      "min": "deal.round.amount.min",
+      "max": "deal.round.amount.max"
+    },
+    "_op": "money",
+    "_bodyTemplate": {
+      "value": {"amount": 1, "currency": "USD", "asOfDate": "YYYY-MM-DD"},
+      "requestType": "MONEY",
+      "updateType": "SET_VALUE"
+    },
+    "_note": "asOfDate is typically today. Per-round, NOT total raised."
+  },
+
+  "dealNewTypes": {
+    "_field": "deal.newTypes",
+    "_op": "collection",
+    "_description": "Deal types filter. Filters companies by the types of deals associated with them. Codes are shared with the pitchbook-deal-feed skill — see pitchbook-deal-feed/filter-codes.json for the full catalog of VC/MNA/PE codes, sub-stages, and presets.",
+    "_bodyTemplate": {
+      "value": ["<code>", "..."],
+      "requestType": "COLLECTION",
+      "updateType": "SET_VALUE"
+    },
+    "_presets": {
+      "_description": "Common preset code-lists mirrored from pitchbook-deal-feed/filter-codes.json for convenience.",
+      "pre-series-b": {
+        "_description": "Pre-seed through Series A (everything before Series B). Matches the 'vc-early' preset in pitchbook-deal-feed.",
+        "_codes": ["PAI","POF","EC","SeedA","Cap","SEED","ANG","ANG_A","ANG_B","ANG_C","ANG_D","ANG_E","ANG_F","ANG_G","ANG_H","ANG_I","ANG_J","ANG_K","ANG_1","ANG_2","ANG_3","ANG_ND","EVC","EVC_A","EVC_B","EVC_1","EVC_2","EVC_3","EVC_ND","SRSEED","A","RN1","RN2"]
+      },
+      "series-b-plus": {
+        "_description": "Series B and later stages. Matches 'vc-late' in pitchbook-deal-feed.",
+        "_codes": ["LVC","LVC_A","LVC_B","LVC_C","LVC_D","LVC_E","LVC_F","LVC_G","LVC_H","LVC_I","LVC_J","LVC_K","LVC_1","LVC_2","LVC_3","LVC_ND","B","C","D","E","F","G","H","I","J","K","LSER","LRN","RN3","RN4","RN5","RN6","RN7","RN8","RN9","RN10M"]
+      },
+      "seed-only": {
+        "_description": "Seed and pre-seed only. Matches 'vc-seed' in pitchbook-deal-feed.",
+        "_codes": ["PAI","POF","SeedA","Cap","SEED","SRSEED","RN1"]
+      }
+    }
+  },
+
+  "sorting": {
+    "_description": "Result set sorting. Uses a separate endpoint from criteria: POST /tables/{dataSetId}/columns/sorting with body [{order, columnId, hidden, nullsFirst}]. Set via --sort=<columnId> --sort-order=ASC|DESC on the search/results commands. Default sort is lastFinancingDate DESC. Discover all sortable columns with: node pitchbook-advanced-search.mjs columns <searchId>.",
+    "commonColumns": {
+      "lastFinancingDate": "Most recent financing round date (default)",
+      "lastFinancingSize": "Deal size of most recent round (MONEY)",
+      "lastFinancingValuation": "Valuation at last round (MONEY)",
+      "lastFinancingDealType": "Type of most recent round (e.g. Series A)",
+      "firstFinancingSize": "Deal size of first round",
+      "vcRaised": "Total raised across all rounds",
+      "employees": "Headcount",
+      "yearFounded": "Year founded",
+      "companyName": "Company name (alphabetical)",
+      "hqLocation": "HQ location string"
+    }
+  },
+
+  "_exampleBodies": {
+    "usOnly": {
+      "_field": "company.location.codes",
+      "_op": "collection",
+      "body": {
+        "value": ["gUS"],
+        "requestType": "COLLECTION",
+        "updateType": "SET_VALUE"
+      }
+    },
+    "keywordDevtoolsOrSaaS": {
+      "_field": "company.industryQueryCriteria",
+      "_op": "industry-query",
+      "body": {
+        "value": {
+          "queryMode": "OR",
+          "expandedKeywordsEnabled": false,
+          "industryQueryItem": {
+            "type": "OR",
+            "queryItemDiscriminator": "LOGICAL_OPERATION",
+            "queryItems": [
+              {"type": "KEYWORD", "code": "devtools", "queryItemDiscriminator": "TERM_ITEM", "primaryIndustry": false},
+              {"type": "VERTICAL", "code": "SAAS", "queryItemDiscriminator": "TERM_ITEM", "primaryIndustry": false}
+            ]
+          }
+        },
+        "requestType": "INDUSTRY_QUERY",
+        "updateType": "SET_VALUE"
+      }
+    }
+  }
+}

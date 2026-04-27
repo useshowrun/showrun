@@ -5,9 +5,9 @@ Fetch detailed acquisition data from Crunchbase including acquirer/acquiree deta
 ## Prerequisites
 
 - Node.js 22+
-- Chrome with remote debugging enabled (only for `auth` step)
-- chrome-cdp skill (only for `auth` step)
-- Crunchbase account (logged in via Chrome)
+- If CDP connection fails during `auth`, launch Chrome yourself with `https://www.crunchbase.com` as the initial URL (see chrome-cdp agent guidance)
+- If Chrome is already running via CDP but no Crunchbase tab is open: `node skills/chrome-cdp/scripts/cdp.mjs open https://www.crunchbase.com`
+- If the user is not logged in to Crunchbase, ask them to log in in the Chrome window, then re-run `auth`
 
 ## Setup
 
