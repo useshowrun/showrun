@@ -6,6 +6,6 @@ WORKSPACE="${OPENCLAW_WORKSPACE:-${1:-/srv/openclaw/workspace}}"
 DEST="$WORKSPACE/skills"
 
 mkdir -p "$DEST"
-cp -a "$SCRIPT_DIR"/agents/* "$DEST"/
+cp -a "$SCRIPT_DIR"/showrun-* "$DEST"/
 
 echo "Installed ShowRun OpenClaw skills to $DEST"
