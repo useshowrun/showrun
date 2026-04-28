@@ -1,4 +1,4 @@
-# connectedpapers-papers
+# connectedpapers-graph
 
 Explore academic paper graphs on Connected Papers — build a graph of related papers around a seed paper, find prior work (what shaped a field) and derivative work (where a paper was taken up), or compute industry-impact metrics (venue mix, fields of study, citation totals, year spans). Use this whenever the user mentions Connected Papers, paper graphs, citation networks, literature review around a seed paper, or measuring the impact or lineage of a specific article.
 
