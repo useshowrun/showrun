@@ -4,7 +4,7 @@
 // Usage: node itch-auth.mjs
 // Requires: Chrome running with remote-debug, an itch.io tab logged in.
 
-import { doAuth } from './itch-lib.mjs';
+import { doAuth } from '../../lib/itch-lib.mjs';
 
 doAuth().catch((e) => {
   console.error(`itch-auth failed: ${e.message}`);

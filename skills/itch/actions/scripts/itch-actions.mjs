@@ -22,7 +22,7 @@
 import {
   apiFetch, baseHeaders, getAuth, parseArgs, parseGameSlug, parseUserSlug,
   postForm, printJson, dryRunEnabled,
-} from './itch-lib.mjs';
+} from '../../lib/itch-lib.mjs';
 
 const HELP = `Usage: itch-actions <command> [args] [--live]
   follow <username> [--source=profile]

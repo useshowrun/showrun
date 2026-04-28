@@ -51,7 +51,7 @@ export function writeCache(type, id, data) {
 export function findCdpScript() {
   const candidates = [
     resolve(homedir(), '.claude/skills/chrome-cdp/scripts/cdp.mjs'),
-    resolve(dirname(new URL(import.meta.url).pathname), '../../../chrome-cdp/scripts/cdp.mjs'),
+    resolve(dirname(new URL(import.meta.url).pathname), '../../chrome-cdp/scripts/cdp.mjs'),
   ];
   const found = process.env.CDP_SCRIPT || candidates.find(p => existsSync(p));
   if (!found) throw new Error('chrome-cdp skill not found. Install ~/.claude/skills/chrome-cdp.');

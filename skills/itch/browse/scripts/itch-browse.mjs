@@ -19,7 +19,7 @@ import {
   apiFetch, jsonHeaders, baseHeaders, getAuthOptional, parseArgs,
   parseGameSlug, parseUserSlug, printJson, writeCache,
   parseGameCells, stripTags, decodeHtml,
-} from './itch-lib.mjs';
+} from '../../lib/itch-lib.mjs';
 
 const HELP = `Usage: itch-browse <command> [args]
   browse [--filter=top-rated|free|paid|newest|genre-puzzle|tag-2d|platform-web] [--page=N]

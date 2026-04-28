@@ -11,7 +11,7 @@
 import {
   apiFetch, jsonHeaders, baseHeaders, getAuth, parseArgs,
   printJson, writeCache, parseGameCells, parseEventCells, stripTags, decodeHtml,
-} from './itch-lib.mjs';
+} from '../../lib/itch-lib.mjs';
 
 const HELP = `Usage: itch-feed <command>
   feed [--from-event=<id>]

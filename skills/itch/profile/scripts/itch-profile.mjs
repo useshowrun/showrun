@@ -17,7 +17,7 @@ import { basename } from 'path';
 import {
   apiFetch, baseHeaders, mutationHeaders, getAuth, parseArgs,
   postForm, printJson, dryRunEnabled, extractCsrfFromHtml, stripTags, decodeHtml,
-} from './itch-lib.mjs';
+} from '../../lib/itch-lib.mjs';
 
 const HELP = `Usage: itch-profile <command> [flags] [--live]
   get                                  # show current profile values
