@@ -1,4 +1,4 @@
-# arxiv-papers
+# arxiv-search
 
 Search arXiv for papers (by title, author, abstract, category, or free text), fetch full metadata for a specific arXiv ID or URL, list newest papers in a category (cs.CL, cs.LG, stat.ML, etc.), and read arXiv's own site-wide usage stats (monthly submissions, monthly downloads, hourly usage).
 
