@@ -1,4 +1,4 @@
-# gdelt-news
+# gdelt-articles
 
 Global news monitoring from the GDELT Project — full-text search across worldwide news in 65+ languages, daily mention-volume / tone / language timelines, theme-tagged events (PROTEST, KILL, ECON_BANKING…), per-domain article streams, and source-country breakdowns. Free, no auth, public DOC 2.0 API.
 
