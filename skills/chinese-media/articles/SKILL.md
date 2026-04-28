@@ -1,4 +1,4 @@
-# chinese-media-news
+# chinese-media-articles
 
 Read Chinese English-language media — Xinhua, Global Times, People's Daily, CGTN, South China Morning Post, China MOFA — to get Beijing's or Hong Kong's own framing on world events. Tries RSS first, falls back to per-source HTML listing scraping when feeds are dead or stale. Supports keyword search over the full cached corpus and lets users add custom sources.
 
