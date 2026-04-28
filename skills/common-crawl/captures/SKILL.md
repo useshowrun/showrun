@@ -1,4 +1,4 @@
-# common-crawl-index
+# common-crawl-captures
 
 Common Crawl data — index lookup of any URL across the public web crawl corpus, capture counts as a coverage / freshness signal, distinct-URL counts per domain, raw WARC record retrieval. Free, no auth, public CDX-style index API at `index.commoncrawl.org`. Useful for SEO research, dataset building, and tracking how / whether the open web has indexed a given URL or domain.
 
