@@ -1,3 +1,8 @@
+---
+name: crunchbase-investor
+description: "Fetch detailed investor profiles from Crunchbase including portfolio, investments, funds, and exits."
+---
+
 # crunchbase-investor
 
 Fetch detailed investor profiles from Crunchbase including portfolio, investments, funds, and exits.

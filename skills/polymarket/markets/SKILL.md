@@ -1,3 +1,8 @@
+---
+name: polymarket-markets
+description: "Current prediction market prices from Polymarket — who's favored for political outcomes, geopolitical events, AI milestones, or any binary/multi-outcome question. Uses the free public Gamma API at `https://gamma-api.polymarket.com/`. Supports top-by-volume, keyword search across all active markets, events browsing, and per-market detail."
+---
+
 # polymarket-markets
 
 Current prediction market prices from Polymarket — who's favored for political outcomes, geopolitical events, AI milestones, or any binary/multi-outcome question. Uses the free public Gamma API at `https://gamma-api.polymarket.com/`. Supports top-by-volume, keyword search across all active markets, events browsing, and per-market detail.

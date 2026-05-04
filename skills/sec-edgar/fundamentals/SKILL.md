@@ -1,3 +1,8 @@
+---
+name: sec-edgar-fundamentals
+description: "SEC EDGAR XBRL Financial Data API wrapper — every numeric line item ever reported by a U.S. public company (revenue, EPS, assets, cash flow, etc.) plus cross-sectional peer comparisons. Free, no auth, no API key. Direct replacement for Yahoo Finance / Bloomberg fundamentals."
+---
+
 # sec-edgar-fundamentals
 
 SEC EDGAR XBRL Financial Data API wrapper — every numeric line item ever reported by a U.S. public company (revenue, EPS, assets, cash flow, etc.) plus cross-sectional peer comparisons. Free, no auth, no API key. Direct replacement for Yahoo Finance / Bloomberg fundamentals.

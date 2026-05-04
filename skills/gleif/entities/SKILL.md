@@ -1,3 +1,8 @@
+---
+name: gleif-entities
+description: "Global Legal Entity Identifier (LEI) registry — the authoritative open dataset for \"who owns whom\" in the global economy. Free, no auth, no API key. Wraps the official GLEIF API at `https://api.gleif.org/api/v1`."
+---
+
 # gleif-entities
 
 Global Legal Entity Identifier (LEI) registry — the authoritative open dataset for "who owns whom" in the global economy. Free, no auth, no API key. Wraps the official GLEIF API at `https://api.gleif.org/api/v1`.

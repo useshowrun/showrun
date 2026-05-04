@@ -1,3 +1,8 @@
+---
+name: groundnews-feed
+description: "Fetch Ground News feeds, stories, bias breakdowns, and source articles from the terminal. All API-based — no browser needed after initial auth."
+---
+
 # groundnews-feed
 
 Fetch Ground News feeds, stories, bias breakdowns, and source articles from the terminal. All API-based — no browser needed after initial auth.

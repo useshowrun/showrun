@@ -1,3 +1,8 @@
+---
+name: similarweb-market
+description: "Industry/market analysis from SimilarWeb: website rankings by industry, market leaders, rising/declining players, and industry benchmarks."
+---
+
 # similarweb-market
 
 Industry/market analysis from SimilarWeb: website rankings by industry, market leaders, rising/declining players, and industry benchmarks.

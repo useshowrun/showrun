@@ -1,3 +1,8 @@
+---
+name: salesnav-account-search
+description: "Run ad-hoc Sales Navigator account/company searches with all 15+ filter types via the LinkedIn Sales API."
+---
+
 # salesnav-account-search
 
 Run ad-hoc Sales Navigator account/company searches with all 15+ filter types via the LinkedIn Sales API.

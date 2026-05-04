@@ -1,3 +1,8 @@
+---
+name: groundnews-user
+description: "Fetch Ground News user profile data, feed settings, subscription info, and manage interests from the terminal. All API-based — no browser needed after initial auth."
+---
+
 # groundnews-user
 
 Fetch Ground News user profile data, feed settings, subscription info, and manage interests from the terminal. All API-based — no browser needed after initial auth.

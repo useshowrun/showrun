@@ -1,3 +1,8 @@
+---
+name: salesnav-account-profile
+description: "Fetch comprehensive Sales Navigator account/company profiles including Account IQ, employee insights, alerts, and relationship maps."
+---
+
 # salesnav-account-profile
 
 Fetch comprehensive Sales Navigator account/company profiles including Account IQ, employee insights, alerts, and relationship maps.

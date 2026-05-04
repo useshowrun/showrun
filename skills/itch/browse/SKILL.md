@@ -1,3 +1,8 @@
+---
+name: itch-browse
+description: "Public itch.io scraping — directory listings, search, game / dev / comments / devlog / jam / topic / board pages. Works without login; uses the cached session if available."
+---
+
 # itch-browse
 
 Public itch.io scraping — directory listings, search, game / dev / comments / devlog / jam / topic / board pages. Works without login; uses the cached session if available.

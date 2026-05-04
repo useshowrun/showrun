@@ -1,3 +1,8 @@
+---
+name: seekingalpha-portfolio
+description: "View and manage Seeking Alpha portfolios, holdings, and rating change alerts."
+---
+
 # seekingalpha-portfolio
 
 View and manage Seeking Alpha portfolios, holdings, and rating change alerts.

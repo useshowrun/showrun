@@ -1,3 +1,8 @@
+---
+name: yahoofinance-historical
+description: "Fetch historical price data (OHLCV), dividends, stock splits, and shares outstanding from Yahoo Finance."
+---
+
 # yahoofinance-historical
 
 Fetch historical price data (OHLCV), dividends, stock splits, and shares outstanding from Yahoo Finance.

@@ -1,3 +1,8 @@
+---
+name: yahoofinance-calendar
+description: "Fetch financial event calendars from Yahoo Finance — earnings, IPOs, stock splits, and economic events. All calendar types use Yahoo's visualization API (no HTML scraping)."
+---
+
 # yahoofinance-calendar
 
 Fetch financial event calendars from Yahoo Finance — earnings, IPOs, stock splits, and economic events. All calendar types use Yahoo's visualization API (no HTML scraping).

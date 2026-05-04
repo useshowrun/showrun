@@ -1,3 +1,8 @@
+---
+name: pitchbook
+description: "Collect financial data from Pitchbook — company profiles, deals, investors, valuations, and more."
+---
+
 # Pitchbook Skills
 
 Collect financial data from Pitchbook — company profiles, deals, investors, valuations, and more.

@@ -1,3 +1,8 @@
+---
+name: connectedpapers-graph
+description: "Explore academic paper graphs on Connected Papers — build a graph of related papers around a seed paper, and find prior work (what shaped a field) or derivative work (where a paper was taken up). Use this whenever the user mentions Connected Papers, paper graphs, citation networks, or literature review around a seed paper."
+---
+
 # connectedpapers-graph
 
 Explore academic paper graphs on Connected Papers — build a graph of related papers around a seed paper, and find prior work (what shaped a field) or derivative work (where a paper was taken up). Use this whenever the user mentions Connected Papers, paper graphs, citation networks, or literature review around a seed paper.

@@ -1,3 +1,8 @@
+---
+name: groundnews-interests
+description: "Fetch Ground News interests (topics, people, sources), stories, blindspot analysis, and edition data from the terminal. All data endpoints are public — no authentication needed for API calls."
+---
+
 # groundnews-interests
 
 Fetch Ground News interests (topics, people, sources), stories, blindspot analysis, and edition data from the terminal. All data endpoints are public — no authentication needed for API calls.

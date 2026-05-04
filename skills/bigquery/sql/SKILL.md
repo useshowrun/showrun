@@ -1,3 +1,8 @@
+---
+name: bigquery-sql
+description: "Query Google BigQuery — generic SQL access to any project the user can read, with first-class shortcuts for the 42 BigQuery Public Datasets (project `bigquery-public-data`). Wraps the BigQuery REST API: queries, dataset / table / schema metadata, row sampling, dry-run cost estimates."
+---
+
 # bigquery-sql
 
 Query Google BigQuery — generic SQL access to any project the user can read, with first-class shortcuts for the 42 BigQuery Public Datasets (project `bigquery-public-data`). Wraps the BigQuery REST API: queries, dataset / table / schema metadata, row sampling, dry-run cost estimates.

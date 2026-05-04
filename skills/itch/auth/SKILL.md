@@ -1,3 +1,8 @@
+---
+name: itch-auth
+description: "Extract itch.io session cookies from a logged-in Chrome tab via the chrome-cdp skill, and persist them to `~/.local/share/showrun/data/itch/session.json` for the other itch endpoints (browse, feed, actions, profile) to reuse."
+---
+
 # itch-auth
 
 Extract itch.io session cookies from a logged-in Chrome tab via the chrome-cdp skill, and persist them to `~/.local/share/showrun/data/itch/session.json` for the other itch endpoints (browse, feed, actions, profile) to reuse.

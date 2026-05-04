@@ -1,3 +1,8 @@
+---
+name: cloudflare-radar-domains
+description: "Traffic / DNS / routing intelligence from Cloudflare Radar — domain rankings, traffic trends, attack data, top categories, AS info — as a research-grade alternative to Similarweb. Uses the public Cloudflare API at `api.cloudflare.com/client/v4/radar`."
+---
+
 # cloudflare-radar-domains
 
 Traffic / DNS / routing intelligence from Cloudflare Radar — domain rankings, traffic trends, attack data, top categories, AS info — as a research-grade alternative to Similarweb. Uses the public Cloudflare API at `api.cloudflare.com/client/v4/radar`.

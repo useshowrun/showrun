@@ -1,3 +1,8 @@
+---
+name: seekingalpha-analysis
+description: "Expert analysis articles, top author metrics, and saved/bookmarked articles from Seeking Alpha."
+---
+
 # seekingalpha-analysis
 
 Expert analysis articles, top author metrics, and saved/bookmarked articles from Seeking Alpha.

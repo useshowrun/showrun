@@ -1,3 +1,8 @@
+---
+name: http-archive-pages
+description: "HTTP Archive (httparchive.org) data — monthly crawl of ~12M sites covering page weight, request counts, JS/CSS bytes, Lighthouse scores, Wappalyzer-detected tech stacks, and Web Almanac analysis. Wraps BigQuery's public `httparchive.*` dataset (per-page metrics, per-request metrics, technologies, Lighthouse) plus the public dashboard JSON endpoints."
+---
+
 # http-archive-pages
 
 HTTP Archive (httparchive.org) data — monthly crawl of ~12M sites covering page weight, request counts, JS/CSS bytes, Lighthouse scores, Wappalyzer-detected tech stacks, and Web Almanac analysis. Wraps BigQuery's public `httparchive.*` dataset (per-page metrics, per-request metrics, technologies, Lighthouse) plus the public dashboard JSON endpoints.

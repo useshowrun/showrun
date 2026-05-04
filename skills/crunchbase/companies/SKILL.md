@@ -1,3 +1,8 @@
+---
+name: crunchbase-companies
+description: "Fetch detailed company profiles from Crunchbase including funding rounds, acquisitions, investors, employees, and tech stack."
+---
+
 # crunchbase-companies
 
 Fetch detailed company profiles from Crunchbase including funding rounds, acquisitions, investors, employees, and tech stack.

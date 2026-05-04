@@ -1,3 +1,8 @@
+---
+name: seekingalpha-news
+description: "Market news, breaking news, trending articles, and ticker-specific news from Seeking Alpha."
+---
+
 # seekingalpha-news
 
 Market news, breaking news, trending articles, and ticker-specific news from Seeking Alpha.

@@ -1,3 +1,8 @@
+---
+name: pitchbook-mna-comps
+description: "Fetch M&A comparable transactions for a company."
+---
+
 # pitchbook-mna-comps
 
 Fetch M&A comparable transactions for a company.

@@ -1,3 +1,8 @@
+---
+name: salesnav-messaging
+description: "Sales Navigator InMail/messaging — list inbox threads, read conversations, reply to threads, and send new InMails via the Sales Navigator API."
+---
+
 # salesnav-messaging
 
 Sales Navigator InMail/messaging — list inbox threads, read conversations, reply to threads, and send new InMails via the Sales Navigator API.

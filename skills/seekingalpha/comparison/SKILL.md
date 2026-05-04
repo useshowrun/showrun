@@ -1,3 +1,8 @@
+---
+name: seekingalpha-comparison
+description: "Side-by-side stock comparison from Seeking Alpha: quant grades, key metrics, and company info for 2-10 tickers at once."
+---
+
 # seekingalpha-comparison
 
 Side-by-side stock comparison from Seeking Alpha: quant grades, key metrics, and company info for 2-10 tickers at once.

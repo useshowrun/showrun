@@ -1,3 +1,8 @@
+---
+name: yahoofinance-markets
+description: "Fetch market summary (major indices with prices and changes) and market status (open/close times, timezone) from Yahoo Finance."
+---
+
 # yahoofinance-markets
 
 Fetch market summary (major indices with prices and changes) and market status (open/close times, timezone) from Yahoo Finance.

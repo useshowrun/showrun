@@ -1,3 +1,8 @@
+---
+name: pitchbook-market-maps
+description: "Fetch published market maps from Pitchbook."
+---
+
 # pitchbook-market-maps
 
 Fetch published market maps from Pitchbook.

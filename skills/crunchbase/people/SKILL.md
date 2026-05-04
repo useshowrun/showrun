@@ -1,3 +1,8 @@
+---
+name: crunchbase-people
+description: "Fetch detailed people profiles from Crunchbase including job history, investments, founded organizations, and social links."
+---
+
 # crunchbase-people
 
 Fetch detailed people profiles from Crunchbase including job history, investments, founded organizations, and social links.

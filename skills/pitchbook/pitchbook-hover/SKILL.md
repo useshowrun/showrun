@@ -1,3 +1,8 @@
+---
+name: pitchbook-hover
+description: "Quick company summary from Pitchbook. Much faster than a full profile (1 endpoint vs 6)."
+---
+
 # pitchbook-hover
 
 Quick company summary from Pitchbook. Much faster than a full profile (1 endpoint vs 6).

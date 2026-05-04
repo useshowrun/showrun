@@ -1,3 +1,8 @@
+---
+name: itch-profile
+description: "Read and edit the logged-in user's itch.io profile and account settings — bio, social links, display name, avatar, notification preferences, privacy settings, and the dark-mode toggle. **DRY-RUN by default** — every mutation prints the full request and only sends when `--live` is passed."
+---
+
 # itch-profile
 
 Read and edit the logged-in user's itch.io profile and account settings — bio, social links, display name, avatar, notification preferences, privacy settings, and the dark-mode toggle. **DRY-RUN by default** — every mutation prints the full request and only sends when `--live` is passed.

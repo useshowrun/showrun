@@ -1,3 +1,8 @@
+---
+name: twitter-tweet
+description: "Twitter/X tweet operations: fetch, post, delete, like, retweet, bookmark, and discover similar posts."
+---
+
 # twitter-tweet
 
 Twitter/X tweet operations: fetch, post, delete, like, retweet, bookmark, and discover similar posts.

@@ -1,3 +1,8 @@
+---
+name: itch-feed
+description: "Authenticated reads against the logged-in user's itch.io account — feed events, purchases, collections, notifications, dashboard."
+---
+
 # itch-feed
 
 Authenticated reads against the logged-in user's itch.io account — feed events, purchases, collections, notifications, dashboard.

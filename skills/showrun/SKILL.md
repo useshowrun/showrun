@@ -1,3 +1,8 @@
+---
+name: showrun
+description: "Terminal automation skills for web platforms. CLI commands — no browser needed after initial auth."
+---
+
 # ShowRun Skills
 
 Terminal automation skills for web platforms. CLI commands — no browser needed after initial auth.

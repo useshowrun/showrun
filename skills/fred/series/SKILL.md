@@ -1,3 +1,8 @@
+---
+name: fred-series
+description: "St. Louis Fed FRED economic-data API wrapper — 800 K+ macro time series covering interest rates, inflation, GDP, employment, FX, commodities, money supply, financial conditions, sectoral indices, regional data, and more. The canonical free source for U.S. and global macroeconomic statistics. Free API key required (instant signup); no quota beyond 120 req/min."
+---
+
 # fred-series
 
 St. Louis Fed FRED economic-data API wrapper — 800 K+ macro time series covering interest rates, inflation, GDP, employment, FX, commodities, money supply, financial conditions, sectoral indices, regional data, and more. The canonical free source for U.S. and global macroeconomic statistics. Free API key required (instant signup); no quota beyond 120 req/min.

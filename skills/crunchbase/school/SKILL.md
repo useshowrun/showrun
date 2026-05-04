@@ -1,3 +1,8 @@
+---
+name: crunchbase-school
+description: "Fetch detailed school profiles from Crunchbase including type, program, enrollment, alumni, and founder alumni stats."
+---
+
 # crunchbase-school
 
 Fetch detailed school profiles from Crunchbase including type, program, enrollment, alumni, and founder alumni stats.

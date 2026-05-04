@@ -1,3 +1,8 @@
+---
+name: similarweb-compare
+description: "Side-by-side domain comparison using SimilarWeb Pro: engagement metrics, traffic channels, device split, rankings, and more."
+---
+
 # similarweb-compare
 
 Side-by-side domain comparison using SimilarWeb Pro: engagement metrics, traffic channels, device split, rankings, and more.

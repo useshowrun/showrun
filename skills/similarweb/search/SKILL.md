@@ -1,3 +1,8 @@
+---
+name: similarweb-search
+description: "SimilarWeb search: find domains by name, keyword suggestions, favorites, and recently viewed domains."
+---
+
 # similarweb-search
 
 SimilarWeb search: find domains by name, keyword suggestions, favorites, and recently viewed domains.

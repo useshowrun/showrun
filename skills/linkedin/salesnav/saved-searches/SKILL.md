@@ -1,3 +1,8 @@
+---
+name: salesnav-saved-searches
+description: "List, run, and delete Sales Navigator saved searches (both lead and account types)."
+---
+
 # salesnav-saved-searches
 
 List, run, and delete Sales Navigator saved searches (both lead and account types).

@@ -1,3 +1,8 @@
+---
+name: wayback-cdx-snapshots
+description: "Internet Archive Wayback Machine data — historical snapshots of any URL, snapshot density as a traffic-proxy, first-seen / last-seen dates, content-change tracking. Free, no auth, public CDX (Capture inDeX) API. Useful for forensics, research, and as a Similarweb / Cloudflare-Radar alternative for site activity over time."
+---
+
 # wayback-cdx-snapshots
 
 Internet Archive Wayback Machine data — historical snapshots of any URL, snapshot density as a traffic-proxy, first-seen / last-seen dates, content-change tracking. Free, no auth, public CDX (Capture inDeX) API. Useful for forensics, research, and as a Similarweb / Cloudflare-Radar alternative for site activity over time.

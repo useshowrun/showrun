@@ -1,3 +1,8 @@
+---
+name: raisingfi-funding
+description: "Fetch recent startup funding rounds from Raising.fi — a startup intelligence platform tracking global fundraising activity."
+---
+
 # raisingfi-funding
 
 Fetch recent startup funding rounds from Raising.fi — a startup intelligence platform tracking global fundraising activity.

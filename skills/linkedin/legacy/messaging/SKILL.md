@@ -1,3 +1,8 @@
+---
+name: linkedin-msg
+description: "LinkedIn messaging from the terminal — view conversations, read messages, search contacts, and send messages. No browser needed after initial auth."
+---
+
 # linkedin-msg
 
 LinkedIn messaging from the terminal — view conversations, read messages, search contacts, and send messages. No browser needed after initial auth.

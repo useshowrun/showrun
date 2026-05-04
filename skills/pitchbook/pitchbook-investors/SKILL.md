@@ -1,3 +1,8 @@
+---
+name: pitchbook-investors
+description: "Fetch active investors from Pitchbook."
+---
+
 # pitchbook-investors
 
 Fetch active investors from Pitchbook.

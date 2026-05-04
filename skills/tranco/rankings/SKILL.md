@@ -1,3 +1,8 @@
+---
+name: tranco-rankings
+description: "Research-grade web domain rankings (Tranco list) — daily-published rank for any domain in the global top-1M. Aggregates Alexa, Cisco Umbrella, Cloudflare Radar, and Majestic. Free, no auth required."
+---
+
 # tranco-rankings
 
 Research-grade web domain rankings (Tranco list) — daily-published rank for any domain in the global top-1M. Aggregates Alexa, Cisco Umbrella, Cloudflare Radar, and Majestic. Free, no auth required.

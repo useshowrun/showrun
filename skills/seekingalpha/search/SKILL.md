@@ -1,3 +1,8 @@
+---
+name: seekingalpha-search
+description: "Search for stock symbols, authors, and pages on Seeking Alpha. Includes recent search history and ticker info lookup."
+---
+
 # seekingalpha-search
 
 Search for stock symbols, authors, and pages on Seeking Alpha. Includes recent search history and ticker info lookup.

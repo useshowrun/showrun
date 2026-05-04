@@ -1,3 +1,8 @@
+---
+name: itch-actions
+description: "Mutations on itch.io — follow / unfollow, like / unlike events, rate, comment, vote, download (counter bump), add-to-collection. **DRY-RUN by default** — every mutation prints the full request as `[DRY-RUN]` and only sends when `--live` is passed (or `ITCH_DRY_RUN=0` is set)."
+---
+
 # itch-actions
 
 Mutations on itch.io — follow / unfollow, like / unlike events, rate, comment, vote, download (counter bump), add-to-collection. **DRY-RUN by default** — every mutation prints the full request as `[DRY-RUN]` and only sends when `--live` is passed (or `ITCH_DRY_RUN=0` is set).

@@ -1,3 +1,8 @@
+---
+name: sec-edgar-search
+description: "SEC EDGAR full-text search — query the text of every SEC filing since 2001 (~30 M filings, 10 K to Form 4 to Form D). Free, no auth, no API key. Wraps EDGAR's official EFTS endpoint at `https://efts.sec.gov/LATEST/search-index`. The same engine that powers <https://efts.sec.gov/LATEST/search-index?q=>."
+---
+
 # sec-edgar-search
 
 SEC EDGAR full-text search — query the text of every SEC filing since 2001 (~30 M filings, 10 K to Form 4 to Form D). Free, no auth, no API key. Wraps EDGAR's official EFTS endpoint at `https://efts.sec.gov/LATEST/search-index`. The same engine that powers <https://efts.sec.gov/LATEST/search-index?q=>.

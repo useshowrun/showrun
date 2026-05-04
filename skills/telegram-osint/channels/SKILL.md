@@ -1,3 +1,8 @@
+---
+name: telegram-osint-channels
+description: "Read public Telegram channels for OSINT (conflict tracking, Middle East / Ukraine / defense analysis, opposition media). Scrapes the public `t.me/s/` preview — no auth, no bot token, no API key. Supports subscribing to channels and fetching their latest messages."
+---
+
 # telegram-osint-channels
 
 Read public Telegram channels for OSINT (conflict tracking, Middle East / Ukraine / defense analysis, opposition media). Scrapes the public `t.me/s/` preview — no auth, no bot token, no API key. Supports subscribing to channels and fetching their latest messages.

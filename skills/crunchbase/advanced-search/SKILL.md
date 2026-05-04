@@ -1,3 +1,8 @@
+---
+name: crunchbase-advanced-search
+description: "Search across all Crunchbase entity types (companies, people, investors, funding rounds, acquisitions, schools, events) with full filter support."
+---
+
 # crunchbase-advanced-search
 
 Search across all Crunchbase entity types (companies, people, investors, funding rounds, acquisitions, schools, events) with full filter support.

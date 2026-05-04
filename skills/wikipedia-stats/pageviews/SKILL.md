@@ -1,3 +1,8 @@
+---
+name: wikipedia-stats-pageviews
+description: "Wikimedia Pageviews API wrapper — per-article view counts (daily/monthly), top-article rankings, whole-project aggregates, and OpenSearch title resolution. Free, no auth, no API key required. Goes back to 2015-07-01."
+---
+
 # wikipedia-stats-pageviews
 
 Wikimedia Pageviews API wrapper — per-article view counts (daily/monthly), top-article rankings, whole-project aggregates, and OpenSearch title resolution. Free, no auth, no API key required. Goes back to 2015-07-01.

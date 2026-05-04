@@ -1,3 +1,8 @@
+---
+name: twitter-feed
+description: "Twitter/X home timeline, notifications, direct messages, lists, communities, and geo lookup."
+---
+
 # twitter-feed
 
 Twitter/X home timeline, notifications, direct messages, lists, communities, and geo lookup.

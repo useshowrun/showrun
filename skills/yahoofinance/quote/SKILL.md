@@ -1,3 +1,8 @@
+---
+name: yahoofinance-quote
+description: "Fetch detailed stock/ticker data from Yahoo Finance including price summary, company profile, key statistics, holders, analyst estimates, calendar events, ESG scores, and news."
+---
+
 # yahoofinance-quote
 
 Fetch detailed stock/ticker data from Yahoo Finance including price summary, company profile, key statistics, holders, analyst estimates, calendar events, ESG scores, and news.

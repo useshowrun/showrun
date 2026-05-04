@@ -1,3 +1,8 @@
+---
+name: hackernews-stories
+description: "Browse Hacker News feeds, view posts with comment trees, vote, favorite, comment, and submit stories."
+---
+
 # hackernews-stories
 
 Browse Hacker News feeds, view posts with comment trees, vote, favorite, comment, and submit stories.

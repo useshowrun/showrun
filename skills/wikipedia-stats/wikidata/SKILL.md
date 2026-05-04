@@ -1,3 +1,8 @@
+---
+name: wikipedia-stats-wikidata
+description: "Wikidata lookups — entity-by-Q-id (with free-text `wbsearchentities` fallback), arbitrary SPARQL queries against the public endpoint, and SPARQL-from-file for multi-line queries. Free, no auth, no API key required."
+---
+
 # wikipedia-stats-wikidata
 
 Wikidata lookups — entity-by-Q-id (with free-text `wbsearchentities` fallback), arbitrary SPARQL queries against the public endpoint, and SPARQL-from-file for multi-line queries. Free, no auth, no API key required.

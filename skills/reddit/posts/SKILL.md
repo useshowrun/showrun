@@ -1,3 +1,8 @@
+---
+name: reddit-posts
+description: "Browse Reddit feeds, view posts with comments, vote, save, and comment from the terminal. All API-based -- no browser needed after initial auth."
+---
+
 # reddit-posts
 
 Browse Reddit feeds, view posts with comments, vote, save, and comment from the terminal. All API-based -- no browser needed after initial auth.

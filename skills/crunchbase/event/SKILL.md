@@ -1,3 +1,8 @@
+---
+name: crunchbase-event
+description: "Fetch detailed event profiles from Crunchbase including dates, venue, speakers, sponsors, and organizers."
+---
+
 # crunchbase-event
 
 Fetch detailed event profiles from Crunchbase including dates, venue, speakers, sponsors, and organizers.

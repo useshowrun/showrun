@@ -1,3 +1,8 @@
+---
+name: metaculus-questions
+description: "Community forecast predictions from Metaculus — especially for long-horizon, technical, or scientific questions where Metaculus's forecaster community is stronger than prediction markets. Covers binary, continuous, multiple-choice, and date questions. Uses the official `/api/posts/` endpoint."
+---
+
 # metaculus-questions
 
 Community forecast predictions from Metaculus — especially for long-horizon, technical, or scientific questions where Metaculus's forecaster community is stronger than prediction markets. Covers binary, continuous, multiple-choice, and date questions. Uses the official `/api/posts/` endpoint.

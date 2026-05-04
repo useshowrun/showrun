@@ -1,3 +1,8 @@
+---
+name: crunchbase-funding-round
+description: "Fetch detailed funding round profiles from Crunchbase including investors, valuations, and deal terms."
+---
+
 # crunchbase-funding-round
 
 Fetch detailed funding round profiles from Crunchbase including investors, valuations, and deal terms.

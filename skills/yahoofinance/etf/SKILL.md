@@ -1,3 +1,8 @@
+---
+name: yahoofinance-etf
+description: "Fetch ETF and mutual fund data from Yahoo Finance including holdings, sector weightings, operations, equity/bond metrics."
+---
+
 # yahoofinance-etf
 
 Fetch ETF and mutual fund data from Yahoo Finance including holdings, sector weightings, operations, equity/bond metrics.

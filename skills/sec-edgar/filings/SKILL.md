@@ -1,3 +1,8 @@
+---
+name: sec-edgar-filings
+description: "SEC EDGAR Submissions API wrapper — the complete filing history of any U.S. public company (10-K, 10-Q, 8-K, S-1, Form 4 insider trades, 13F, etc.). Free, no auth, no API key. Works for every SEC filer back to ~1993."
+---
+
 # sec-edgar-filings
 
 SEC EDGAR Submissions API wrapper — the complete filing history of any U.S. public company (10-K, 10-Q, 8-K, S-1, Form 4 insider trades, 13F, etc.). Free, no auth, no API key. Works for every SEC filer back to ~1993.

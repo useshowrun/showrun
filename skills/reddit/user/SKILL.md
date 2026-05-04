@@ -1,3 +1,8 @@
+---
+name: reddit-user
+description: "Fetch Reddit user profiles, posts, comments, trophies, and manage account settings from the terminal. All API-based -- no browser needed after initial auth."
+---
+
 # reddit-user
 
 Fetch Reddit user profiles, posts, comments, trophies, and manage account settings from the terminal. All API-based -- no browser needed after initial auth.

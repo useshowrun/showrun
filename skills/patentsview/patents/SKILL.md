@@ -1,3 +1,8 @@
+---
+name: patentsview-patents
+description: "USPTO PatentsView Search v1 API wrapper — every U.S. patent ever granted, with full inventor / assignee / CPC / abstract metadata. The canonical free source for U.S. patent data. Free API key required (instant signup; no quota beyond 45 req/min). Useful for R&D activity tracking, innovation indicators, hiring leading-indicators, and corporate competitive analysis."
+---
+
 # patentsview-patents
 
 USPTO PatentsView Search v1 API wrapper — every U.S. patent ever granted, with full inventor / assignee / CPC / abstract metadata. The canonical free source for U.S. patent data. Free API key required (instant signup; no quota beyond 45 req/min). Useful for R&D activity tracking, innovation indicators, hiring leading-indicators, and corporate competitive analysis.

@@ -1,3 +1,8 @@
+---
+name: pitchbook-valuations
+description: "Fetch deal valuation multiples from Pitchbook."
+---
+
 # pitchbook-valuations
 
 Fetch deal valuation multiples from Pitchbook.

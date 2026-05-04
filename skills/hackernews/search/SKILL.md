@@ -1,3 +1,8 @@
+---
+name: hackernews-search
+description: "Search Hacker News stories, comments, authors, and front page via the Algolia HN Search API."
+---
+
 # hackernews-search
 
 Search Hacker News stories, comments, authors, and front page via the Algolia HN Search API.

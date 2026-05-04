@@ -1,3 +1,8 @@
+---
+name: yahoofinance-options
+description: "Fetch options chains (calls and puts) from Yahoo Finance, including expiration dates, strike prices, greeks, and underlying quote data."
+---
+
 # yahoofinance-options
 
 Fetch options chains (calls and puts) from Yahoo Finance, including expiration dates, strike prices, greeks, and underlying quote data.

@@ -1,3 +1,8 @@
+---
+name: pitchbook-advanced-search
+description: "Run advanced/screener searches on Pitchbook. Takes ~36 seconds (6 API steps with rate-limit delays)."
+---
+
 # pitchbook-advanced-search
 
 Run advanced/screener searches on Pitchbook. Takes ~36 seconds (6 API steps with rate-limit delays).

@@ -1,3 +1,8 @@
+---
+name: twitter-search
+description: "Twitter/X search and discovery: search tweets, search users, trending topics, and typeahead suggestions."
+---
+
 # twitter-search
 
 Twitter/X search and discovery: search tweets, search users, trending topics, and typeahead suggestions.
