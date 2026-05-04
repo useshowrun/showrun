@@ -1,3 +1,8 @@
+---
+name: linkedin-profile
+description: "Fetch LinkedIn profile data and perform profile actions (connect, follow, etc.) from the terminal. All API-based — no browser needed after initial auth."
+---
+
 # linkedin-profile
 
 Fetch LinkedIn profile data and perform profile actions (connect, follow, etc.) from the terminal. All API-based — no browser needed after initial auth.

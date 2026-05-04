@@ -1,3 +1,8 @@
+---
+name: reddit-search
+description: "Search Reddit posts, comments, subreddits, and users from the terminal."
+---
+
 # reddit-search
 
 Search Reddit posts, comments, subreddits, and users from the terminal.

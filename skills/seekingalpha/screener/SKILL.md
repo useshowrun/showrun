@@ -1,3 +1,8 @@
+---
+name: seekingalpha-screener
+description: "Stock and ETF screener for Seeking Alpha — list saved screeners, run them, browse available filters, and access the built-in \"Top Rated Stocks\" screener."
+---
+
 # seekingalpha-screener
 
 Stock and ETF screener for Seeking Alpha — list saved screeners, run them, browse available filters, and access the built-in "Top Rated Stocks" screener.

@@ -1,3 +1,8 @@
+---
+name: linkedin-posts
+description: "View LinkedIn posts in detail, read comments, see reactions, and interact — like, react, comment, all from the terminal."
+---
+
 # linkedin-posts
 
 View LinkedIn posts in detail, read comments, see reactions, and interact — like, react, comment, all from the terminal.

@@ -1,3 +1,8 @@
+---
+name: linkedin-company
+description: "Fetch LinkedIn company page data from the terminal — overview, funding, locations, jobs, employees, and posts. No browser needed after initial auth."
+---
+
 # linkedin-company
 
 Fetch LinkedIn company page data from the terminal — overview, funding, locations, jobs, employees, and posts. No browser needed after initial auth.

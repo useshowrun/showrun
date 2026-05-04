@@ -1,3 +1,8 @@
+---
+name: pitchbook-advanced-search
+description: "Run advanced/screener searches on Pitchbook with programmatic filter criteria. Takes ~40 seconds (multi-step API flow with rate-limit delays)."
+---
+
 # pitchbook-advanced-search
 
 Run advanced/screener searches on Pitchbook with programmatic filter criteria. Takes ~40 seconds (multi-step API flow with rate-limit delays).

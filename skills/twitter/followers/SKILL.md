@@ -1,3 +1,8 @@
+---
+name: twitter-followers
+description: "Twitter/X follower and following operations: list followers, following, verified followers, mutuals, and bulk-fetch with pagination."
+---
+
 # twitter-followers
 
 Twitter/X follower and following operations: list followers, following, verified followers, mutuals, and bulk-fetch with pagination.

@@ -1,3 +1,8 @@
+---
+name: similarweb-keywords
+description: "SEO keyword research from SimilarWeb: SEO overview, keyword rank distribution, top organic/paid pages, keyword gap analysis, and SEO trends."
+---
+
 # similarweb-keywords
 
 SEO keyword research from SimilarWeb: SEO overview, keyword rank distribution, top organic/paid pages, keyword gap analysis, and SEO trends.

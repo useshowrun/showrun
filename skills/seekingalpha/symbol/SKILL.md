@@ -1,3 +1,8 @@
+---
+name: seekingalpha-symbol
+description: "Stock and ETF data from Seeking Alpha: ratings, financials, earnings, dividends, valuation, growth, profitability, momentum, peers, news, and analysis."
+---
+
 # seekingalpha-symbol
 
 Stock and ETF data from Seeking Alpha: ratings, financials, earnings, dividends, valuation, growth, profitability, momentum, peers, news, and analysis.

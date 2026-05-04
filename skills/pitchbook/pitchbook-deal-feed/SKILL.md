@@ -1,3 +1,8 @@
+---
+name: pitchbook-deal-feed
+description: "Fetch recent deals from Pitchbook with filters."
+---
+
 # pitchbook-deal-feed
 
 Fetch recent deals from Pitchbook with filters.

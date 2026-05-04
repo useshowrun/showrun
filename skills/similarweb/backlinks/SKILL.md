@@ -1,3 +1,8 @@
+---
+name: similarweb-backlinks
+description: "Backlink analytics from SimilarWeb: backlink summary with TLD/country distribution, top referring domains, and individual backlinks with source URLs, anchors, and domain/page scores."
+---
+
 # similarweb-backlinks
 
 Backlink analytics from SimilarWeb: backlink summary with TLD/country distribution, top referring domains, and individual backlinks with source URLs, anchors, and domain/page scores.

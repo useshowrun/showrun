@@ -1,3 +1,8 @@
+---
+name: linkedin-jobs
+description: "Search LinkedIn jobs, view full details with premium insights, save/unsave jobs, and manage your saved job collections — all from the terminal."
+---
+
 # linkedin-jobs
 
 Search LinkedIn jobs, view full details with premium insights, save/unsave jobs, and manage your saved job collections — all from the terminal.

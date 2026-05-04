@@ -1,3 +1,8 @@
+---
+name: hackernews-user
+description: "Fetch Hacker News user profiles, stories, comments, and authenticated views (threads, favorites, upvoted, hidden) from the terminal. Uses Firebase and Algolia public APIs for profile/search, and HN Web with cookie auth for private views."
+---
+
 # hackernews-user
 
 Fetch Hacker News user profiles, stories, comments, and authenticated views (threads, favorites, upvoted, hidden) from the terminal. Uses Firebase and Algolia public APIs for profile/search, and HN Web with cookie auth for private views.

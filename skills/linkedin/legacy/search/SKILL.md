@@ -1,3 +1,8 @@
+---
+name: linkedin-search
+description: "Search LinkedIn for people, companies, groups, schools, events, products, or services by keyword."
+---
+
 # linkedin-search
 
 Search LinkedIn for people, companies, groups, schools, events, products, or services by keyword.

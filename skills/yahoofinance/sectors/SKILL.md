@@ -1,3 +1,8 @@
+---
+name: yahoofinance-sectors
+description: "Fetch Yahoo Finance sector and industry data including overview, top companies, ETFs, mutual funds, and industry breakdowns."
+---
+
 # yahoofinance-sectors
 
 Fetch Yahoo Finance sector and industry data including overview, top companies, ETFs, mutual funds, and industry breakdowns.

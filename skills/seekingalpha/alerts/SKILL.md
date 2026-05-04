@@ -1,3 +1,8 @@
+---
+name: seekingalpha-alerts
+description: "Price & rating alerts, inbox notifications, portfolio tickers, account info, and market status from Seeking Alpha."
+---
+
 # seekingalpha-alerts
 
 Price & rating alerts, inbox notifications, portfolio tickers, account info, and market status from Seeking Alpha.

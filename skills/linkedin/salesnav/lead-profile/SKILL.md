@@ -1,3 +1,8 @@
+---
+name: salesnav-lead-profile
+description: "Fetch comprehensive Sales Navigator lead profile data including contact info, positions, education, skills, Lead IQ insights, spotlights, timeline, notes, and warm intro paths."
+---
+
 # salesnav-lead-profile
 
 Fetch comprehensive Sales Navigator lead profile data including contact info, positions, education, skills, Lead IQ insights, spotlights, timeline, notes, and warm intro paths.

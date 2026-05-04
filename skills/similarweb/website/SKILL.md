@@ -1,3 +1,8 @@
+---
+name: similarweb-website
+description: "Website traffic analytics from SimilarWeb: overview, traffic engagement, marketing channels, audience geography, referrals, similar sites, search traffic, keywords, social traffic, display advertising, and ad publishers."
+---
+
 # similarweb-website
 
 Website traffic analytics from SimilarWeb: overview, traffic engagement, marketing channels, audience geography, referrals, similar sites, search traffic, keywords, social traffic, display advertising, and ad publishers.

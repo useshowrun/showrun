@@ -1,3 +1,8 @@
+---
+name: yahoofinance-screener
+description: "Screen stocks and mutual funds using Yahoo Finance's screener API with predefined or custom queries."
+---
+
 # yahoofinance-screener
 
 Screen stocks and mutual funds using Yahoo Finance's screener API with predefined or custom queries.

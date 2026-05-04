@@ -1,3 +1,8 @@
+---
+name: pitchbook-login
+description: "Authenticate with Pitchbook and save session for API access."
+---
+
 # pitchbook-login
 
 Authenticate with Pitchbook and save session for API access.

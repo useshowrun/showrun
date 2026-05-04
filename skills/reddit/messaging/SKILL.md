@@ -1,3 +1,8 @@
+---
+name: reddit-messaging
+description: "Reddit private messages + chat from the terminal. Supports both legacy PMs (via OAuth API) and real-time chat (via Matrix protocol). All API-based — no browser needed after initial auth."
+---
+
 # reddit-messaging
 
 Reddit private messages + chat from the terminal. Supports both legacy PMs (via OAuth API) and real-time chat (via Matrix protocol). All API-based — no browser needed after initial auth.

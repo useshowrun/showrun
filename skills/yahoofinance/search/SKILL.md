@@ -1,3 +1,8 @@
+---
+name: yahoofinance-search
+description: "Search Yahoo Finance for symbols, quotes, news, and ticker lookups across all asset types."
+---
+
 # yahoofinance-search
 
 Search Yahoo Finance for symbols, quotes, news, and ticker lookups across all asset types.

@@ -1,3 +1,8 @@
+---
+name: linkedin-salesnav-saved-lead-search
+description: "Query LinkedIn Sales Navigator saved searches and fetch full profile data from the terminal. No browser needed after initial auth."
+---
+
 # linkedin-salesnav-saved-lead-search
 
 Query LinkedIn Sales Navigator saved searches and fetch full profile data from the terminal. No browser needed after initial auth.

@@ -1,3 +1,8 @@
+---
+name: twitter-user
+description: "Twitter/X user profile lookup, timeline browsing, and relationship actions (follow, mute, block)."
+---
+
 # twitter-user
 
 Twitter/X user profile lookup, timeline browsing, and relationship actions (follow, mute, block).

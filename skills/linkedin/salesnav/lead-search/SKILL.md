@@ -1,3 +1,8 @@
+---
+name: salesnav-lead-search
+description: "Run ad-hoc Sales Navigator lead searches with all 33+ filter types, fetch full profiles, and export results as JSON."
+---
+
 # salesnav-lead-search
 
 Run ad-hoc Sales Navigator lead searches with all 33+ filter types, fetch full profiles, and export results as JSON.

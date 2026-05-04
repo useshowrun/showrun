@@ -1,3 +1,8 @@
+---
+name: seekingalpha-market
+description: "Market indices, top movers, trending stocks, ETF performance tables, top dividend yields, and top-rated stocks from Seeking Alpha."
+---
+
 # seekingalpha-market
 
 Market indices, top movers, trending stocks, ETF performance tables, top dividend yields, and top-rated stocks from Seeking Alpha.

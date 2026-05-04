@@ -1,3 +1,8 @@
+---
+name: pitchbook-company
+description: "Fetch a full company profile from Pitchbook."
+---
+
 # pitchbook-company
 
 Fetch a full company profile from Pitchbook.

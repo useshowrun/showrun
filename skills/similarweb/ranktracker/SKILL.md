@@ -1,3 +1,8 @@
+---
+name: similarweb-ranktracker
+description: "Search rank tracking from SimilarWeb: list campaigns, view rank distribution over time, and track per-keyword daily SERP positions."
+---
+
 # similarweb-ranktracker
 
 Search rank tracking from SimilarWeb: list campaigns, view rank distribution over time, and track per-keyword daily SERP positions.

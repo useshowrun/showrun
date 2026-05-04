@@ -1,3 +1,8 @@
+---
+name: reddit-subreddit
+description: "Fetch subreddit info, rules, wiki pages, moderators, and manage subscriptions from the terminal. All API-based -- no browser needed after initial auth."
+---
+
 # reddit-subreddit
 
 Fetch subreddit info, rules, wiki pages, moderators, and manage subscriptions from the terminal. All API-based -- no browser needed after initial auth.

@@ -1,3 +1,8 @@
+---
+name: salesnav-lists
+description: "CRUD operations on Sales Navigator lead lists and account lists."
+---
+
 # salesnav-lists
 
 CRUD operations on Sales Navigator lead lists and account lists.

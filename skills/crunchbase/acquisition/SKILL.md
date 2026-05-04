@@ -1,3 +1,8 @@
+---
+name: crunchbase-acquisition
+description: "Fetch detailed acquisition data from Crunchbase including acquirer/acquiree details, price, terms, and deal status."
+---
+
 # crunchbase-acquisition
 
 Fetch detailed acquisition data from Crunchbase including acquirer/acquiree details, price, terms, and deal status.

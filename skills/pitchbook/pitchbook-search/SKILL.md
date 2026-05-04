@@ -1,3 +1,8 @@
+---
+name: pitchbook-search
+description: "Search Pitchbook for companies by name or domain."
+---
+
 # pitchbook-search
 
 Search Pitchbook for companies by name or domain.

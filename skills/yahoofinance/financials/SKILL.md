@@ -1,3 +1,8 @@
+---
+name: yahoofinance-financials
+description: "Fetch income statement, balance sheet, and cash flow data from Yahoo Finance via the fundamentals timeseries API."
+---
+
 # yahoofinance-financials
 
 Fetch income statement, balance sheet, and cash flow data from Yahoo Finance via the fundamentals timeseries API.

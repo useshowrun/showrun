@@ -1,3 +1,8 @@
+---
+name: github-user-repos
+description: "Find a GitHub user and list their top repositories by star count. Useful for VC research on technical founders — e.g. \"did this CTO previously ship a widely-used OSS project?\""
+---
+
 # github-user-repos
 
 Find a GitHub user and list their top repositories by star count. Useful for VC research on technical founders — e.g. "did this CTO previously ship a widely-used OSS project?"
