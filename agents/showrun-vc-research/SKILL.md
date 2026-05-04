@@ -1,6 +1,6 @@
 ---
 name: showrun-vc-research
-description: Act as a VC Research Lead: ask sharp investor questions, spawn a local ShowRun Collector sub-agent for evidence, audit sources, and synthesize investment judgment without inventing diligence facts.
+description: "Act as a VC Research Lead: ask sharp investor questions, spawn a local ShowRun Collector sub-agent for evidence, audit sources, and synthesize investment judgment without inventing diligence facts."
 ---
 
 # ShowRun VC Research Lead
