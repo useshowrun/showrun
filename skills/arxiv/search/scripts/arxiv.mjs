@@ -16,15 +16,15 @@
 // 2. Stats CSV endpoints — discovered from https://arxiv.org/stats/* (d3.csv(...))
 //    /stats/get_monthly_submissions  → month,submissions,historical_delta
 //    /stats/get_monthly_downloads    → month,downloads
-//    /stats/get_hourly?date=YYYYMMDD → hourly breakdown for a given day
 //
-//    These power the charts at /stats/monthly_submissions, /stats/monthly_downloads,
-//    and /stats/today. No documented API — URLs reverse-engineered from the page JS.
+//    These power the charts at /stats/monthly_submissions and
+//    /stats/monthly_downloads. No documented API — URLs reverse-engineered
+//    from the page JS.
 //
 // Requires Node 22+ (built-in fetch). Stdlib only.
 
 import { resolve, dirname } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'fs';
+import { writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 
 // ---------------------------------------------------------------------------
@@ -33,7 +33,6 @@ import { homedir } from 'os';
 
 const DATA_DIR = resolve(homedir(), '.local/share/showrun/data/arxiv');
 const CACHE_DIR = resolve(DATA_DIR, 'cache');
-const INDEX_FILE = resolve(CACHE_DIR, 'index.jsonl');
 
 const API_BASE = 'https://export.arxiv.org/api/query';
 const STATS_BASE = 'https://arxiv.org/stats';
@@ -47,8 +46,6 @@ const RATE_LIMIT_MS = 3000;          // arXiv asks for a 3s gap between API call
 
 function ensureDir(dir) { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); }
 function saveJson(path, data) { ensureDir(dirname(path)); writeFileSync(path, JSON.stringify(data, null, 2)); }
-function loadJson(path, fallback) { if (!existsSync(path)) return fallback; return JSON.parse(readFileSync(path, 'utf8')); }
-function appendIndex(row) { ensureDir(CACHE_DIR); appendFileSync(INDEX_FILE, JSON.stringify(row) + '\n'); }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ---------------------------------------------------------------------------
@@ -245,7 +242,6 @@ async function cmdSearch(query, opts) {
 
   const slug = slugify(`${opts.field || 'all'}-${query}`);
   saveJson(resolve(CACHE_DIR, `search-${slug}.json`), { query, sortBy, order, fetched_at: new Date().toISOString(), total: feed.total, entries: feed.entries });
-  for (const e of feed.entries) appendIndex({ kind: 'search_hit', arxiv_id: e.arxiv_id_base, title: e.title, published: e.published, ts: Date.now() });
 
   if (opts.json) { console.log(JSON.stringify(feed, null, 2)); return; }
   console.log(`# arXiv search: ${search}   (${feed.total.toLocaleString()} total, showing ${feed.entries.length} starting at ${feed.start}, sort=${sortBy}/${order})\n`);
@@ -257,7 +253,6 @@ async function cmdPaper(idOrUrl, opts) {
   const feed = await apiQuery({ idList: ids, maxResults: Math.max(1, ids.split(',').length) });
   for (const e of feed.entries) {
     saveJson(resolve(CACHE_DIR, `paper-${e.arxiv_id_base}.json`), { fetched_at: new Date().toISOString(), entry: e });
-    appendIndex({ kind: 'paper', arxiv_id: e.arxiv_id_base, title: e.title, published: e.published, ts: Date.now() });
   }
   if (opts.json) { console.log(JSON.stringify(feed.entries, null, 2)); return; }
   for (const e of feed.entries) {
@@ -348,44 +343,6 @@ async function cmdStatsDownloads(opts) {
   for (const r of last12) console.log(`    ${r.month}  ${String(r.downloads).padStart(10)}`);
 }
 
-async function cmdStatsToday(opts) {
-  const d = opts.date || new Date().toISOString().slice(0, 10).replace(/-/g, '');
-  const csv = await httpGet(`${STATS_BASE}/get_hourly?date=${d}`);
-  const rows = parseCSV(csv);
-  saveJson(resolve(CACHE_DIR, `stats-hourly-${d}.json`), { fetched_at: new Date().toISOString(), date: d, rows });
-  if (opts.json) { console.log(JSON.stringify(rows, null, 2)); return; }
-  console.log(`# arXiv hourly usage for ${d}\n`);
-  for (const r of rows) console.log(`  ${JSON.stringify(r)}`);
-}
-
-// ---------------------------------------------------------------------------
-// Offline
-// ---------------------------------------------------------------------------
-
-async function cmdSearchCache(query) {
-  if (!existsSync(INDEX_FILE)) { console.error('No index yet.'); return; }
-  const q = query.toLowerCase();
-  const lines = readFileSync(INDEX_FILE, 'utf8').split('\n').filter(Boolean);
-  const seen = new Set();
-  for (const line of lines) {
-    try {
-      const row = JSON.parse(line);
-      const text = (row.title || '').toLowerCase();
-      if (row.arxiv_id && text.includes(q) && !seen.has(row.arxiv_id)) {
-        seen.add(row.arxiv_id);
-        console.log(`- ${row.title}\n    arXiv:${row.arxiv_id}  ${(row.published || '').slice(0, 10)}`);
-      }
-    } catch {}
-  }
-}
-
-async function cmdViewCache(idOrUrl) {
-  const id = extractArxivId(idOrUrl);
-  const cachePath = resolve(CACHE_DIR, `paper-${id}.json`);
-  if (!existsSync(cachePath)) { console.error(`No cache for ${id}. Run: paper ${id}`); process.exit(2); }
-  console.log(JSON.stringify(loadJson(cachePath).entry, null, 2));
-}
-
 // ---------------------------------------------------------------------------
 // ID extraction
 // ---------------------------------------------------------------------------
@@ -434,11 +391,6 @@ Search & metadata  (uses https://export.arxiv.org/api/query):
 Stats  (uses https://arxiv.org/stats/get_*  —  undocumented but stable):
   stats-submissions            Monthly submission totals (1991–present)
   stats-downloads              Monthly download totals  (1994–present)
-  stats-today [--date=YYYYMMDD]  Hourly usage for a day (default: today)
-
-Offline:
-  view-cache <id>              Print cached paper metadata
-  search-cache <query>         Grep local index.jsonl
 
 Flags (most commands):
   --limit=N                    Cap results (API cap 2000/call)
@@ -457,10 +409,10 @@ Examples:
   node scripts/arxiv.mjs category cs.CL --limit=15
   node scripts/arxiv.mjs author "Yann LeCun" --limit=5
   node scripts/arxiv.mjs stats-submissions
-  node scripts/arxiv.mjs stats-today --date=20260410
+  node scripts/arxiv.mjs stats-downloads --json
 
 Data layout: ~/.local/share/showrun/data/arxiv/cache/
-  paper-<id>.json, search-<slug>.json, stats-*.json, index.jsonl
+  paper-<id>.json, search-<slug>.json, stats-*.json
 `;
 
 async function main() {
@@ -482,13 +434,6 @@ async function main() {
         await cmdAuthor(positional.slice(1).join(' '), flags); break;
       case 'stats-submissions': await cmdStatsSubmissions(flags); break;
       case 'stats-downloads':   await cmdStatsDownloads(flags); break;
-      case 'stats-today':       await cmdStatsToday(flags); break;
-      case 'view-cache':
-        if (!positional[1]) { console.error('Usage: view-cache <id>'); process.exit(1); }
-        await cmdViewCache(positional[1]); break;
-      case 'search-cache':
-        if (!positional[1]) { console.error('Usage: search-cache <query>'); process.exit(1); }
-        await cmdSearchCache(positional.slice(1).join(' ')); break;
       default:
         console.log(HELP);
         process.exit(cmd ? 1 : 0);

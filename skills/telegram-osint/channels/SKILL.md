@@ -1,6 +1,6 @@
 # telegram-osint-channels
 
-Read public Telegram channels for OSINT (conflict tracking, Middle East / Ukraine / defense analysis, opposition media). Scrapes the public `t.me/s/` preview — no auth, no bot token, no API key. Supports subscribing to channels, searching cached messages, and viewing recent activity across all channels.
+Read public Telegram channels for OSINT (conflict tracking, Middle East / Ukraine / defense analysis, opposition media). Scrapes the public `t.me/s/` preview — no auth, no bot token, no API key. Supports subscribing to channels and fetching their latest messages.
 
 This skill is **not** a bot interface. The existing `telegram` plugin provides a bot for receiving DMs; this skill reads public broadcast channels.
 
@@ -14,7 +14,7 @@ No authentication required.
 
 ## Usage
 
-Manage channel subscriptions, fetch messages, search the cache, and view recent activity.
+Manage channel subscriptions, fetch messages, and view the latest fetch.
 
 ```bash
 # Subscription management (edits ~/.local/share/showrun/data/telegram-osint/channels.json)
@@ -27,17 +27,11 @@ node scripts/telegram-osint-channels.mjs fetch <channel>           # one channel
 node scripts/telegram-osint-channels.mjs fetch-all                 # all subscribed, 2s between
 node scripts/telegram-osint-channels.mjs fetch-all --parallel=4    # optional parallel mode
 
-# Reading cached messages
-node scripts/telegram-osint-channels.mjs recent                    # last 24h, all channels
-node scripts/telegram-osint-channels.mjs recent 72                 # last 72h
-node scripts/telegram-osint-channels.mjs recent 24 --channel=clashreport
-node scripts/telegram-osint-channels.mjs search "hormuz"           # keyword in cached messages
-node scripts/telegram-osint-channels.mjs search "iran" --channel=IntelSlava
+# Inspect the latest fetch
 node scripts/telegram-osint-channels.mjs view <channel>            # last fetch for a channel
 
 # Maintenance
 node scripts/telegram-osint-channels.mjs verify <channel>          # HEAD-check without saving
-node scripts/telegram-osint-channels.mjs rebuild-index             # regenerate index.jsonl from per-channel caches
 ```
 
 `<channel>` is the Telegram username *without* the `@`, e.g. `clashreport`, `IntelSlava`, `IranIntl_En`. The skill **does not** follow the `t.me/s/<slug>` → `t.me/<slug>` redirect — a redirect means the channel has no public preview (private, broadcast-only, or wrong slug).
@@ -48,7 +42,6 @@ All state lives under `~/.local/share/showrun/data/telegram-osint/`:
 
 - `channels.json` — subscribed channels + descriptions (seeded on first run with ~6 working Middle East / Russia OSINT channels)
 - `cache/<channel>/latest.json` — most recent fetch for one channel
-- `cache/index.jsonl` — append-only log of every unique message ever seen, deduped by `id`. Used by `search` and `recent`.
 
 ## Seeded channels (first run)
 
@@ -87,7 +80,7 @@ Edit via `subscribe` / `unsubscribe` — do not edit the script.
 }
 ```
 
-Message `id` is stable (`<channel>/<numeric_id>`) so re-fetches dedupe cleanly against `index.jsonl`.
+Message `id` is stable (`<channel>/<numeric_id>`) so re-fetches overwrite `latest.json` cleanly.
 
 ## Finding new channels
 
@@ -103,5 +96,5 @@ Once you know the slug, `verify <channel>` HEAD-checks it without writing to the
 
 - **Redirect trap**: a bogus slug returns HTTP 302 → the bare profile page. The script raises an error explicitly instead of silently returning empty. Don't "fix" this by following redirects.
 - **Language**: slug suffixes like `_en` are not always honored (e.g. `rybar_en` serves Russian). Verify language after first fetch.
-- **No history**: `t.me/s/` only exposes the most recent ~15-20 messages. To build a backlog, run `fetch-all` on a schedule (cron every few hours) — each fetch appends unseen messages to `index.jsonl`.
+- **No history**: `t.me/s/` only exposes the most recent ~15-20 messages. Each `fetch` overwrites `latest.json` for that channel.
 - **No rate limit docs**: Telegram doesn't publish limits for `t.me/s/` previews. The script sleeps 2s between channels in `fetch-all`. If you hit blocks, increase the delay — don't go parallel.

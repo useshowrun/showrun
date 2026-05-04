@@ -9,16 +9,13 @@
 //   node telegram-osint-channels.mjs unsubscribe <channel>
 //   node telegram-osint-channels.mjs fetch <channel>
 //   node telegram-osint-channels.mjs fetch-all
-//   node telegram-osint-channels.mjs recent [hours] [--channel=slug]
-//   node telegram-osint-channels.mjs search <keyword> [--channel=slug]
 //   node telegram-osint-channels.mjs view <channel>
 //   node telegram-osint-channels.mjs verify <channel>
-//   node telegram-osint-channels.mjs rebuild-index
 //
 // Requires Node 22+ (built-in fetch).
 
 import { resolve, dirname } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, appendFileSync, statSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 
 // ---------------------------------------------------------------------------
@@ -28,7 +25,6 @@ import { homedir } from 'os';
 const DATA_DIR = resolve(homedir(), '.local/share/showrun/data/telegram-osint');
 const CACHE_DIR = resolve(DATA_DIR, 'cache');
 const CHANNELS_FILE = resolve(DATA_DIR, 'channels.json');
-const INDEX_FILE = resolve(CACHE_DIR, 'index.jsonl');
 
 const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 telegram-osint/1.0';
 const TIMEOUT_MS = 20_000;
@@ -208,48 +204,6 @@ function parseMessage(msgId, chunk) {
 }
 
 // ---------------------------------------------------------------------------
-// Index (append-only, deduped by id)
-// ---------------------------------------------------------------------------
-
-function loadIndexIds() {
-  if (!existsSync(INDEX_FILE)) return new Set();
-  const ids = new Set();
-  const content = readFileSync(INDEX_FILE, 'utf8');
-  for (const line of content.split('\n')) {
-    if (!line) continue;
-    try {
-      ids.add(JSON.parse(line).id);
-    } catch {}
-  }
-  return ids;
-}
-
-function* iterIndex() {
-  if (!existsSync(INDEX_FILE)) return;
-  const content = readFileSync(INDEX_FILE, 'utf8');
-  for (const line of content.split('\n')) {
-    if (!line) continue;
-    try {
-      yield JSON.parse(line);
-    } catch {}
-  }
-}
-
-function appendIndex(messages, channel) {
-  ensureDir(CACHE_DIR);
-  const existing = loadIndexIds();
-  let added = 0;
-  const lines = [];
-  for (const m of messages) {
-    if (existing.has(m.id)) continue;
-    lines.push(JSON.stringify({ ...m, channel }));
-    added++;
-  }
-  if (lines.length) appendFileSync(INDEX_FILE, lines.join('\n') + '\n');
-  return added;
-}
-
-// ---------------------------------------------------------------------------
 // Fetching
 // ---------------------------------------------------------------------------
 
@@ -274,8 +228,7 @@ async function fetchChannel(channel, description) {
   const chDir = resolve(CACHE_DIR, channel);
   ensureDir(chDir);
   saveJson(resolve(chDir, 'latest.json'), payload);
-  const added = appendIndex(messages, channel);
-  console.log(`  + ${channel}: ${messages.length} msgs (${added} new)`);
+  console.log(`  + ${channel}: ${messages.length} msgs`);
   return payload;
 }
 
@@ -408,58 +361,6 @@ function cmdView(channel) {
   for (const m of blob.messages || []) printMessage({ ...m, channel });
 }
 
-function cmdSearch(q, flags) {
-  if (!q) throw new Error('search requires <keyword>');
-  const ql = q.toLowerCase();
-  const hits = [];
-  for (const m of iterIndex()) {
-    if (flags.channel && m.channel !== flags.channel) continue;
-    if ((m.text || '').toLowerCase().includes(ql)) hits.push(m);
-  }
-  hits.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
-  console.log(`Found ${hits.length} messages matching "${q}"${flags.channel ? ` in ${flags.channel}` : ''}:\n`);
-  for (const m of hits.slice(0, 40)) printMessage(m);
-}
-
-function cmdRecent(hoursArg, flags) {
-  const hours = Number(hoursArg) || 24;
-  const cutoff = new Date(Date.now() - hours * 3600_000).toISOString();
-  const hits = [];
-  for (const m of iterIndex()) {
-    if (flags.channel && m.channel !== flags.channel) continue;
-    if ((m.ts || '') >= cutoff) hits.push(m);
-  }
-  hits.sort((a, b) => (b.ts || '').localeCompare(a.ts || ''));
-  console.log(`Messages from last ${hours}h${flags.channel ? ` in ${flags.channel}` : ''} (${hits.length} total):\n`);
-  for (const m of hits.slice(0, 80)) printMessage(m);
-}
-
-function cmdRebuildIndex() {
-  ensureDir(CACHE_DIR);
-  if (!existsSync(CACHE_DIR)) {
-    console.log('No cache directory yet.');
-    return;
-  }
-  const tmp = INDEX_FILE + '.tmp';
-  if (existsSync(tmp)) try { writeFileSync(tmp, ''); } catch {}
-  const seen = new Set();
-  const lines = [];
-  for (const slug of readdirSync(CACHE_DIR)) {
-    const latest = resolve(CACHE_DIR, slug, 'latest.json');
-    if (!existsSync(latest)) continue;
-    let blob;
-    try { blob = loadJson(latest, null); } catch { continue; }
-    if (!blob || !Array.isArray(blob.messages)) continue;
-    for (const m of blob.messages) {
-      if (seen.has(m.id)) continue;
-      seen.add(m.id);
-      lines.push(JSON.stringify({ ...m, channel: slug }));
-    }
-  }
-  writeFileSync(INDEX_FILE, lines.join('\n') + (lines.length ? '\n' : ''));
-  console.log(`Rebuilt index: ${lines.length} unique messages`);
-}
-
 function printMessage(m) {
   const ts = (m.ts || '').slice(0, 16).replace('T', ' ');
   const ch = m.channel || '?';
@@ -486,11 +387,8 @@ Commands:
   unsubscribe <channel>             Remove a channel from the subscription list
   fetch <channel>                   Fetch one channel
   fetch-all [--parallel=N]          Fetch every subscribed channel
-  recent [hours] [--channel=slug]   Show messages from last N hours (default 24)
-  search <keyword> [--channel=slug] Search cached messages
   view <channel>                    Print last fetch of one channel
   verify <channel>                  HEAD-check a channel without saving
-  rebuild-index                     Rebuild index.jsonl from per-channel caches
 
 Data: ${DATA_DIR}
 `);
@@ -509,9 +407,6 @@ async function main() {
       case 'fetch-all':     await cmdFetchAll(flags); break;
       case 'verify':        await cmdVerify(positional[0]); break;
       case 'view':          cmdView(positional[0]); break;
-      case 'search':        cmdSearch(positional[0], flags); break;
-      case 'recent':        cmdRecent(positional[0], flags); break;
-      case 'rebuild-index': cmdRebuildIndex(); break;
       case 'help':
       case '-h':
       case '--help':        usage(); break;

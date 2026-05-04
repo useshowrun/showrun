@@ -1,6 +1,6 @@
 # wikipedia-stats-pageviews
 
-Wikimedia Pageviews API wrapper — per-article view counts (daily/monthly), top-article rankings, whole-project aggregates, head-to-head article comparison, and OpenSearch title resolution. Free, no auth, no API key required. Goes back to 2015-07-01.
+Wikimedia Pageviews API wrapper — per-article view counts (daily/monthly), top-article rankings, whole-project aggregates, and OpenSearch title resolution. Free, no auth, no API key required. Goes back to 2015-07-01.
 
 ## Prerequisites
 
@@ -23,9 +23,6 @@ node scripts/wikipedia-pageviews.mjs top en.wikipedia.org 2026 04 24       # spe
 
 # Whole-project aggregate pageviews
 node scripts/wikipedia-pageviews.mjs aggregate en.wikipedia.org --from=20240101 --to=20260101 --granularity=monthly
-
-# Compare a set of articles head-to-head over the same window
-node scripts/wikipedia-pageviews.mjs compare "OpenAI" "Anthropic" "Mistral_AI" --from=20250101 --to=20260101 --granularity=monthly
 
 # Resolve a free-text term to an article title (opensearch)
 node scripts/wikipedia-pageviews.mjs search "Anthropic" --limit=5
@@ -51,7 +48,6 @@ All state under `~/.local/share/showrun/data/wikipedia-stats/cache/`:
 - `top-<project>-<YYYY>-<MM>-<DD|all-days>.json`
 - `aggregate-<project>-<access>-<agent>-<granularity>-<from>-<to>.json`
 - `search-<lang>-<slug>-<limit>.json`
-- `compare-<articles-slug>-<from>-<to>.json`
 
 Cached responses are reused indefinitely. Delete the file to force a refresh.
 

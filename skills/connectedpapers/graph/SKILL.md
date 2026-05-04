@@ -1,6 +1,6 @@
 # connectedpapers-graph
 
-Explore academic paper graphs on Connected Papers — build a graph of related papers around a seed paper, find prior work (what shaped a field) and derivative work (where a paper was taken up), or compute industry-impact metrics (venue mix, fields of study, citation totals, year spans). Use this whenever the user mentions Connected Papers, paper graphs, citation networks, literature review around a seed paper, or measuring the impact or lineage of a specific article.
+Explore academic paper graphs on Connected Papers — build a graph of related papers around a seed paper, and find prior work (what shaped a field) or derivative work (where a paper was taken up). Use this whenever the user mentions Connected Papers, paper graphs, citation networks, or literature review around a seed paper.
 
 Fetches Connected Papers graphs via the public frontend API at `rest.prod.connectedpapers.com`. No auth, no token, no Chrome CDP — stdlib-only Node.js.
 
@@ -51,16 +51,8 @@ node scripts/connectedpapers.mjs prior <paper> --json
 node scripts/connectedpapers.mjs derivative <paper> --limit=20
 node scripts/connectedpapers.mjs deriv <paper>                # alias
 
-# Impact report — aggregated metrics for industry-impact analysis
-node scripts/connectedpapers.mjs impact <paper>
-node scripts/connectedpapers.mjs impact <paper> --json
-
 # Version history (which corpus dates have cached graphs)
 node scripts/connectedpapers.mjs versions <paper>
-
-# Offline (no network)
-node scripts/connectedpapers.mjs view-cache <paper>
-node scripts/connectedpapers.mjs search-cache <query>
 ```
 
 ## Output format — graph
@@ -81,36 +73,12 @@ Top <limit> related nodes by citation count:
 ...
 ```
 
-## Output format — impact
-
-```
-# Impact report: <title> (<year>)
-  Origin: cites=<N> refs=<N>  venue=<venue>
-  Graph: <N> nodes / <N> edges  (corpus <date>)
-  Neighbors: n=<N> total_citations=<N> median_year=<year>
-
-  Top venues in graph:
-    <count>  <venue>
-  ...
-
-  Fields of study:
-    <count>  <field>
-  ...
-
-  Derivative year span: <min>–<max> (median <median>)
-  Top 5 derivatives: ...
-  Top 5 priors: ...
-```
-
-`--json` returns a structured object with `origin`, `graph_size`, `neighbors {count, total_citations, median_year, top_venues, top_fields}`, `derivatives_top10`, `priors_top10`, `derivative_years`, `corpus_date`.
-
 ## Data layout
 
 All state under `~/.local/share/showrun/data/connectedpapers/`:
 
 - `cache/graph-<s2id>.json` — decoded graph per origin paper (full `nodes`, `edges`, `common_citations`, `common_references`, `common_authors`, `parameters`, `path_lengths`)
 - `cache/search-<slug>.json` — one per keyword search
-- `cache/index.jsonl` — append-only log for `search-cache`
 
 ## Graph JSON shape (for `--json` consumers)
 
@@ -156,18 +124,6 @@ offset  size  field
               for status=3: uint32 progress (0–100)
 trailing      optional uint32 uuid_len + uuid bytes (appended to payload as .uuid hex)
 ```
-
-## "Industry impact" workflow
-
-The intended use for `impact` is measuring the *industry adoption* of a freshly published paper. Each field of the JSON maps to something concrete:
-
-- `neighbors.top_venues` — where the conversation around this paper happens (industry conferences vs. arXiv-only vs. journals)
-- `neighbors.top_fields` — cross-disciplinary reach
-- `derivative_years.{min,max,median}` — time-to-uptake. A 2024 paper with derivatives already in 2024–2025 is moving fast.
-- `derivatives_top10` — the most-cited follow-ups
-- `neighbors.total_citations` vs `origin.citations` — centrality within a high-activity cluster vs an isolated corner
-
-For comparative analysis (paper A vs B), run `impact --json` on both and diff the top_venues/top_fields sets and `derivative_years.median - origin.year`.
 
 ## Known pitfalls
 

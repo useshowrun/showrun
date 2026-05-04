@@ -18,12 +18,10 @@ const CACHE_DIR = resolve(DATA_DIR, 'cache');
 const PAGEVIEWS_BASE = 'https://wikimedia.org/api/rest_v1/metrics/pageviews';
 const USER_AGENT = 'wikipedia-pageviews-skill/1.0 (researcher; node; eyup@showrun.co)';
 const TIMEOUT_MS = 60_000;
-const RATE_GAP_MS = 250;
 
 function ensureDir(dir) { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); }
 function saveJson(path, data) { ensureDir(dirname(path)); writeFileSync(path, JSON.stringify(data, null, 2)); }
 function slug(s) { return String(s).toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-|-$/g,'').slice(0,80); }
-function sleep(ms) { return new Promise(r=>setTimeout(r,ms)); }
 
 function encodeArticle(title) {
   const t = String(title).trim().replace(/ /g,'_');
@@ -211,50 +209,6 @@ async function cmdSearch(term, opts={}) {
   console.log(`\nCached: ${cachePath}`);
 }
 
-async function cmdCompare(articles, opts={}) {
-  if (!articles || articles.length < 2) throw new Error('Usage: compare <article1> <article2> [...]');
-  const project = opts.project || 'en.wikipedia.org';
-  const access = opts.access || 'all-access';
-  const agent = opts.agent || 'user';
-  const granularity = opts.granularity || 'monthly';
-  const range = (opts.from && opts.to) ? { from: opts.from, to: opts.to } : defaultRange(365);
-
-  console.log(`# Wikipedia pageviews compare — ${articles.length} articles  (${project}, ${access}/${agent}, ${granularity})`);
-  console.log(`   range: ${range.from} → ${range.to}\n`);
-
-  const results = [];
-  for (const art of articles) {
-    const enc = encodeArticle(art);
-    const url = `${PAGEVIEWS_BASE}/per-article/${project}/${access}/${agent}/${enc}/${granularity}/${range.from}/${range.to}`;
-    const cachePath = resolve(CACHE_DIR, `pageviews-${slug(project)}-${slug(art)}-${access}-${agent}-${granularity}-${range.from}-${range.to}.json`);
-    let r;
-    try {
-      if (existsSync(cachePath)) {
-        r = JSON.parse(readFileSync(cachePath,'utf8'));
-      } else {
-        r = await getJSON(url);
-        saveJson(cachePath, { fetched_at: new Date().toISOString(), url, ...r });
-        await sleep(RATE_GAP_MS);
-      }
-      const items = r.items || [];
-      const total = items.reduce((s,i)=>s+(i.views||0),0);
-      const peak = items.length ? Math.max(...items.map(i=>i.views||0)) : 0;
-      results.push({ article: art, total, peak, buckets: items.length });
-    } catch (e) {
-      results.push({ article: art, error: e.message.slice(0,100) });
-    }
-  }
-  results.sort((a,b)=> (b.total||0) - (a.total||0));
-  const max = Math.max(...results.map(r=>r.total||0));
-  for (const r of results) {
-    if (r.error) { console.log(`   err  ${r.article}: ${r.error}`); continue; }
-    console.log(`   ${String(fmt(r.total)).padStart(14)}  peak=${String(fmt(r.peak)).padStart(10)}  ${r.article.padEnd(28).slice(0,28)}  ${bar(r.total, max, 30)}`);
-  }
-  const cachePath = resolve(CACHE_DIR, `compare-${slug(articles.join('-'))}-${range.from}-${range.to}.json`);
-  saveJson(cachePath, { fetched_at: new Date().toISOString(), articles, range, results });
-  console.log(`\nCached: ${cachePath}`);
-}
-
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -277,7 +231,6 @@ function usage() {
   wikipedia-pageviews.mjs top <project> <year> <month> [day]    # day defaults to all-days
   wikipedia-pageviews.mjs aggregate <project> [--from] [--to] [--granularity=daily|monthly] [--access] [--agent]
   wikipedia-pageviews.mjs search <term> [--project=en.wikipedia.org] [--limit=10]
-  wikipedia-pageviews.mjs compare <article1> <article2> [...] [--project] [--from] [--to] [--granularity]
   wikipedia-pageviews.mjs help
 
 User-Agent sent: ${USER_AGENT}
@@ -296,7 +249,6 @@ async function main() {
       case 'top':       await cmdTop(flags.positional[0], flags.positional[1], flags.positional[2], flags.positional[3]); break;
       case 'aggregate': await cmdAggregate(flags.positional[0], flags); break;
       case 'search':    await cmdSearch(flags.positional[0], flags); break;
-      case 'compare':   await cmdCompare(flags.positional, flags); break;
       case undefined:
       case 'help':
       case '-h':

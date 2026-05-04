@@ -31,7 +31,7 @@
 // Requires Node 22+ (built-in fetch). Stdlib only.
 
 import { resolve, dirname } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, appendFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { inflateSync } from 'zlib';
 
@@ -41,7 +41,6 @@ import { inflateSync } from 'zlib';
 
 const DATA_DIR = resolve(homedir(), '.local/share/showrun/data/connectedpapers');
 const CACHE_DIR = resolve(DATA_DIR, 'cache');
-const INDEX_FILE = resolve(CACHE_DIR, 'index.jsonl');
 
 const API_BASE = 'https://rest.prod.connectedpapers.com';
 const USER_AGENT = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 connectedpapers-skill/1.0';
@@ -69,11 +68,6 @@ function saveJson(path, data) {
 function loadJson(path, fallback) {
   if (!existsSync(path)) return fallback;
   return JSON.parse(readFileSync(path, 'utf8'));
-}
-
-function appendIndex(row) {
-  ensureDir(CACHE_DIR);
-  appendFileSync(INDEX_FILE, JSON.stringify(row) + '\n');
 }
 
 // ---------------------------------------------------------------------------
@@ -158,12 +152,6 @@ async function resolveId(input) {
 // Commands
 // ---------------------------------------------------------------------------
 
-function trimPaper(p) {
-  if (!p) return p;
-  // Keep everything — caller can subset
-  return p;
-}
-
 function paperLine(p) {
   const authors = (p.authors || []).map(a => a.name).slice(0, 3).join(', ');
   const extra = (p.authors || []).length > 3 ? ` +${p.authors.length - 3}` : '';
@@ -191,7 +179,6 @@ async function cmdSearch(query, opts = {}) {
     console.log(`\n${matches.length} matches`);
   }
   saveJson(resolve(CACHE_DIR, `search-${slugify(query)}.json`), { query, fetched_at: new Date().toISOString(), matches });
-  for (const m of matches) appendIndex({ kind: 'search_match', query, id: m.id, title: m.title, authorsYear: m.authorsYear, ts: Date.now() });
   return matches;
 }
 
@@ -208,7 +195,6 @@ async function cmdGraph(input, opts = {}) {
   // Cache
   const cachePath = resolve(CACHE_DIR, `graph-${id}.json`);
   saveJson(cachePath, { fetched_at: new Date().toISOString(), graph: payload });
-  appendIndex({ kind: 'graph', id, nodes: Object.keys(payload.nodes || {}).length, edges: (payload.edges || []).length, ts: Date.now() });
   if (opts.json) {
     console.log(JSON.stringify(payload, null, 2));
     return payload;
@@ -277,95 +263,10 @@ async function cmdPaper(input, opts = {}) {
   if (p.tldr && p.tldr.text) console.log(`\nTL;DR: ${p.tldr.text}`);
 }
 
-async function cmdImpact(input, opts = {}) {
-  const id = await resolveId(input);
-  const graph = await fetchGraphRaw(id, opts.fresh);
-  const origin = graph.nodes[graph.start_id];
-  const neighbors = Object.values(graph.nodes).filter(n => n.id !== graph.start_id);
-  const derivs = Object.values(graph.common_citations || {});
-  const priors = Object.values(graph.common_references || {});
-
-  const totalCitesNeighbors = neighbors.reduce((s, n) => s + (n.citations_length || 0), 0);
-  const medianYearNeighbors = median(neighbors.map(n => n.year).filter(Boolean));
-  const venues = Object.create(null);
-  const fields = Object.create(null);
-  for (const n of neighbors) {
-    if (n.venue) venues[n.venue] = (venues[n.venue] || 0) + 1;
-    for (const f of (n.fieldsOfStudy || [])) fields[f] = (fields[f] || 0) + 1;
-  }
-  const topVenues = Object.entries(venues).sort((a, b) => b[1] - a[1]).slice(0, 10);
-  const topFields = Object.entries(fields).sort((a, b) => b[1] - a[1]);
-  // Most-cited derivative year distribution
-  const derivYears = derivs.map(d => d.year).filter(Boolean).sort((a, b) => a - b);
-
-  const out = {
-    origin: {
-      id: origin.id,
-      title: origin.title,
-      year: origin.year,
-      venue: origin.venue,
-      citations: origin.citations_length,
-      references: origin.references_length,
-    },
-    graph_size: { nodes: Object.keys(graph.nodes).length, edges: graph.edges.length },
-    neighbors: {
-      count: neighbors.length,
-      total_citations: totalCitesNeighbors,
-      median_year: medianYearNeighbors,
-      top_venues: topVenues.map(([k, v]) => ({ venue: k, count: v })),
-      top_fields: topFields.map(([k, v]) => ({ field: k, count: v })),
-    },
-    derivatives_top10: derivs.slice(0, 10).map(d => ({ id: d.id, title: d.title, year: d.year, citations: d.citations_length, venue: d.venue })),
-    priors_top10: priors.slice(0, 10).map(d => ({ id: d.id, title: d.title, year: d.year, citations: d.citations_length, venue: d.venue })),
-    derivative_years: { min: derivYears[0], max: derivYears[derivYears.length - 1], median: median(derivYears) },
-    corpus_date: graph.current_corpus_date,
-  };
-
-  if (opts.json) { console.log(JSON.stringify(out, null, 2)); return; }
-  console.log(`# Impact report: ${out.origin.title} (${out.origin.year})`);
-  console.log(`  Origin: cites=${out.origin.citations} refs=${out.origin.references}  venue=${out.origin.venue}`);
-  console.log(`  Graph: ${out.graph_size.nodes} nodes / ${out.graph_size.edges} edges  (corpus ${out.corpus_date})`);
-  console.log(`  Neighbors: n=${out.neighbors.count} total_citations=${out.neighbors.total_citations} median_year=${out.neighbors.median_year}`);
-  console.log(`\n  Top venues in graph:`);
-  for (const v of out.neighbors.top_venues) console.log(`    ${v.count.toString().padStart(3)}  ${v.venue}`);
-  console.log(`\n  Fields of study:`);
-  for (const f of out.neighbors.top_fields) console.log(`    ${f.count.toString().padStart(3)}  ${f.field}`);
-  console.log(`\n  Derivative year span: ${out.derivative_years.min}–${out.derivative_years.max} (median ${out.derivative_years.median})`);
-  console.log(`\n  Top 5 derivatives:`);
-  for (const d of out.derivatives_top10.slice(0, 5)) console.log(`    ${d.year || '?'}  cites=${d.citations}  ${d.title}`);
-  console.log(`\n  Top 5 priors:`);
-  for (const d of out.priors_top10.slice(0, 5)) console.log(`    ${d.year || '?'}  cites=${d.citations}  ${d.title}`);
-}
-
 async function cmdVersions(input) {
   const id = await resolveId(input);
   const res = await apiGet(`/versions/${id}/1`);
   console.log(JSON.stringify(res, null, 2));
-}
-
-async function cmdViewCache(input) {
-  const id = await resolveId(input);
-  const cachePath = resolve(CACHE_DIR, `graph-${id}.json`);
-  if (!existsSync(cachePath)) { console.error(`No cache for ${id}. Run: graph ${id}`); process.exit(2); }
-  const { graph } = loadJson(cachePath);
-  console.log(JSON.stringify(graph, null, 2));
-}
-
-async function cmdSearchCache(query) {
-  if (!existsSync(INDEX_FILE)) { console.error('No index yet.'); return; }
-  const q = query.toLowerCase();
-  const lines = readFileSync(INDEX_FILE, 'utf8').split('\n').filter(Boolean);
-  const seen = new Set();
-  for (const line of lines) {
-    try {
-      const row = JSON.parse(line);
-      const text = `${row.title || ''} ${row.authorsYear || ''}`.toLowerCase();
-      if (row.id && text.includes(q) && !seen.has(row.id)) {
-        seen.add(row.id);
-        console.log(`- ${row.title}  (${row.authorsYear || ''})\n    id=${row.id}`);
-      }
-    } catch {}
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -385,13 +286,6 @@ async function fetchGraphRaw(id, fresh) {
   }
   saveJson(cachePath, { fetched_at: new Date().toISOString(), graph: payload });
   return payload;
-}
-
-function median(xs) {
-  if (!xs.length) return null;
-  const s = [...xs].sort((a, b) => a - b);
-  const m = Math.floor(s.length / 2);
-  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
 }
 
 function slugify(s) {
@@ -424,10 +318,7 @@ Commands:
   paper <paper>                  Origin paper metadata
   prior <paper>                  Common references (what shaped the paper's field)
   derivative <paper>             Common citations (where the work was taken up)
-  impact <paper>                 Aggregate impact report: venues, fields, year span
   versions <paper>               List graph versions / corpus dates
-  view-cache <paper>             Print cached graph JSON (no network)
-  search-cache <query>           Grep local index.jsonl (offline)
 
 <paper> can be:
   - A 40-hex Semantic Scholar paper ID
@@ -444,12 +335,11 @@ Examples:
   node scripts/connectedpapers.mjs graph 204e3073870fae3d05bcbc2f6a8e263d9b72e776
   node scripts/connectedpapers.mjs graph "attention is all you need" --limit=30
   node scripts/connectedpapers.mjs prior 204e3073870fae3d05bcbc2f6a8e263d9b72e776 --json
-  node scripts/connectedpapers.mjs impact "llama open foundation" --json
+  node scripts/connectedpapers.mjs derivative "llama open foundation" --json
 
 Data layout: ~/.local/share/showrun/data/connectedpapers/cache/
   graph-<id>.json     per-paper full graph JSON (decoded CPGR payload)
   search-<slug>.json  per-query autocomplete result
-  index.jsonl         append-only log for search-cache
 `;
 
 async function main() {
@@ -483,24 +373,9 @@ async function main() {
         await cmdDerivative(positional.slice(1).join(' '), flags);
         break;
       }
-      case 'impact': {
-        if (!positional[1]) { console.error('Usage: impact <paper>'); process.exit(1); }
-        await cmdImpact(positional.slice(1).join(' '), flags);
-        break;
-      }
       case 'versions': {
         if (!positional[1]) { console.error('Usage: versions <paper>'); process.exit(1); }
         await cmdVersions(positional.slice(1).join(' '));
-        break;
-      }
-      case 'view-cache': {
-        if (!positional[1]) { console.error('Usage: view-cache <paper>'); process.exit(1); }
-        await cmdViewCache(positional.slice(1).join(' '));
-        break;
-      }
-      case 'search-cache': {
-        if (!positional[1]) { console.error('Usage: search-cache <query>'); process.exit(1); }
-        await cmdSearchCache(positional.slice(1).join(' '));
         break;
       }
       default:

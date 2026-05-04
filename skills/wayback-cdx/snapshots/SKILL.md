@@ -32,9 +32,6 @@ node scripts/wayback-cdx.mjs timeline itch.io --bin=month --from=2022-01 --to=20
 node scripts/wayback-cdx.mjs list itch.io --limit=20
 node scripts/wayback-cdx.mjs list itch.io --limit=50 --filter=statuscode:200
 
-# Compare snapshot density across multiple URLs (proxy for activity)
-node scripts/wayback-cdx.mjs compare itch.io store.steampowered.com gamejolt.com
-
 # Get a specific snapshot's content URL
 node scripts/wayback-cdx.mjs snapshot https://itch.io --date=20230615
 ```
@@ -74,7 +71,6 @@ All state under `~/.local/share/showrun/data/wayback-cdx/`:
 - `cache/span-<slug>.json` — last `span` invocation
 - `cache/timeline-<slug>-<bin>.json` — last `timeline` invocation
 - `cache/list-<slug>-<limit>.json` — last `list` invocation
-- `cache/compare-<slug>.json` — last `compare` invocation
 
 ## API notes
 

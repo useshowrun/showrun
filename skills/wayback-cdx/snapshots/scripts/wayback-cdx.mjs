@@ -9,7 +9,6 @@
 //   span <url>                     — first + last snapshot dates
 //   timeline <url> --bin=year|month — counts per year/month
 //   list <url> --limit=N           — list recent snapshots
-//   compare <url1> <url2> ...      — snapshot density side-by-side
 //   snapshot <url> --date=YYYYMMDD — print web.archive.org snapshot URL
 
 import { resolve, dirname } from 'path';
@@ -246,46 +245,6 @@ async function cmdList(url, opts={}) {
   console.log(`\nCached: ${cacheFile}`);
 }
 
-async function cmdCompare(urls) {
-  if (!urls || urls.length < 2) throw new Error('Usage: compare <url1> <url2> [...]');
-  console.log(`# Wayback CDX — snapshot density comparison\n`);
-  console.log(`  ${'url'.padEnd(40)}  ${'snapshots'.padStart(10)}  ${'first'.padEnd(10)}  ${'last'.padEnd(10)}`);
-  console.log('  ' + '-'.repeat(78));
-  const results = [];
-  for (const u of urls) {
-    try {
-      // count
-      let total = 0; let resumeKey='';
-      while (true) {
-        const params = { url: u, fl:'urlkey', limit: 100000, showResumeKey:'true' };
-        if (resumeKey) params.resumeKey = resumeKey;
-        const { rows } = await cdx(params);
-        if (!rows.length) break;
-        let dataRows = rows.filter(r=>r&&r[0]);
-        let rk='';
-        const last = rows[rows.length-1];
-        if (Array.isArray(last)&&last.length===1&&last[0]) { rk=last[0]; dataRows=dataRows.filter(r=>r!==last); }
-        total += dataRows.length;
-        if (!rk||rk===resumeKey) break;
-        resumeKey = rk;
-        if (total > 1_000_000) break;
-      }
-      // span
-      const eFirst = await cdx({ url: u, limit: 1, fl: 'timestamp', from: '19960101' });
-      const eLast = await cdx({ url: u, limit: -1, fl: 'timestamp' });
-      const f = eFirst.rows[0]?.[0] || '?';
-      const l = eLast.rows[0]?.[0] || '?';
-      const fStr = f === '?' ? '?' : `${f.slice(0,4)}-${f.slice(4,6)}`;
-      const lStr = l === '?' ? '?' : `${l.slice(0,4)}-${l.slice(4,6)}`;
-      console.log(`  ${u.padEnd(40).slice(0,40)}  ${String(total).padStart(10)}  ${fStr.padEnd(10)}  ${lStr.padEnd(10)}`);
-      results.push({ url: u, total, first: f, last: l });
-    } catch (e) {
-      console.log(`  ${u.padEnd(40).slice(0,40)}  err: ${e.message.slice(0,40)}`);
-    }
-  }
-  saveJson(resolve(CACHE_DIR, `compare-${slug(urls.join('-'))}.json`), { fetched_at: new Date().toISOString(), results });
-}
-
 function cmdSnapshot(url, opts={}) {
   if (!url || !opts.date) throw new Error('Usage: snapshot <url> --date=YYYYMMDD');
   const stamp = opts.date.replace(/-/g, '').padEnd(14, '0');
@@ -315,7 +274,6 @@ function usage() {
   wayback-cdx.mjs span <url> [--match=exact|prefix|host|domain]
   wayback-cdx.mjs timeline <url> [--bin=year|month|day] [--from=YYYY-MM] [--to=YYYY-MM]
   wayback-cdx.mjs list <url> [--limit=N] [--filter=statuscode:200]
-  wayback-cdx.mjs compare <url1> <url2> ...
   wayback-cdx.mjs snapshot <url> --date=YYYYMMDD
 
 Data dir: ${DATA_DIR}
@@ -334,7 +292,6 @@ async function main() {
       case 'span':     await cmdSpan(flags.positional[0], flags); break;
       case 'timeline': await cmdTimeline(flags.positional[0], flags); break;
       case 'list':     await cmdList(flags.positional[0], flags); break;
-      case 'compare':  await cmdCompare(flags.positional); break;
       case 'snapshot': cmdSnapshot(flags.positional[0], flags); break;
       case undefined:
       case 'help':

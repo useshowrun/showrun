@@ -1,6 +1,6 @@
 # arxiv-search
 
-Search arXiv for papers (by title, author, abstract, category, or free text), fetch full metadata for a specific arXiv ID or URL, list newest papers in a category (cs.CL, cs.LG, stat.ML, etc.), and read arXiv's own site-wide usage stats (monthly submissions, monthly downloads, hourly usage).
+Search arXiv for papers (by title, author, abstract, category, or free text), fetch full metadata for a specific arXiv ID or URL, list newest papers in a category (cs.CL, cs.LG, stat.ML, etc.), and read arXiv's own site-wide usage stats (monthly submissions, monthly downloads).
 
 ## Prerequisites
 
@@ -13,7 +13,7 @@ No authentication required. arXiv asks for a 3-second gap between API calls — 
 Two fully public, no-auth surfaces:
 
 1. **Query API** (documented) — `https://export.arxiv.org/api/query` returning Atom 1.0 XML. See https://info.arxiv.org/help/api/user-manual.html for the spec; this skill wraps the three use-cases that cover ~95% of real work (search, fetch-by-id, newest-in-category).
-2. **Stats CSVs** (undocumented) — the three charts at `https://arxiv.org/stats/*` are powered by CSV endpoints at `/stats/get_monthly_submissions`, `/stats/get_monthly_downloads`, and `/stats/get_hourly?date=YYYYMMDD`.
+2. **Stats CSVs** (undocumented) — the charts at `https://arxiv.org/stats/*` are powered by CSV endpoints at `/stats/get_monthly_submissions` and `/stats/get_monthly_downloads`.
 
 ## Usage
 
@@ -82,20 +82,9 @@ node scripts/arxiv.mjs stats-submissions --json
 
 # Monthly downloads (1994-01 onward)
 node scripts/arxiv.mjs stats-downloads
-
-# Hourly usage for a given day (default: today)
-node scripts/arxiv.mjs stats-today
-node scripts/arxiv.mjs stats-today --date=20260410
 ```
 
 Pretty output includes YoY comparisons for submissions. `--json` returns the raw `[{month,submissions,historical_delta}, ...]` or `[{month,downloads}, ...]` arrays.
-
-### Offline
-
-```bash
-node scripts/arxiv.mjs view-cache 1706.03762         # print cached paper JSON
-node scripts/arxiv.mjs search-cache "attention"      # grep local index
-```
 
 ## Output format — search
 
@@ -116,8 +105,7 @@ All state under `~/.local/share/showrun/data/arxiv/`:
 
 - `cache/paper-<id>.json`   — per-paper full metadata
 - `cache/search-<slug>.json` — per-search result batch
-- `cache/stats-submissions.json`, `stats-downloads.json`, `stats-hourly-YYYYMMDD.json`
-- `cache/index.jsonl`       — append-only log for `search-cache`
+- `cache/stats-submissions.json`, `stats-downloads.json`
 
 ## API notes
 
@@ -135,7 +123,6 @@ Each `/stats/*` HTML page uses `d3.csv("…")` to pull data. The three data URLs
 |---|---|
 | `/stats/get_monthly_submissions` | `month,submissions,historical_delta` |
 | `/stats/get_monthly_downloads`   | `month,downloads` |
-| `/stats/get_hourly?date=YYYYMMDD` | hourly breakdown for one day |
 
 Plain CSV with a header row and one row per period. Not advertised as an API; verified stable but subject to change.
 
@@ -146,4 +133,3 @@ Plain CSV with a header row and one row per period. Not advertised as an API; ve
 - **No full-text search**: `abs:` searches abstracts, not the PDF body.
 - **Rate limit silently slows**: the 3s gap is client-side. A 20-page pagination takes ≥60 s.
 - **Stats API is undocumented.** If `/stats/get_monthly_submissions` ever returns HTML instead of CSV, the chart JS on `/stats/monthly_submissions` is the source of truth.
-- **Hourly stats format is unstable**: columns differ from day to day. Use `--json` for programmatic consumption.
