@@ -151,66 +151,40 @@ async function cmdTimeline(url, opts={}) {
   const matchType = opts.match || 'exact';
   const u = applyMatch(url, matchType);
 
-  // Resolve year span from existing span data (cheap: 2 calls)
-  const earliest = await cdx({ url: u, matchType, limit: 1, fl: 'timestamp', from: '19960101' });
-  const latest = await cdx({ url: u, matchType, limit: -1, fl: 'timestamp' });
-  if (!earliest.rows[0]) {
-    console.log(`# Wayback CDX timeline — ${url}\n   no snapshots found\n`);
-    return;
-  }
-  let yFrom = parseInt((opts.from || earliest.rows[0][0]).toString().slice(0,4), 10);
-  let yTo   = parseInt((opts.to   || latest.rows[0]?.[0] || earliest.rows[0][0]).toString().slice(0,4), 10);
-  // Clamp to current year
-  const thisYear = new Date().getUTCFullYear();
-  if (yTo > thisYear) yTo = thisYear;
+  const baseParams = { url: u, matchType, fl: 'timestamp', limit: 100000, showResumeKey: 'true' };
+  if (opts.from) baseParams.from = String(opts.from).replace(/[^0-9]/g, '');
+  if (opts.to)   baseParams.to   = String(opts.to).replace(/[^0-9]/g, '');
 
   const buckets = {};
   let totalFetched = 0;
-  // Iterate by year (or month if --bin=month)
-  const periods = [];
-  if (bin === 'year') {
-    for (let y = yFrom; y <= yTo; y++) periods.push({ key: String(y), from: `${y}0101`, to: `${y}1231235959` });
-  } else if (bin === 'month') {
-    for (let y = yFrom; y <= yTo; y++) {
-      for (let m = 1; m <= 12; m++) {
-        const mm = String(m).padStart(2,'0');
-        const last = new Date(Date.UTC(y, m, 0)).getUTCDate();
-        periods.push({ key: `${y}-${mm}`, from: `${y}${mm}01`, to: `${y}${mm}${String(last).padStart(2,'0')}235959` });
-      }
+  let resumeKey = '';
+  while (true) {
+    const params = { ...baseParams };
+    if (resumeKey) params.resumeKey = resumeKey;
+    const { rows } = await cdx(params);
+    if (!rows.length) break;
+    let dataRows = rows.filter(r => r && r[0]);
+    let rk = '';
+    const last = rows[rows.length - 1];
+    if (Array.isArray(last) && last.length === 1 && last[0] && !dataRows.includes(last)) {
+      rk = last[0];
+      dataRows = dataRows.filter(r => r !== last);
     }
-  } else {
-    // day bin — only sensible for narrow ranges; fall back to month grouping for safety
-    for (let y = yFrom; y <= yTo; y++) periods.push({ key: String(y), from: `${y}0101`, to: `${y}1231235959` });
+    for (const r of dataRows) {
+      const ts = r[0];
+      if (!ts) continue;
+      const key = bin === 'month' ? `${ts.slice(0,4)}-${ts.slice(4,6)}` : ts.slice(0,4);
+      buckets[key] = (buckets[key] || 0) + 1;
+    }
+    totalFetched += dataRows.length;
+    if (!rk || rk === resumeKey) break;
+    resumeKey = rk;
+    if (totalFetched > 5_000_000) break;
   }
 
-  for (const p of periods) {
-    let count = 0;
-    let resumeKey = '';
-    while (true) {
-      const params = { url: u, matchType, fl: 'urlkey', limit: 100000, showResumeKey: 'true', from: p.from, to: p.to };
-      if (resumeKey) params.resumeKey = resumeKey;
-      let pageRows;
-      try { ({ rows: pageRows } = await cdx(params)); }
-      catch (e) {
-        // Year-window 400s: try without showResumeKey
-        const params2 = { ...params }; delete params2.showResumeKey; delete params2.resumeKey;
-        ({ rows: pageRows } = await cdx(params2));
-      }
-      if (!pageRows.length) break;
-      let dataRows = pageRows.filter(r => r && r[0]);
-      let rk = '';
-      const last = pageRows[pageRows.length - 1];
-      if (Array.isArray(last) && last.length === 1 && last[0]) {
-        rk = last[0];
-        dataRows = dataRows.filter(r => r !== last);
-      }
-      count += dataRows.length;
-      if (!rk || rk === resumeKey) break;
-      resumeKey = rk;
-      if (count > 1_000_000) break;
-    }
-    if (count > 0) buckets[p.key] = count;
-    totalFetched += count;
+  if (!totalFetched) {
+    console.log(`# Wayback CDX timeline — ${url}\n   no snapshots found\n`);
+    return;
   }
 
   const cacheFile = resolve(CACHE_DIR, `timeline-${slug(u)}-${bin}.json`);
