@@ -2,7 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WORKSPACE="${OPENCLAW_WORKSPACE:-${1:-/srv/openclaw/workspace}}"
+WORKSPACE="${OPENCLAW_WORKSPACE:-${1:-$HOME/.openclaw/workspace}}"
 DEST="$WORKSPACE/skills"
 
 mkdir -p "$DEST"

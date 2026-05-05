@@ -41,12 +41,21 @@ function saveJson(path, data) {
 // ---------------------------------------------------------------------------
 
 function findCdpScript() {
+  const here = dirname(new URL(import.meta.url).pathname);
+  const ancestorCandidates = [];
+  let dir = here;
+  for (let i = 0; i < 8; i++) {
+    ancestorCandidates.push(resolve(dir, 'skills/chrome-cdp/scripts/cdp.mjs'));
+    ancestorCandidates.push(resolve(dir, 'chrome-cdp/scripts/cdp.mjs'));
+    dir = resolve(dir, '..');
+  }
   const candidates = [
+    process.env.SHOWRUN_ROOT ? resolve(process.env.SHOWRUN_ROOT, 'skills/chrome-cdp/scripts/cdp.mjs') : null,
+    ...ancestorCandidates,
     resolve(homedir(), '.claude/skills/chrome-cdp/scripts/cdp.mjs'),
-    resolve(new URL('.', import.meta.url).pathname, '../../chrome-cdp/scripts/cdp.mjs'),
-  ];
+  ].filter(Boolean);
   return process.env.CDP_SCRIPT || candidates.find(p => existsSync(p))
-    || (() => { throw new Error('chrome-cdp skill not found.'); })();
+    || (() => { throw new Error('chrome-cdp skill not found. Install it or set CDP_SCRIPT env var.'); })();
 }
 
 function cdp(...args) {
@@ -56,6 +65,112 @@ function cdp(...args) {
 // ---------------------------------------------------------------------------
 // Auth
 // ---------------------------------------------------------------------------
+
+
+const LINKEDIN_COOKIE_URLS = [
+  'https://www.linkedin.com/',
+  'https://www.linkedin.com/sales/',
+  'https://www.linkedin.com/sales/home',
+];
+
+function parseCookieResponse(raw, source) {
+  try {
+    const data = JSON.parse(raw || '{}');
+    if (!Array.isArray(data.cookies)) throw new Error('response has no cookies array');
+    return data.cookies;
+  } catch (err) {
+    throw new Error(`${source} cookie extraction failed: ${err.message}`);
+  }
+}
+
+function cookieMapFrom(cookies) {
+  return Object.fromEntries(cookies.map(c => [c.name, c.value]));
+}
+
+function linkedInCookieString(cookies) {
+  return cookies
+    .filter(c => String(c.domain || '').includes('linkedin.com'))
+    .map(c => `${c.name}=${c.value}`)
+    .join('; ');
+}
+
+function activeTabInfo(target, listText = '') {
+  let url = '';
+  let title = '';
+  try {
+    const raw = cdp('evalraw', target, 'Runtime.evaluate', JSON.stringify({
+      expression: 'JSON.stringify({url: location.href, title: document.title})',
+      returnByValue: true,
+    }));
+    const parsed = JSON.parse(raw);
+    const value = parsed?.result?.value || parsed?.result?.description;
+    if (value) {
+      const info = JSON.parse(value);
+      url = info.url || '';
+      title = info.title || '';
+    }
+  } catch {}
+  if (!url) {
+    const line = String(listText || '').split('\n').find(l => l.trim().startsWith(`${target} `) || l.includes(target));
+    if (line) url = line.trim();
+  }
+  return { url, title };
+}
+
+function readLinkedInCookies(target) {
+  const errors = [];
+  try {
+    const cookies = parseCookieResponse(cdp('evalraw', target, 'Storage.getCookies', '{}'), 'Storage.getCookies');
+    return { cookies, source: 'Storage.getCookies' };
+  } catch (err) {
+    errors.push(err.message);
+  }
+
+  try {
+    const cookies = parseCookieResponse(
+      cdp('evalraw', target, 'Network.getCookies', JSON.stringify({ urls: LINKEDIN_COOKIE_URLS })),
+      'Network.getCookies',
+    );
+    return { cookies, source: 'Network.getCookies' };
+  } catch (err) {
+    errors.push(err.message);
+  }
+
+  for (const url of LINKEDIN_COOKIE_URLS) {
+    try {
+      const cookies = parseCookieResponse(
+        cdp('evalraw', target, 'Network.getCookies', JSON.stringify({ urls: [url] })),
+        `Network.getCookies ${url}`,
+      );
+      return { cookies, source: `Network.getCookies ${url}` };
+    } catch (err) {
+      errors.push(err.message);
+    }
+  }
+
+  throw new Error(`LinkedIn/Sales Nav cookie extraction failure in active CDP session: ${errors.join(' | ')}`);
+}
+
+function getLinkedInAuthCookies(target, listText = '') {
+  const { cookies, source } = readLinkedInCookies(target);
+  const cookieMap = cookieMapFrom(cookies);
+  const csrfToken = (cookieMap['JSESSIONID'] || '').replace(/"/g, '');
+  const missing = ['li_at', 'JSESSIONID'].filter(name => !cookieMap[name]);
+  if (missing.length) {
+    const info = activeTabInfo(target, listText);
+    const activeUrl = info.url || '';
+    const activeTitle = info.title || '';
+    if (/\/login(?:[/?#]|$)|\/sales\/login(?:[/?#]|$)/i.test(activeUrl)) {
+      throw new Error('LinkedIn/Sales Nav is showing login page in the active CDP session; log in through the same live Browser Use URL or pass the exact live CDP endpoint.');
+    }
+    throw new Error(
+      `LinkedIn/Sales Nav auth cookies missing (${missing.join(', ')}) after ${source}. ` +
+      `Active tab URL/title: ${activeUrl || '<unknown>'}${activeTitle ? ` / ${activeTitle}` : ''}. ` +
+      'This is not enough to claim generic logged-out state: distinguish wrong CDP session/profile, actual logged-out state, or cookie extraction failure. For human login handoff, use the exact live Browser Use CDP endpoint.',
+    );
+  }
+  return { cookieStr: linkedInCookieString(cookies), csrfToken, cookieSource: source };
+}
 
 async function doAuth() {
   console.log('Finding Sales Navigator tab...');
@@ -76,18 +191,8 @@ async function doAuth() {
 
   console.log(`Using tab: ${target}`);
 
-  const raw = cdp('evalraw', target, 'Network.getCookies',
-    JSON.stringify({ urls: ['https://www.linkedin.com'] }));
-  const { cookies } = JSON.parse(raw);
-  const cookieMap = Object.fromEntries(cookies.map(c => [c.name, c.value]));
-  const cookieStr = cookies
-    .filter(c => c.domain.includes('linkedin.com'))
-    .map(c => `${c.name}=${c.value}`)
-    .join('; ');
-
-  const csrfToken = (cookieMap['JSESSIONID'] || '').replace(/"/g, '');
-  if (!csrfToken) throw new Error('JSESSIONID not found. Are you logged in?');
-  if (!cookieMap['li_at']) throw new Error('li_at cookie not found. Are you logged in?');
+  const { cookieStr, csrfToken, cookieSource } = getLinkedInAuthCookies(target, list);
+  console.log(`Extracted LinkedIn cookies via ${cookieSource}`);
 
   saveJson(SESSION_FILE, { cookie: cookieStr, csrfToken, extractedAt: new Date().toISOString() });
   console.log(`Auth saved to: ${SESSION_FILE}`);

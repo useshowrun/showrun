@@ -12,6 +12,7 @@ Lightweight Chrome DevTools Protocol CLI. Connects directly via WebSocket — no
 - Chrome (or Chromium, Brave, Edge, Vivaldi) with remote debugging enabled: open `chrome://inspect/#remote-debugging` and toggle the switch
 - Node.js 22+ (uses built-in WebSocket)
 - If your browser's `DevToolsActivePort` is in a non-standard location, set `CDP_PORT_FILE` to its full path
+- For remote/cloud CDP, set `CDP_URL` to a direct `ws://`/`wss://` browser endpoint. `CHROME_CDP_URL` and `BROWSER_CDP_URL` are accepted aliases. `http://`/`https://` endpoints are also accepted when `/json/version` exposes `webSocketDebuggerUrl`.
 
 ## Commands
 
@@ -80,13 +81,14 @@ CSS px = screenshot image px / DPR
 
 When a skill requires Chrome CDP and connection fails:
 
-1. **Try the command first** — `scripts/cdp.mjs list` will auto-discover Chrome via DevToolsActivePort
-2. **If connection fails** — launch a dedicated Chrome instance yourself, **passing the skill's target URL as an argument** so Chrome opens directly on the login page. A fresh profile has no tabs, so skills that look for a specific site will fail without this. The binary name varies by system:
+1. **If `CDP_URL` is provided**, use it first. This is the expected path for Browser Use Cloud or other remote persistent browser profiles. Example shape: `CDP_URL='wss://connect.browser-use.com?apiKey=...&profileId=...' scripts/cdp.mjs list`. Do not print secrets in logs.
+2. **Otherwise try the command first** — `scripts/cdp.mjs list` will auto-discover Chrome via DevToolsActivePort
+3. **If connection fails** — launch a dedicated Chrome instance yourself, **passing the skill's target URL as an argument** so Chrome opens directly on the login page. A fresh profile has no tabs, so skills that look for a specific site will fail without this. The binary name varies by system:
    - **macOS:** `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222 --user-data-dir=$HOME/Library/Application\ Support/showrun/chrome-profile --no-first-run "<target-url>" &`
    - **Linux:** try `google-chrome-stable`, `google-chrome`, or `chromium` — whichever is available:
      ```bash
      google-chrome-stable --remote-debugging-port=9222 --user-data-dir=$HOME/.local/share/showrun/chrome-profile --no-first-run "<target-url>" &
      ```
    Replace `<target-url>` with the skill's login page (e.g. `https://my.pitchbook.com` for PitchBook, `https://www.crunchbase.com` for Crunchbase, `https://www.linkedin.com` for LinkedIn). Wait a few seconds, then retry. This profile persists across sessions — users only need to log in once.
-3. **If Chrome is already running via CDP but the target site isn't open**, open it via `scripts/cdp.mjs open <target-url>` instead of asking the user.
-4. **If the user is not logged in** to the required platform — ask them to log in in the Chrome window you just opened, then retry.
+4. **If Chrome is already running via CDP but the target site isn't open**, open it via `scripts/cdp.mjs open <target-url>` instead of asking the user.
+5. **If the user is not logged in** to the required platform — ask them to log in in the Chrome window you just opened, then retry.

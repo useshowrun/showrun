@@ -11,6 +11,7 @@ import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from '
 import { homedir } from 'os';
 import { resolve } from 'path';
 import { spawn, spawnSync } from 'child_process';
+import { createHash } from 'crypto';
 import net from 'net';
 
 const TIMEOUT = 15000;
@@ -35,6 +36,18 @@ function sockPath(targetId) {
     : resolve(RUNTIME_DIR, `cdp-${targetId}.sock`);
 }
 
+function explicitCdpEnvValue() {
+  return process.env.CDP_URL || process.env.CHROME_CDP_URL || process.env.BROWSER_CDP_URL || '';
+}
+
+function browserSockPath() {
+  const raw = explicitCdpEnvValue() || 'auto';
+  const hash = createHash('sha256').update(raw).digest('hex').slice(0, 16);
+  return IS_WINDOWS
+    ? `\\\\.\\pipe\\cdp-browser-${hash}`
+    : resolve(RUNTIME_DIR, `cdp-browser-${hash}.sock`);
+}
+
 function probePort(port, host) {
   host = host || '127.0.0.1';
   try {
@@ -45,7 +58,56 @@ function probePort(port, host) {
   } catch { return null; }
 }
 
+function probeHttpEndpoint(endpoint) {
+  try {
+    const r = spawnSync(process.execPath, ['-e', `
+      const endpoint = process.argv[1];
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3000);
+      (async () => {
+        try {
+          const versionUrl = new URL('/json/version', endpoint.endsWith('/') ? endpoint : endpoint + '/');
+          const res = await fetch(versionUrl, { signal: controller.signal });
+          if (!res.ok) process.exit(1);
+          process.stdout.write(await res.text());
+        } catch {
+          process.exit(1);
+        } finally {
+          clearTimeout(timer);
+        }
+      })();
+    `, endpoint], { encoding: 'utf8', timeout: 5000 });
+    if (r.status !== 0) return null;
+    const { webSocketDebuggerUrl } = JSON.parse(r.stdout);
+    return webSocketDebuggerUrl || null;
+  } catch { return null; }
+}
+
+function explicitCdpUrl() {
+  const raw = explicitCdpEnvValue();
+  if (!raw) return null;
+  const value = raw.trim();
+  let parsed;
+  try { parsed = new URL(value); }
+  catch { throw new Error('Invalid CDP_URL/CHROME_CDP_URL. Expected ws://, wss://, http://, or https:// URL.'); }
+
+  if (parsed.protocol === 'ws:' || parsed.protocol === 'wss:') return value;
+  if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+    const ws = probeHttpEndpoint(value);
+    if (ws) return ws;
+    throw new Error('Could not resolve browser WebSocket URL from CDP_URL/CHROME_CDP_URL HTTP endpoint. Expected /json/version to expose webSocketDebuggerUrl.');
+  }
+
+  throw new Error('Unsupported CDP_URL/CHROME_CDP_URL protocol. Expected ws://, wss://, http://, or https:// URL.');
+}
+
 function getWsUrl() {
+  // CDP_URL / CHROME_CDP_URL / BROWSER_CDP_URL: explicit browser endpoint.
+  // Use this for remote CDP providers such as Browser Use Cloud:
+  //   CDP_URL='wss://connect.browser-use.com?apiKey=...&profileId=...'
+  const explicit = explicitCdpUrl();
+  if (explicit) return explicit;
+
   // CDP_PORT: connect directly to a known port (e.g. --remote-debugging-port=9222)
   if (process.env.CDP_PORT) {
     const ws = probePort(process.env.CDP_PORT, process.env.CDP_HOST);
@@ -631,6 +693,128 @@ async function runDaemon(targetId) {
 }
 
 // ---------------------------------------------------------------------------
+// Browser-level daemon for explicit CDP_URL endpoints
+// ---------------------------------------------------------------------------
+
+async function runBrowserDaemon() {
+  const sp = browserSockPath();
+  const cdp = new CDP();
+  try {
+    await cdp.connect(getWsUrl());
+  } catch (e) {
+    process.stderr.write(`Browser daemon: cannot connect to Chrome: ${e.message}\n`);
+    process.exit(1);
+  }
+
+  let alive = true;
+  function shutdown() {
+    if (!alive) return;
+    alive = false;
+    server.close();
+    if (!IS_WINDOWS) try { unlinkSync(sp); } catch {}
+    cdp.close();
+    process.exit(0);
+  }
+
+  cdp.onClose(() => shutdown());
+  process.on('SIGTERM', shutdown);
+  process.on('SIGINT', shutdown);
+
+  let idleTimer = setTimeout(shutdown, IDLE_TIMEOUT);
+  function resetIdle() {
+    clearTimeout(idleTimer);
+    idleTimer = setTimeout(shutdown, IDLE_TIMEOUT);
+  }
+
+  async function handleCommand({ cmd, args = [] }) {
+    resetIdle();
+    try {
+      if (cmd === 'stop') return { ok: true, result: '', stopAfter: true };
+      if (cmd === 'list' || cmd === 'ls') {
+        const pages = await getPages(cdp);
+        writeFileSync(PAGES_CACHE, JSON.stringify(pages), { mode: 0o600 });
+        return { ok: true, result: formatPageList(pages) };
+      }
+      if (cmd === 'list_raw') {
+        const pages = await getPages(cdp);
+        writeFileSync(PAGES_CACHE, JSON.stringify(pages), { mode: 0o600 });
+        return { ok: true, result: JSON.stringify(pages) };
+      }
+      if (cmd === 'open') {
+        const url = args[0] || 'about:blank';
+        const { targetId } = await cdp.send('Target.createTarget', { url });
+        const pages = await getPages(cdp);
+        if (!pages.some(p => p.targetId === targetId)) pages.push({ targetId, title: url, url });
+        writeFileSync(PAGES_CACHE, JSON.stringify(pages), { mode: 0o600 });
+        return { ok: true, result: `Opened new tab: ${targetId.slice(0, 8)}  ${url}` };
+      }
+
+      if (!NEEDS_TARGET.has(cmd)) return { ok: false, error: `Unknown command: ${cmd}` };
+      const targetPrefix = args[0];
+      if (!targetPrefix) return { ok: false, error: 'target ID required. Run "cdp list" first.' };
+      const pages = await getPages(cdp);
+      writeFileSync(PAGES_CACHE, JSON.stringify(pages), { mode: 0o600 });
+      const targetId = resolvePrefix(targetPrefix, pages.map(p => p.targetId), 'target', 'Run "cdp list".');
+      const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
+      const cmdArgs = args.slice(1);
+      let result;
+      try {
+        switch (cmd) {
+          case 'snap': case 'snapshot': result = await snapshotStr(cdp, sessionId, true); break;
+          case 'eval': result = await evalStr(cdp, sessionId, cmdArgs[0]); break;
+          case 'shot': case 'screenshot': result = await shotStr(cdp, sessionId, cmdArgs[0], targetId); break;
+          case 'html': result = await htmlStr(cdp, sessionId, cmdArgs[0]); break;
+          case 'nav': case 'navigate': result = await navStr(cdp, sessionId, cmdArgs[0]); break;
+          case 'net': case 'network': result = await netStr(cdp, sessionId); break;
+          case 'click': result = await clickStr(cdp, sessionId, cmdArgs[0]); break;
+          case 'clickxy': result = await clickXyStr(cdp, sessionId, cmdArgs[0], cmdArgs[1]); break;
+          case 'type': result = await typeStr(cdp, sessionId, cmdArgs[0]); break;
+          case 'loadall': result = await loadAllStr(cdp, sessionId, cmdArgs[0], cmdArgs[1] ? parseInt(cmdArgs[1]) : 1500); break;
+          case 'evalraw': result = await evalRawStr(cdp, sessionId, cmdArgs[0], cmdArgs[1]); break;
+          default: return { ok: false, error: `Unknown command: ${cmd}` };
+        }
+      } finally {
+        try { await cdp.send('Target.detachFromTarget', { sessionId }); } catch {}
+      }
+      return { ok: true, result: result ?? '' };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  }
+
+  const server = net.createServer((conn) => {
+    let buf = '';
+    conn.on('data', (chunk) => {
+      buf += chunk.toString();
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let req;
+        try { req = JSON.parse(line); }
+        catch {
+          conn.write(JSON.stringify({ ok: false, error: 'Invalid JSON request', id: null }) + '\n');
+          continue;
+        }
+        handleCommand(req).then((res) => {
+          const payload = JSON.stringify({ ...res, id: req.id }) + '\n';
+          if (res.stopAfter) conn.end(payload, shutdown);
+          else conn.write(payload);
+        });
+      }
+    });
+  });
+
+  server.on('error', (e) => {
+    process.stderr.write(`Browser daemon server listen failed: ${e.message}\n`);
+    process.exit(1);
+  });
+
+  if (!IS_WINDOWS) try { unlinkSync(sp); } catch {}
+  server.listen(sp);
+}
+
+// ---------------------------------------------------------------------------
 // CLI ↔ daemon communication
 // ---------------------------------------------------------------------------
 
@@ -663,6 +847,25 @@ async function getOrStartTabDaemon(targetId) {
     try { return await connectToSocket(sp); } catch {}
   }
   throw new Error('Daemon failed to start — did you click Allow in Chrome?');
+}
+
+async function getOrStartBrowserDaemon() {
+  const sp = browserSockPath();
+  try { return await connectToSocket(sp); } catch {}
+  if (!IS_WINDOWS) try { unlinkSync(sp); } catch {}
+
+  const child = spawn(process.execPath, [process.argv[1], '_browser_daemon'], {
+    detached: true,
+    stdio: 'ignore',
+    env: process.env,
+  });
+  child.unref();
+
+  for (let i = 0; i < DAEMON_CONNECT_RETRIES; i++) {
+    await sleep(DAEMON_CONNECT_DELAY);
+    try { return await connectToSocket(sp); } catch {}
+  }
+  throw new Error('Browser daemon failed to start for CDP_URL');
 }
 
 function sendCommand(conn, req) {
@@ -805,11 +1008,49 @@ const NEEDS_TARGET = new Set([
 async function main() {
   const [cmd, ...args] = process.argv.slice(2);
 
-  // Daemon mode (internal)
+  // Daemon modes (internal)
   if (cmd === '_daemon') { await runDaemon(args[0]); return; }
+  if (cmd === '_browser_daemon') { await runBrowserDaemon(); return; }
 
   if (!cmd || cmd === 'help' || cmd === '--help' || cmd === '-h') {
     console.log(USAGE); process.exit(0);
+  }
+
+  if (explicitCdpEnvValue()) {
+    if (!(cmd === 'list' || cmd === 'ls' || cmd === 'open' || cmd === 'stop' || NEEDS_TARGET.has(cmd))) {
+      console.error(`Unknown command: ${cmd}\n`);
+      console.log(USAGE);
+      process.exit(1);
+    }
+
+    const cmdArgs = [...args];
+    if (cmd === 'eval') {
+      const expr = cmdArgs.slice(1).join(' ');
+      if (!expr) { console.error('Error: expression required'); process.exit(1); }
+      cmdArgs.splice(1, cmdArgs.length - 1, expr);
+    } else if (cmd === 'type') {
+      const text = cmdArgs.slice(1).join(' ');
+      if (!text) { console.error('Error: text required'); process.exit(1); }
+      cmdArgs.splice(1, cmdArgs.length - 1, text);
+    } else if (cmd === 'evalraw') {
+      if (!cmdArgs[1]) { console.error('Error: CDP method required'); process.exit(1); }
+      if (cmdArgs.length > 3) cmdArgs[2] = cmdArgs.slice(2).join(' ');
+    }
+
+    if ((cmd === 'nav' || cmd === 'navigate') && !cmdArgs[1]) {
+      console.error('Error: URL required');
+      process.exit(1);
+    }
+
+    const conn = await getOrStartBrowserDaemon();
+    const response = await sendCommand(conn, { cmd, args: cmdArgs });
+    if (response.ok) {
+      if (response.result) console.log(response.result);
+    } else {
+      console.error('Error:', response.error);
+      process.exitCode = 1;
+    }
+    return;
   }
 
   if (cmd === 'list' || cmd === 'ls') {

@@ -336,10 +336,19 @@ export async function curlPost(url, auth, body, referer) {
 // ---------------------------------------------------------------------------
 
 function findCdpScript() {
+  const here = dirname(new URL(import.meta.url).pathname);
+  const ancestorCandidates = [];
+  let dir = here;
+  for (let i = 0; i < 8; i++) {
+    ancestorCandidates.push(resolve(dir, 'skills/chrome-cdp/scripts/cdp.mjs'));
+    ancestorCandidates.push(resolve(dir, 'chrome-cdp/scripts/cdp.mjs'));
+    dir = resolve(dir, '..');
+  }
   const candidates = [
+    process.env.SHOWRUN_ROOT ? resolve(process.env.SHOWRUN_ROOT, 'skills/chrome-cdp/scripts/cdp.mjs') : null,
+    ...ancestorCandidates,
     resolve(homedir(), '.claude/skills/chrome-cdp/scripts/cdp.mjs'),
-    resolve(dirname(new URL(import.meta.url).pathname), '../../chrome-cdp/scripts/cdp.mjs'),
-  ];
+  ].filter(Boolean);
   return process.env.CDP_SCRIPT || candidates.find(p => existsSync(p))
     || (() => { throw new Error('chrome-cdp skill not found. Install it or set CDP_SCRIPT env var.'); })();
 }
