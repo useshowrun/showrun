@@ -1,10 +1,9 @@
 #!/usr/bin/env node
 
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
 import { join, dirname, resolve, sep, isAbsolute } from 'node:path';
 import { createInterface } from 'node:readline';
 import { createHash } from 'node:crypto';
-import { homedir } from 'node:os';
 
 const API_URL = 'https://api.showrun.co';
 const SHOWRUN_URL = 'https://showrun.co/showrun.mjs';
@@ -420,7 +419,12 @@ async function cmdConfig(key, value) {
   console.log(`${key} = ${config[key]}`);
 }
 
-// --- install-agents ---
+// --- sync-agents ---
+//
+// Pure download. Mirrors the agents/ tree from the API into <showrun_dir>/agents/
+// so the install-*.sh scripts inside it can run locally to copy agents into the
+// user's harness directory (e.g. ~/.claude/agents/). showrun.mjs intentionally
+// has no harness or destination knowledge — that lives in the install scripts.
 
 function agentsLockPath() {
   return join(dirname(new URL(import.meta.url).pathname), '.showrun-agents-lock.json');
@@ -438,151 +442,68 @@ function saveAgentsLock(lock) {
   writeFileSync(agentsLockPath(), JSON.stringify(lock, null, 2) + '\n');
 }
 
-// Reject filenames that contain separators, are absolute, or otherwise escape
-// destDir. Agents always install as a single flat <name>.md file.
-function safeAgentDestPath(destDir, fileName) {
-  if (typeof fileName !== 'string' || !fileName) return null;
-  if (isAbsolute(fileName) || /^[a-zA-Z]:[\\/]/.test(fileName)) return null;
-  if (fileName.includes('/') || fileName.includes(sep)) return null;
-  const root = resolve(destDir);
-  const dest = resolve(destDir, fileName);
+// Reject paths that are absolute or escape the agents target directory.
+function safeAgentsPath(agentsDir, relPath) {
+  if (typeof relPath !== 'string' || !relPath) return null;
+  if (isAbsolute(relPath) || /^[a-zA-Z]:[\\/]/.test(relPath)) return null;
+  const root = resolve(agentsDir);
+  const dest = resolve(agentsDir, relPath);
   if (dest !== root && !dest.startsWith(root + sep)) return null;
   return dest;
 }
 
-function parseInstallAgentsArgs(args) {
-  const opts = { project: false, yes: false, force: false };
-  let filter = null;
-  for (const arg of args) {
-    if (arg === '--project') opts.project = true;
-    else if (arg === '--yes' || arg === '-y') opts.yes = true;
-    else if (arg === '--force') opts.force = true;
-    else if (arg.startsWith('--')) {
-      console.error(`Unknown flag: ${arg}`);
-      process.exit(1);
-    } else if (filter === null) {
-      filter = arg;
-    } else {
-      console.error(`Unexpected argument: ${arg}`);
-      process.exit(1);
-    }
-  }
-  return { filter, opts };
-}
-
-async function cmdInstallAgents(rawArgs) {
-  // Pull a fresh CLI if available, but skip the silent skill-sync side effect
-  // of autoUpdate(). install-agents must stay explicit and prompt-gated.
-  await selfUpdate();
-
-  const { filter, opts } = parseInstallAgentsArgs(rawArgs);
-
-  const destDir = opts.project
-    ? join(process.cwd(), '.claude', 'agents')
-    : join(homedir(), '.claude', 'agents');
-
+async function cmdSyncAgents() {
   const remote = await apiAuth('/agents');
-  const remoteAgents = remote.agents || {};
-  let names = Object.keys(remoteAgents);
-  if (filter) {
-    names = names.filter((n) => n === filter);
-    if (!names.length) {
-      console.error(`No agent matching "${filter}".`);
-      process.exit(1);
-    }
-  }
-  if (!names.length) {
+  const files = Array.isArray(remote.files) ? remote.files : [];
+  const agentsDir = join(dirname(new URL(import.meta.url).pathname), 'agents');
+  const lock = loadAgentsLock();
+  const lockedVersion = lock.version;
+  const lockedFiles = new Set(lock.files || []);
+
+  if (!files.length) {
     console.log('No agents available.');
     return;
   }
 
-  const lock = loadAgentsLock();
-
-  // Build the plan up-front so the user sees every action before any write.
-  const plans = [];
-  for (const name of names) {
-    const meta = await apiAuth(`/agents/${encodeURIComponent(name)}`);
-    if (!meta || !Array.isArray(meta.files)) {
-      console.error(`Skipping ${name}: invalid response.`);
-      continue;
-    }
-    for (const f of meta.files) {
-      if (f.path !== 'SKILL.md') {
-        console.warn(`  ! ${name}: skipping unsupported extra file "${f.path}" (only SKILL.md is installed).`);
-        continue;
-      }
-      const writeName = `${name}.md`;
-      const destPath = safeAgentDestPath(destDir, writeName);
-      if (!destPath) {
-        console.error(`Refusing unsafe destination filename: ${writeName}`);
-        process.exit(1);
-      }
-      let classification;
-      if (!existsSync(destPath)) classification = 'new';
-      else if (lock[name]) classification = 'managed';
-      else classification = 'collision';
-      plans.push({ name, srcPath: f.path, destPath, writeName, classification });
-    }
-  }
-
-  if (!plans.length) {
-    console.log('Nothing to install.');
-    return;
-  }
-
-  console.log(`\nInstall plan → ${destDir}`);
-  for (const p of plans) {
-    let tag;
-    if (p.classification === 'new') tag = '[new]     ';
-    else if (p.classification === 'managed') tag = '[managed] ';
-    else tag = opts.force ? '[force]   ' : '[skip!]   ';
-    console.log(`  ${tag}${p.writeName}  (${p.name})`);
-  }
-
-  const writes = plans.filter((p) => p.classification !== 'collision' || opts.force);
-  const skipped = plans.length - writes.length;
-
-  if (!writes.length) {
-    console.log('\nAll targets are unmanaged collisions. Pass --force to overwrite, or remove the colliding files.');
-    return;
-  }
-
-  if (!opts.yes) {
-    const ans = await prompt(
-      `\nWrite ${writes.length} file(s)${skipped ? `, skip ${skipped} unmanaged` : ''}? [y/N] `
-    );
-    if (!/^y(es)?$/i.test(ans)) {
-      console.log('Aborted.');
+  // Skip the network round-trip if every locked file still exists at the same
+  // version. Mirrors the cmdSync skip path at line ~315.
+  if (lockedVersion === remote.version) {
+    const allPresent = files.every((p) => {
+      const dest = safeAgentsPath(agentsDir, p);
+      return dest && existsSync(dest) && lockedFiles.has(p);
+    });
+    if (allPresent) {
+      console.log(`Agents up to date (${files.length} file(s)).`);
       return;
     }
   }
 
-  mkdirSync(destDir, { recursive: true });
-  const writtenByAgent = {};
-  for (const p of writes) {
-    const url = `${getApiUrl()}/agents/${encodeURIComponent(p.name)}/file?path=${encodeURIComponent(p.srcPath)}`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${getApiKey()}` } });
-    if (!res.ok) {
-      console.error(`  ✗ Failed to download ${p.name}/${p.srcPath}: HTTP ${res.status}`);
+  mkdirSync(agentsDir, { recursive: true });
+  let synced = 0;
+  const written = [];
+  for (const relPath of files) {
+    const dest = safeAgentsPath(agentsDir, relPath);
+    if (!dest) {
+      console.error(`  ✗ Unsafe path in manifest: ${relPath}`);
       continue;
     }
-    const buf = Buffer.from(await res.arrayBuffer());
-    writeFileSync(p.destPath, buf);
-    (writtenByAgent[p.name] ||= []).push(p.srcPath);
+    const url = `${getApiUrl()}/agents/file?path=${encodeURIComponent(relPath)}`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${getApiKey()}` } });
+    if (!res.ok) {
+      console.error(`  ✗ Failed to download ${relPath}: HTTP ${res.status}`);
+      continue;
+    }
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, Buffer.from(await res.arrayBuffer()));
+    if (relPath.endsWith('.sh')) chmodSync(dest, 0o755);
+    written.push(relPath);
+    synced++;
   }
 
-  for (const [name, files] of Object.entries(writtenByAgent)) {
-    lock[name] = { version: remoteAgents[name], files };
-  }
-  saveAgentsLock(lock);
-
-  const writtenCount = Object.values(writtenByAgent).flat().length;
-  console.log(
-    `\nInstalled ${writtenCount} file(s) for ${Object.keys(writtenByAgent).length} agent(s) → ${destDir}`
-  );
-  if (skipped) {
-    console.log(`Skipped ${skipped} unmanaged collision(s). Re-run with --force to overwrite.`);
-  }
+  saveAgentsLock({ version: remote.version, files: written });
+  console.log(`Synced ${synced} agent file(s) to ${agentsDir}`);
+  console.log(`Run an installer in that directory to deploy agents to your harness, e.g.:`);
+  console.log(`  bash ${join(agentsDir, 'install-claude.sh')}`);
 }
 
 // --- Helpers ---
@@ -641,22 +562,20 @@ try {
     case 'config':
       await cmdConfig(args[0], args[1]);
       break;
-    case 'install-agents':
-      await cmdInstallAgents(args);
+    case 'sync-agents':
+      await cmdSyncAgents();
       break;
     default:
       console.log(`ShowRun Skills CLI
 
 Usage:
-  showrun.mjs login <email>                            Request access (sends magic link + OTP)
-  showrun.mjs verify <email> <code>                    Verify with OTP code or magic link token
-  showrun.mjs sync [path]                              Download/update skills
-  showrun.mjs check                                    Show available updates
-  showrun.mjs whoami                                   Show current user info
-  showrun.mjs config [key] [value]                     View or set configuration
-  showrun.mjs install-agents [name] [--project] [--yes] [--force]
-                                                       Install Claude Code agents into ~/.claude/agents/
-                                                       (--project writes to ./.claude/agents/ instead)`);
+  showrun.mjs login <email>           Request access (sends magic link + OTP)
+  showrun.mjs verify <email> <code>   Verify with OTP code or magic link token
+  showrun.mjs sync [path]             Download/update skills
+  showrun.mjs sync-agents             Download agents into ./agents/ (run agents/install-*.sh to deploy)
+  showrun.mjs check                   Show available updates
+  showrun.mjs whoami                  Show current user info
+  showrun.mjs config [key] [value]    View or set configuration`);
   }
 } catch (err) {
   console.error(`Error: ${err.message}`);
