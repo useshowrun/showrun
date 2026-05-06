@@ -13,8 +13,8 @@ ShowRun skills often need an authenticated browser session for sources such as P
 
 Prefer the simplest working option:
 
-1. **Browser Use Cloud persistent profile** — preferred whenever `~/.config/showrun/browser-use.env` has `BROWSER_USE_API_KEY` and `BROWSER_USE_PROFILE_ID`, especially when local Chrome is headless.
-2. **Local Chrome/Chromium with CDP** — good only when a visible local browser is available or login is already complete.
+1. **Browser Use Cloud persistent profile** — use this when `~/.config/showrun/browser-use.env` has `BROWSER_USE_API_KEY` and `BROWSER_USE_PROFILE_ID`, especially when local Chrome is headless. If the env file or vars are missing, skip this mode rather than asking the user to set up Browser Use Cloud.
+2. **Local Chrome/Chromium with CDP** — good when a visible local browser is available or login is already complete.
 
 Do not ask for raw passwords.
 Core invariant: human login handoff → exact live browser CDP endpoint. Background collection without an active human live tab → profile connector/helper.
@@ -31,7 +31,7 @@ set -a; source ~/.config/showrun/browser-use.env; set +a
 test -n "${BROWSER_USE_API_KEY:-}" && test -n "${BROWSER_USE_PROFILE_ID:-}" && echo browser-use-ready
 ```
 
-Expected local config for this clean ShowRun install:
+Expected local config:
 
 ```bash
 ~/.config/showrun/browser-use.env
@@ -59,17 +59,17 @@ Useful query params:
 - `browserScreenWidth` / `browserScreenHeight` — optional.
 
 
-### Clean ShowRun helper
+### Optional helper
 
-In the clean `showrun-test` install, use this helper before touching local CDP:
+If the workspace ships a Browser Use CDP helper at `~/bin/showrun-browser-use-cdp`, use it before touching local CDP. If it isn't there, skip this section and go straight to exporting `CDP_URL` below.
 
 ```bash
-~/bin/showrun-browser-use-cdp
-~/bin/showrun-browser-use-cdp https://www.linkedin.com/sales/
-~/bin/showrun-browser-use-cdp https://www.crunchbase.com/
+if [ -x ~/bin/showrun-browser-use-cdp ]; then
+  ~/bin/showrun-browser-use-cdp https://www.linkedin.com/sales/
+fi
 ```
 
-If this succeeds, export `CDP_URL` before using ShowRun source skills so their `chrome-cdp` calls use Browser Use instead of local `127.0.0.1:9222`:
+When connecting (with or without the helper), export `CDP_URL` before using ShowRun source skills so their `chrome-cdp` calls use Browser Use instead of local `127.0.0.1:9222`:
 
 ```bash
 set -a; source ~/.config/showrun/browser-use.env; set +a

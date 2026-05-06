@@ -1,6 +1,6 @@
 ---
 name: showrun-local-collector-setup
-description: Set up or troubleshoot a local ShowRun Collector for OpenClaw sub-agent use, including what ShowRun is, where local skills live, how to run skill scripts, browser/profile auth, and source-access readiness.
+description: Set up or troubleshoot a local ShowRun Collector when used as a sub-agent or in an existing session, including what ShowRun is, where local skills live, how to run skill scripts, browser/profile auth, and source-access readiness.
 ---
 
 # ShowRun Local Collector Setup
@@ -28,20 +28,14 @@ The Collector's job is to use those local skill instructions/scripts to collect 
 
 ## Local ShowRun roots
 
-Prefer the first existing root:
-
-```bash
-/home/showrun-test/workspace/cdp_taskpacks
-/srv/openclaw/workspace/repos/cdp_taskpacks
-$PWD
-```
+Use `$PWD` as the ShowRun root. If the user runs commands from a different workspace, ask. Do not assume any specific absolute path.
 
 Inside the root:
 
 - `showrun.mjs` is the ShowRun sync/install CLI.
 - `skills/` contains the actual source skills.
 - `skills/chrome-cdp/` contains the browser/CDP helper.
-- `agents/` contains OpenClaw agent skills, not source data skills.
+- `agents/` contains agent definitions and per-harness install scripts (e.g. `install-claude.sh`), not source data skills.
 
 When unsure, discover skills with:
 
@@ -102,7 +96,7 @@ As Collector:
 
 ### Required Browser Use preflight
 
-Before any gated-source collection attempt, run this preflight from the deployed VPS/demo environment when Browser Use config may exist:
+Before any gated-source collection attempt, run this preflight if Browser Use config may exist on this machine:
 
 ```bash
 set -a
@@ -127,12 +121,13 @@ node scripts/cdp.mjs list
 
 Use the profile helper only when there is no active user live-session URL, or when intentionally starting/reusing a persistent profile outside an active login handoff.
 
-Then find and use the Browser Use helper. In the VPS demo the canonical helper path is absolute:
+Then find and use the Browser Use helper if it ships in the workspace. Look for it under `$PWD/scripts/lib/browser-use.mjs` first, then anywhere on `PATH` the user pointed you at. If the helper is not present, skip this step and rely on local CDP / live-browser-URL paths.
 
 ```bash
-BROWSER_USE_HELPER="/home/showrun/showrun-vps-demo/scripts/lib/browser-use.mjs"
-test -f "$BROWSER_USE_HELPER" || BROWSER_USE_HELPER="$PWD/scripts/lib/browser-use.mjs"
-node "$BROWSER_USE_HELPER" browser --profile-id "$BROWSER_USE_PROFILE_ID"
+BROWSER_USE_HELPER="$PWD/scripts/lib/browser-use.mjs"
+if [ -f "$BROWSER_USE_HELPER" ]; then
+  node "$BROWSER_USE_HELPER" browser --profile-id "$BROWSER_USE_PROFILE_ID"
+fi
 ```
 
 The helper reuses the last active Browser Use browser when possible and stores live browser metadata in:

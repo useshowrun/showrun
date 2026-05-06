@@ -39,7 +39,7 @@ When this skill applies, read this file before answering and follow the workflow
 
 1. Clarify only if ambiguity changes the work.
 2. Identify must-have sources and nice-to-have sources.
-3. If gated/browser-backed sources are important, use Browser Use/CDP-backed source access, not the built-in OpenClaw browser as a substitute. If `BROWSER_USE_PROFILE_ID` or `CDP_URL` is missing, stop and ask for setup/profile login instead of continuing with built-in browser research.
+3. If gated/browser-backed sources are important, use Browser Use/CDP-backed source access, not the harness's built-in browser as a substitute. If `BROWSER_USE_PROFILE_ID` or `CDP_URL` is missing, stop and ask for setup/profile login instead of continuing with built-in browser research.
 4. If gated/browser-backed sources are important, use `showrun-browser-setup` in this session:
    - check whether CDP/browser access already works,
    - launch or connect a browser/profile if possible,
@@ -83,7 +83,7 @@ Ask for logins only when they change the decision, but ask at the start when the
 
 Use this skill either:
 
-- dynamically, when a VC research request appears in an existing OpenClaw session, or
+- dynamically, when a VC research request appears in an existing session, or
 - as the seed instructions for a dedicated `VC Research Expert` session that the main assistant can message repeatedly.
 
 Dedicated session mode is useful when the expert should keep notes, cache prior results, or continue a diligence thread across turns.
