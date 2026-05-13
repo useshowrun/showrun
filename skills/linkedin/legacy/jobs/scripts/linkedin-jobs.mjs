@@ -745,7 +745,7 @@ async function submitEasyApply(auth, jobId, answers = {}, { followCompany = true
 // Saved jobs list
 // ---------------------------------------------------------------------------
 
-const SEARCH_CLUSTER_QUERY_ID = 'voyagerSearchDashClusters.05111e1b90ee7fea15bebe9f9410ced9';
+const SEARCH_CLUSTER_QUERY_ID = 'voyagerSearchDashClusters.843215f2a3455f1bed85762a45d71be8';
 
 const SAVED_TABS = {
   saved: 'SEARCH_MY_ITEMS_JOB_SEEKER',

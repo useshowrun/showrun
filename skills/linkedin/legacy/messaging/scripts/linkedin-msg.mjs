@@ -364,7 +364,7 @@ function encodeRestliValue(val) {
 
 async function listConversations(auth, { count = 20, category = 'PRIMARY_INBOX' } = {}) {
   const variables = `(query:(predicateUnions:List((conversationCategoryPredicate:(category:${category})))),count:${count},mailboxUrn:${encodeRestliValue(auth.myUrn)})`;
-  const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerConversations.9501074288a12f3ae9e3c7ea243bccbf&variables=${variables}`;
+  const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerConversations.0d5e6781bbee71c3e51c8843c6519f48&variables=${variables}`;
 
   const result = await apiFetch(auth, url);
   if (!result.ok) {

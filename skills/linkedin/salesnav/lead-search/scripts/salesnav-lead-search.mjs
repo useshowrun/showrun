@@ -474,7 +474,7 @@ async function searchLeads(auth, flags, { start = 0, count = 25 } = {}) {
     + `&start=${start}`
     + `&count=${count}`
     + `&trackingParam=(sessionId:${sid})`
-    + `&decorationId=com.linkedin.sales.deco.desktop.searchv2.LeadSearchResult-16`;
+    + `&decorationId=com.linkedin.sales.deco.desktop.searchv2.LeadSearchResult-14`;
 
   const data = await apiFetch(auth, url);
 
