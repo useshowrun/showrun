@@ -15,6 +15,7 @@ import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
+import { ensureFreshAuth, detectKillMarkers, killedErrorMessage } from '../../../_shared/li-auth.mjs';
 
 // ---------------------------------------------------------------------------
 // Data directory
@@ -197,12 +198,22 @@ async function doAuth() {
 // ---------------------------------------------------------------------------
 
 function getAuth() {
-  const auth = loadJson(SESSION_FILE);
-  if (!auth.cookie) {
-    console.error('No auth found. Run: node linkedin-company.mjs auth');
+  try {
+    const auth = ensureFreshAuth({ sessionFile: SESSION_FILE });
+    if (!auth.cookie) {
+      console.error('No auth found. Run: node linkedin-company.mjs auth');
+      process.exit(1);
+    }
+    return auth;
+  } catch (err) {
+    console.error(`Could not refresh auth from Chrome: ${err.message}`);
+    const cached = loadJson(SESSION_FILE);
+    if (cached.cookie) {
+      console.error('Falling back to cached session.json (may be stale).');
+      return cached;
+    }
     process.exit(1);
   }
-  return auth;
 }
 
 function baseHeaders(auth) {
@@ -217,7 +228,9 @@ function baseHeaders(auth) {
 }
 
 async function apiFetch(auth, url, options = {}) {
-  const resp = await fetch(url, { ...options, headers: { ...baseHeaders(auth), ...options.headers } });
+  const resp = await fetch(url, { ...options, headers: { ...baseHeaders(auth), ...options.headers }, redirect: 'manual' });
+  const { killed, killReason } = detectKillMarkers(resp);
+  if (killed) throw new Error(killedErrorMessage(url, killReason));
   if (resp.status === 204) return null;
   const text = await resp.text();
   let data;

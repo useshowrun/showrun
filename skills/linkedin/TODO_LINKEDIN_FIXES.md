@@ -42,21 +42,24 @@ async function apiFetch(auth, url, options = {}) {
 }
 ```
 
-**Scripts still to migrate (track here):**
+**Migration status: complete across all 14 scripts.**
 
-- [ ] `legacy/company/scripts/linkedin-company.mjs`
-- [ ] `legacy/posts/scripts/linkedin-posts.mjs`
-- [ ] `legacy/profile/scripts/linkedin-profile.mjs`
-- [ ] `legacy/search/scripts/linkedin-search.mjs`
-- [ ] `salesnav/account-profile/scripts/salesnav-account-profile.mjs`
-- [ ] `salesnav/account-search/scripts/salesnav-account-search.mjs`
-- [ ] `salesnav/lead-profile/scripts/salesnav-lead-profile.mjs`
-- [ ] `salesnav/lists/scripts/salesnav-lists.mjs`
-- [ ] `salesnav/messaging/scripts/salesnav-messaging.mjs`
-- [ ] `salesnav/saved-lead-search/scripts/linkedin-salesnav-saved-lead-search.mjs`
-- [ ] `salesnav/saved-searches/scripts/salesnav-saved-searches.mjs`
+- [x] `legacy/company/scripts/linkedin-company.mjs`
+- [x] `legacy/jobs/scripts/linkedin-jobs.mjs`
+- [x] `legacy/messaging/scripts/linkedin-msg.mjs`
+- [x] `legacy/posts/scripts/linkedin-posts.mjs`
+- [x] `legacy/profile/scripts/linkedin-profile.mjs`
+- [x] `legacy/search/scripts/linkedin-search.mjs`
+- [x] `salesnav/account-profile/scripts/salesnav-account-profile.mjs`
+- [x] `salesnav/account-search/scripts/salesnav-account-search.mjs`
+- [x] `salesnav/lead-profile/scripts/salesnav-lead-profile.mjs`
+- [x] `salesnav/lead-search/scripts/salesnav-lead-search.mjs`
+- [x] `salesnav/lists/scripts/salesnav-lists.mjs`
+- [x] `salesnav/messaging/scripts/salesnav-messaging.mjs`
+- [x] `salesnav/saved-lead-search/scripts/linkedin-salesnav-saved-lead-search.mjs`
+- [x] `salesnav/saved-searches/scripts/salesnav-saved-searches.mjs`
 
-Each is a ≤10-line edit following the pattern above.
+Every script's `getAuth()` now refreshes from Chrome before returning; every `apiFetch()` throws a clear error on `Set-Cookie: li_at=delete me` or `Clear-Site-Data` rather than silently swallowing the headers. `redirect: 'manual'` is set on every fetch so a stealth-revocation 302 cannot be masqueraded as a parse error.
 
 ---
 
