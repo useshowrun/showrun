@@ -71,7 +71,35 @@ const url = `https://www.linkedin.com/voyager/api/organization/companies/${parse
 
 ---
 
-## 4. Not exercised in this capture — status unknown
+## 4. `legacy/jobs/scripts/linkedin-jobs.mjs:757` — `listSavedJobs`
+
+**Current:**
+```js
+const SEARCH_CLUSTER_QUERY_ID = 'voyagerSearchDashClusters.843215f2a3455f1bed85762a45d71be8';
+// ...
+const variables = `(start:${start},query:(flagshipSearchIntent:${intent}))`;
+const url = `https://www.linkedin.com/voyager/api/graphql?variables=${variables}&queryId=${SEARCH_CLUSTER_QUERY_ID}`;
+```
+
+**Why it's broken:** The branch's hash rotation from `05111e1b…` → `843215f2…` swapped to a hash that was captured under a different feature entirely. The only occurrence of `843215f2…` in the 2026-05-13 capture is under phase `li-company-people` with:
+
+```
+?includeWebMetadata=true
+&variables=(start:0,origin:FACETED_SEARCH,query:(flagshipSearchIntent:ORGANIZATIONS_PEOPLE_ALUMNI,queryParameters:List(...),includeFiltersInResponse:true),count:12)
+&queryId=voyagerSearchDashClusters.843215f2a3455f1bed85762a45d71be8
+```
+
+The persisted query at `843215f2…` is the company-alumni cluster search. It does not accept the `SEARCH_MY_ITEMS_JOB_SEEKER` flagship intent the script sends; LinkedIn returns HTTP 401 (controlled rejection, no `Set-Cookie: li_at=delete me`, no `Clear-Site-Data` — session stays alive). The saved-jobs page itself was never navigated during the 2026-05-13 capture, so the actual current queryId + variables for `SEARCH_MY_ITEMS_JOB_SEEKER` is unknown.
+
+**Why the new hash is kept anyway:** The pre-rotation hash `05111e1b…` is absent from current frontend traffic. Per `feedback_verify_before_bump`, that itself is a kill-risk signal. The captured-but-wrong-feature hash returns a clean 401 (verified previous session). Between "broken with controlled 401" and "broken with possible novelty-kill", the 401 path is the safer broken state to ship.
+
+**Required rewrite:** capture the saved-jobs flow. Specifically nav `/my-items/saved-jobs/` (and the `in-progress`, `applied`, `archived` tabs) under CDP Network capture, identify the queryId actually issued, and rewrite `listSavedJobs` against it. The new shape will almost certainly include `origin`, `count`, and `includeWebMetadata=true` as the captured 200 response demonstrates.
+
+**Risk if shipped as-is:** HTTP 401 on every call. No data, but no session kill.
+
+---
+
+## 5. Not exercised in this capture — status unknown
 
 These script URLs were absent from the 2026-05-13 capture, but only because the corresponding action wasn't triggered (mutation paths, deeply-nested clicks). They may be alive or stale — verify before next use:
 
@@ -91,14 +119,18 @@ These script URLs were absent from the 2026-05-13 capture, but only because the 
 
 ---
 
-## Validation discipline for the fixes applied in this branch
+## Validation status of the three fixes in this branch
 
-These 3 fixes are committed but **not yet validated against the live API**:
+| Fix | Status | Notes |
+|---|---|---|
+| `salesnav-lead-search.mjs: LeadSearchResult-16 → -14` | ✅ verified live | End-to-end resolve succeeded in the investigation session. |
+| `linkedin-msg.mjs: messengerConversations.0d5e6781…` | ⚠️ untested | Hash itself is captured (phase `li-messaging`, status 200). However, the captured frontend variables shape is `(mailboxUrn:URN)` only; the script sends a richer `(query:(predicateUnions:…),count:N,mailboxUrn:URN)`. Likely-but-not-guaranteed to work — the persisted query probably accepts the additional optional fields. Validate in a future session when the account is not warm. |
+| `linkedin-jobs.mjs: voyagerSearchDashClusters.843215f2…` | ❌ broken; see §4 above | The new hash is for a different feature's persisted query. Returns HTTP 401, session alive. Needs targeted capture + rewrite, not a hash swap. |
 
-1. `salesnav-lead-search.mjs:LeadSearchResult-14`
-2. `linkedin-msg.mjs:messengerConversations.0d5e6781…`
-3. `linkedin-jobs.mjs:voyagerSearchDashClusters.843215f2…`
-
-Per memory rule, validation must happen in a **separate session** from the investigation session that produced these fixes. For each: run the script once with the smallest possible input, check the response for non-empty data and absence of kill markers, wait ≥30 s, then verify the session is still alive with a lightweight call. Stop on any anomaly.
+Validation discipline for the remaining `linkedin-msg` test: run `listConversations` once with the smallest possible input (e.g., `node linkedin-msg.mjs list-conversations --count=5`), check the response for non-empty data and absence of `Set-Cookie: li_at=delete me`, wait ≥30 s, then verify session liveness with a single profile resolve. Stop on any anomaly. Do not bundle this validation with any other LinkedIn work in the same session.
 
 Reference: `~/.claude/projects/-home-eyup-Projects-linkedin/memory/feedback_verify_before_bump.md`.
+
+## Pre-existing bug unrelated to these fixes
+
+`legacy/messaging/scripts/linkedin-msg.mjs:198` calls `getLinkedInAuthCookies(target, list)` where `list` is undefined. This breaks the script's own `auth` subcommand. Workaround: copy a `session.json` from a sibling script's data directory.
