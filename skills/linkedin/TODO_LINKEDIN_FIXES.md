@@ -4,6 +4,60 @@ Captured live frontend traffic 2026-05-13 and diffed against script URLs. Three 
 
 Capture and diff artifacts: `/home/eyup/Projects/linkedin/captures/2026-05-13/AUDIT_REPORT.md`.
 
+## Shared auth + kill-detection helper
+
+`skills/linkedin/_shared/li-auth.mjs` exports:
+
+- `ensureFreshAuth({ sessionFile })` — reads Chrome's current LinkedIn cookies via CDP, compares against `session.json`'s `li_at`, rewrites the file when they differ. Use at script startup in place of plain `loadJson(SESSION_FILE)`. Caches the freshness check at process scope (one Chrome read per script invocation).
+- `detectKillMarkers(resp)` — inspects a fetch `Response` for `Set-Cookie: li_at=delete me` and `Clear-Site-Data: "storage"` and returns `{ killed: bool, killReason: string|null }`. The two signals fire for BOTH stale-cookie responses AND abuse-flag kills — `ensureFreshAuth` rules out the stale case so any remaining `killed=true` is a real abuse signal.
+- `killedErrorMessage(url, killReason)` — consistent thrown-error wording for the kill case.
+
+**Migration pattern (already applied to `linkedin-msg.mjs`, `linkedin-jobs.mjs`, `salesnav-lead-search.mjs`):**
+
+```js
+import { ensureFreshAuth, detectKillMarkers, killedErrorMessage } from '../../../_shared/li-auth.mjs';
+
+function getAuth() {
+  try {
+    const auth = ensureFreshAuth({ sessionFile: SESSION_FILE });
+    if (!auth.cookie) { console.error('No auth — run auth subcommand'); process.exit(1); }
+    return auth;
+  } catch (err) {
+    console.error(`Could not refresh auth from Chrome: ${err.message}`);
+    const cached = loadJson(SESSION_FILE);
+    if (cached.cookie) { console.error('Falling back to cached (may be stale).'); return cached; }
+    process.exit(1);
+  }
+}
+
+async function apiFetch(auth, url, options = {}) {
+  const resp = await fetch(url, {
+    ...options,
+    headers: { ...baseHeaders(auth), ...options.headers },
+    redirect: 'manual', // never follow into the login page
+  });
+  const { killed, killReason } = detectKillMarkers(resp);
+  if (killed) throw new Error(killedErrorMessage(url, killReason));
+  // ... existing body handling
+}
+```
+
+**Scripts still to migrate (track here):**
+
+- [ ] `legacy/company/scripts/linkedin-company.mjs`
+- [ ] `legacy/posts/scripts/linkedin-posts.mjs`
+- [ ] `legacy/profile/scripts/linkedin-profile.mjs`
+- [ ] `legacy/search/scripts/linkedin-search.mjs`
+- [ ] `salesnav/account-profile/scripts/salesnav-account-profile.mjs`
+- [ ] `salesnav/account-search/scripts/salesnav-account-search.mjs`
+- [ ] `salesnav/lead-profile/scripts/salesnav-lead-profile.mjs`
+- [ ] `salesnav/lists/scripts/salesnav-lists.mjs`
+- [ ] `salesnav/messaging/scripts/salesnav-messaging.mjs`
+- [ ] `salesnav/saved-lead-search/scripts/linkedin-salesnav-saved-lead-search.mjs`
+- [ ] `salesnav/saved-searches/scripts/salesnav-saved-searches.mjs`
+
+Each is a ≤10-line edit following the pattern above.
+
 ---
 
 ## 1. `legacy/profile/scripts/linkedin-profile.mjs:174` — `fetchProfileGraphQL(vanityName)`
@@ -96,6 +150,45 @@ The persisted query at `843215f2…` is the company-alumni cluster search. It do
 **Required rewrite:** capture the saved-jobs flow. Specifically nav `/my-items/saved-jobs/` (and the `in-progress`, `applied`, `archived` tabs) under CDP Network capture, identify the queryId actually issued, and rewrite `listSavedJobs` against it. The new shape will almost certainly include `origin`, `count`, and `includeWebMetadata=true` as the captured 200 response demonstrates.
 
 **Risk if shipped as-is:** HTTP 401 on every call. No data, but no session kill.
+
+---
+
+## 4a. Other stale `voyagerSearchDashClusters` hash sites (same fix family as §4)
+
+The same outdated `voyagerSearchDashClusters.05111e1b90ee7fea15bebe9f9410ced9` hash appears in two more sites — both unverified against current frontend traffic and at the same kill-novelty risk class as the pre-rotation linkedin-jobs hash:
+
+- `legacy/company/scripts/linkedin-company.mjs:420` — `fetchCompanyPeople`. Sends the same hash with an intent like `ORGANIZATIONS_PEOPLE`. The 2026-05-13 capture *does* contain a current `voyagerSearchDashClusters.843215f2…` call from a company-people page (phase `li-company-people`), so this site has a known-current replacement. Likely fixable with a one-line hash swap plus aligning variables to include `origin:FACETED_SEARCH`, `count`, and `queryParameters:List(...)` as in the capture.
+
+- `legacy/search/scripts/linkedin-search.mjs:253` — `doSearch`. Sends the hash with `flagshipSearchIntent:SEARCH_SRP` (global header search). The current hash for that intent was not captured — global search wasn't exercised on 2026-05-13. Needs a targeted capture (type into the LinkedIn header search bar, scroll the SRP) before any swap.
+
+**Risk if shipped as-is:** the same novelty-kill candidate the original `linkedin-jobs` listSavedJobs was. Neither site has had a controlled live test against today's session. Treat as do-not-call until verified.
+
+---
+
+## 4b. `WebTopCardCore-19` decoration is suspected dead — `resolveProfileUrn` sites
+
+Two scripts resolve a `vanity → profile URN` via the REST endpoint `/voyager/api/voyagerIdentityDashProfiles?q=memberIdentity&memberIdentity={vanity}&decorationId=…WebTopCardCore-19`. This decoration is absent from the 2026-05-13 capture. The current frontend resolves the same `vanity → URN` mapping via the GraphQL queryId `voyagerIdentityDashProfiles.b5c27c04968c409fc0ed3546575b9b7a` (or one of the two URN-input variants — see §1).
+
+Sites:
+
+- `legacy/messaging/scripts/linkedin-msg.mjs:268` — `resolveProfileUrn`. Called by `send`, `messages`, and `search` subcommands. If this dies, the entire script's profile-resolve path is broken.
+- `legacy/posts/scripts/linkedin-posts.mjs:222` — `resolveProfileUrn`. Same risk profile.
+
+**Required rewrite:** match the rewrite proposed in §1 (vanity → URN via SDUI/page scrape, then URN → profile via a current queryId). Extract into a shared helper so both call sites benefit.
+
+**Risk if shipped as-is:** high. The decoration is novel-to-current-traffic and may trigger an abuse-flag kill, not a clean 400.
+
+---
+
+## 4c. `linkedin-profile.mjs:392` — `fetchProfileCard` REST loop
+
+**Current:** 12-call N+1 against `/voyager/api/voyagerIdentityDashProfileCards/{cardUrn}` for each card on a profile detail page.
+
+**Why it's broken:** Frontend migrated to GraphQL `voyagerIdentityDashProfileCards.664e2b2a3534d6b6c474102628a62128` (captured 2026-05-13). The per-card REST path is no longer in frontend traffic. The earlier-attempted Restli batch shape `?ids=List(...)&decorationId=…` killed the session on 2026-04-10 (see `~/.claude/projects/-home-eyup-Projects-linkedin/memory/feedback_verify_before_bump.md`).
+
+**Required rewrite:** Call the captured GraphQL queryId. Inspect a captured response body to identify which fields are needed. Likely also consolidates the 12-call loop into 1-2 GraphQL calls — both a correctness and a rate-limit win.
+
+**Risk if shipped as-is:** unknown. The first invocation of `viewProfile` (which calls into this loop) might be either a slow 12-call-and-die or a single-call-and-die.
 
 ---
 
