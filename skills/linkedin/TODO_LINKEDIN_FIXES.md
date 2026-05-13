@@ -124,12 +124,38 @@ These script URLs were absent from the 2026-05-13 capture, but only because the 
 | Fix | Status | Notes |
 |---|---|---|
 | `salesnav-lead-search.mjs: LeadSearchResult-16 → -14` | ✅ verified live | End-to-end resolve succeeded in the investigation session. |
-| `linkedin-msg.mjs: messengerConversations.0d5e6781…` | ⚠️ untested | Hash itself is captured (phase `li-messaging`, status 200). However, the captured frontend variables shape is `(mailboxUrn:URN)` only; the script sends a richer `(query:(predicateUnions:…),count:N,mailboxUrn:URN)`. Likely-but-not-guaranteed to work — the persisted query probably accepts the additional optional fields. Validate in a future session when the account is not warm. |
+| `linkedin-msg.mjs: messengerConversations.0d5e6781…` | ✅ hash + simple shape verified live; richer shape untested | 2026-05-13: with fresh cookies extracted directly from Chrome, the *captured-byte-for-byte* shape `(mailboxUrn:URN)` returns HTTP 200 + 345 KB of real data, no kill markers. The script's actual variables shape `(query:(predicateUnions:…),count:N,mailboxUrn:URN)` was **not** retested with fresh auth and remains untested. Worth either testing carefully or refactoring `listConversations` to use the simple shape + client-side filtering — see §6. |
 | `linkedin-jobs.mjs: voyagerSearchDashClusters.843215f2…` | ❌ broken; see §4 above | The new hash is for a different feature's persisted query. Returns HTTP 401, session alive. Needs targeted capture + rewrite, not a hash swap. |
 
 Validation discipline for the remaining `linkedin-msg` test: run `listConversations` once with the smallest possible input (e.g., `node linkedin-msg.mjs list-conversations --count=5`), check the response for non-empty data and absence of `Set-Cookie: li_at=delete me`, wait ≥30 s, then verify session liveness with a single profile resolve. Stop on any anomaly. Do not bundle this validation with any other LinkedIn work in the same session.
 
 Reference: `~/.claude/projects/-home-eyup-Projects-linkedin/memory/feedback_verify_before_bump.md`.
+
+## 6. `legacy/messaging/scripts/linkedin-msg.mjs:365` — `listConversations` variables shape
+
+**Status: hash rotation is verified, but the script's richer variables shape was not validated with fresh auth.** Investigate before next reliance.
+
+**What the script sends (line 366):**
+```
+?queryId=messengerConversations.0d5e6781bbee71c3e51c8843c6519f48
+&variables=(query:(predicateUnions:List((conversationCategoryPredicate:(category:PRIMARY_INBOX)))),count:N,mailboxUrn:urn%3Ali%3Afsd_profile%3A…)
+```
+
+**What LinkedIn's SPA bundle actually sends (captured 2026-05-12, status 200, replayed 2026-05-13 with fresh cookies, status 200):**
+```
+?queryId=messengerConversations.0d5e6781bbee71c3e51c8843c6519f48
+&variables=(mailboxUrn:urn%3Ali%3Afsd_profile%3A…)
+```
+
+The script's richer shape — `query.predicateUnions`, `count` — was never seen in captured frontend traffic. Whether the persisted query accepts those extra fields is currently unknown. An earlier attempt to test it on 2026-05-13 ran into stale on-disk cookies (see `~/.claude/projects/-home-eyup-Projects-linkedin/memory/project_variables_shape_kill_2026_05_13.md`) and was not a valid test of the shape.
+
+**Recommended path forward:**
+
+1. **Easiest:** refactor `listConversations` to send only the captured-safe `(mailboxUrn:URN)` shape, then filter by `conversationCategoryPredicate` client-side. The 200 response already contains all inbox metadata; the predicate filter is a UI concern, not a server one. Drop `count` — pagination via subsequent calls with a cursor is the SPA's mechanism (look at `nextStartedAt` / sync tokens in the response).
+2. **Harder:** capture deeper messaging traffic (inbox scroll, category switch, filter chip click) to discover whether the bundle ever sends extra variables to this queryId. Only adopt the richer shape if you see it in capture.
+3. **Do not** test the richer shape live without a fresh CDP cookie extraction immediately beforehand (within seconds, not minutes), and without the cookie-diff sanity check baked into the call site.
+
+---
 
 ## Pre-existing bug unrelated to these fixes
 
