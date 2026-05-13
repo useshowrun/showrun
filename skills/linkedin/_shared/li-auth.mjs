@@ -187,6 +187,31 @@ export function baseHeaders(auth, extra = {}) {
   };
 }
 
+// Identifiers that the 2026-05-13 capture diff (or follow-ups) have proven
+// are absent from current LinkedIn frontend traffic. Calling a URL that
+// embeds one of these is a near-certain HTTP 4xx and a non-zero kill risk
+// (see TODO_LINKEDIN_FIXES.md §1–§4c). The list is a runtime tripwire —
+// if a script issues a fetch containing one of these substrings, fetchAuthed
+// logs a warning before the request goes out. Update the list when shapes
+// are verified-fixed or newly-confirmed-stale.
+const KNOWN_STALE_URL_FRAGMENTS = [
+  // §1 — fetchProfileGraphQL, vanityName-input variant is retired
+  'voyagerIdentityDashProfiles.a3de77c32c473719f1c58fae6bff43a5',
+  // §2 — listConnections legacy REST path (SDUI migration)
+  '/voyager/api/relationships/dash/connections?q=search',
+  // §2 — connections enrichment with FullProfile-76 (killed session 2026-05-12)
+  'FullProfile-76',
+  // §3 — viewCompany legacy REST decoration (migrated to GraphQL)
+  'WebFullCompanyMain-35',
+  // §4a — voyagerSearchDashClusters old hash (only valid for ORGANIZATIONS_PEOPLE_ALUMNI
+  // intent and only when used with the captured variables shape — see §4a)
+  'voyagerSearchDashClusters.05111e1b90ee7fea15bebe9f9410ced9',
+  // §4b — WebTopCardCore-19 decoration absent from 2026-05-13 capture
+  'WebTopCardCore-19',
+  // §4c — per-card REST loop (migrated to GraphQL voyagerIdentityDashProfileCards)
+  '/voyager/api/voyagerIdentityDashProfileCards/',
+];
+
 // Inspects a fetch Response for the standard LinkedIn session-kill signals.
 // These signals fire for BOTH stale-cookie responses AND abuse-flag kills —
 // distinguish by whether the on-disk cookie was just refreshed from Chrome.
@@ -229,6 +254,54 @@ export async function apiFetchSafe(auth, url, options = {}) {
   const { killed, killReason } = detectKillMarkers(resp);
   const retryAfter = resp.headers.get('retry-after') || null;
   return { status: resp.status, ok: resp.ok, data, killed, killReason, retryAfter, headers: resp.headers };
+}
+
+// Parses an HTTP Retry-After header value, which can be either a number of
+// seconds (RFC 7231 §7.1.3) or an HTTP-date. Returns milliseconds, or null
+// if the header is missing or unparseable.
+export function parseRetryAfterMs(headerValue) {
+  if (!headerValue) return null;
+  const trimmed = String(headerValue).trim();
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const date = Date.parse(trimmed);
+  if (!Number.isNaN(date)) return Math.max(0, date - Date.now());
+  return null;
+}
+
+export function sleep(ms) {
+  return new Promise((res) => setTimeout(res, ms));
+}
+
+// Single-call wrapper around fetch() that handles the three things every
+// LinkedIn caller needs to handle correctly: redirect-on-revocation (forced
+// to manual so a stealth 302 can't hide as a body parse error), kill-marker
+// detection (throws via killedErrorMessage on the first abuse signal), and
+// HTTP 429 Retry-After honoring (sleeps up to maxRetryWaitMs and retries once
+// before giving up). Also warns when the URL contains a substring known to
+// be stale per the project TODO — a runtime backstop to the static audit.
+//
+// Returns a node fetch Response object as if the call had been ordinary.
+// Per-script callers parse the body / handle status codes as before.
+export async function fetchAuthed(url, init = {}, { maxRetryWaitMs = 60_000 } = {}) {
+  const staleHit = KNOWN_STALE_URL_FRAGMENTS.find((frag) => url.includes(frag));
+  if (staleHit) {
+    console.warn(`[li-auth] WARNING: outbound URL contains a known-stale identifier "${staleHit}". This shape is listed in TODO_LINKEDIN_FIXES.md as broken or migrated. The call is likely to 4xx and carries non-zero session-kill risk. URL: ${url}`);
+  }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const resp = await fetch(url, { redirect: 'manual', ...init });
+    const { killed, killReason } = detectKillMarkers(resp);
+    if (killed) throw new Error(killedErrorMessage(url, killReason));
+    if (resp.status === 429 && attempt === 0) {
+      const waitMs = parseRetryAfterMs(resp.headers.get('retry-after'));
+      if (waitMs !== null && waitMs <= maxRetryWaitMs) {
+        console.warn(`[li-auth] HTTP 429 — sleeping ${Math.round(waitMs / 1000)}s per Retry-After then retrying once.`);
+        await sleep(waitMs);
+        continue;
+      }
+    }
+    return resp;
+  }
 }
 
 // Convenience: build a friendly error message for a killed response so

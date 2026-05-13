@@ -9,13 +9,15 @@ Capture and diff artifacts: `/home/eyup/Projects/linkedin/captures/2026-05-13/AU
 `skills/linkedin/_shared/li-auth.mjs` exports:
 
 - `ensureFreshAuth({ sessionFile })` — reads Chrome's current LinkedIn cookies via CDP, compares against `session.json`'s `li_at`, rewrites the file when they differ. Use at script startup in place of plain `loadJson(SESSION_FILE)`. Caches the freshness check at process scope (one Chrome read per script invocation).
-- `detectKillMarkers(resp)` — inspects a fetch `Response` for `Set-Cookie: li_at=delete me` and `Clear-Site-Data: "storage"` and returns `{ killed: bool, killReason: string|null }`. The two signals fire for BOTH stale-cookie responses AND abuse-flag kills — `ensureFreshAuth` rules out the stale case so any remaining `killed=true` is a real abuse signal.
-- `killedErrorMessage(url, killReason)` — consistent thrown-error wording for the kill case.
+- `fetchAuthed(url, init, opts?)` — one-call wrapper that every LinkedIn caller should use instead of raw `fetch()`. Forces `redirect: 'manual'` so a stealth 302 cannot hide as a parse error; runs `detectKillMarkers` and throws on the first abuse signal; honors HTTP 429 `Retry-After` (sleeps up to `maxRetryWaitMs`, default 60s, then retries once); warns when the URL contains a substring known to be stale from the audit (a runtime backstop in case someone forgets to read this TODO before adding a call).
+- `detectKillMarkers(resp)` — used internally by `fetchAuthed`. Exported for callers who need to inspect a response themselves (e.g., when chaining multiple endpoints). Returns `{ killed: bool, killReason: string|null }`.
+- `parseRetryAfterMs(headerValue)` / `sleep(ms)` — small utilities exposed for callers writing their own retry loops outside `fetchAuthed`.
+- `killedErrorMessage(url, killReason)` — consistent thrown-error wording, used by `fetchAuthed`.
 
-**Migration pattern (already applied to `linkedin-msg.mjs`, `linkedin-jobs.mjs`, `salesnav-lead-search.mjs`):**
+**Migration pattern (applied to all 14 scripts):**
 
 ```js
-import { ensureFreshAuth, detectKillMarkers, killedErrorMessage } from '../../../_shared/li-auth.mjs';
+import { ensureFreshAuth, fetchAuthed } from '../../../_shared/li-auth.mjs';
 
 function getAuth() {
   try {
@@ -31,16 +33,15 @@ function getAuth() {
 }
 
 async function apiFetch(auth, url, options = {}) {
-  const resp = await fetch(url, {
+  const resp = await fetchAuthed(url, {
     ...options,
     headers: { ...baseHeaders(auth), ...options.headers },
-    redirect: 'manual', // never follow into the login page
   });
-  const { killed, killReason } = detectKillMarkers(resp);
-  if (killed) throw new Error(killedErrorMessage(url, killReason));
-  // ... existing body handling
+  // ... existing body / status handling stays unchanged
 }
 ```
+
+`fetchAuthed` takes care of `redirect: 'manual'`, kill-marker detection, 429 `Retry-After` honoring, and stale-URL warnings. Per-script `baseHeaders` (X-LI-Track, X-LI-Page-Instance, user-agent) is preserved deliberately — header fidelity to the real Chrome SPA is part of the abuse-flag defense and the shared helper doesn't homogenize that.
 
 **Migration status: complete across all 14 scripts.**
 

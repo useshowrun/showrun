@@ -15,7 +15,7 @@ import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
-import { ensureFreshAuth, detectKillMarkers, killedErrorMessage } from '../../../_shared/li-auth.mjs';
+import { ensureFreshAuth, fetchAuthed } from '../../../_shared/li-auth.mjs';
 
 // ---------------------------------------------------------------------------
 // Data directory
@@ -232,13 +232,10 @@ function baseHeaders(auth) {
 }
 
 async function apiFetch(auth, url, options = {}) {
-  const resp = await fetch(url, {
+  const resp = await fetchAuthed(url, {
     ...options,
     headers: { ...baseHeaders(auth), ...options.headers },
-    redirect: 'manual',
   });
-  const { killed, killReason } = detectKillMarkers(resp);
-  if (killed) throw new Error(killedErrorMessage(url, killReason));
   const text = await resp.text();
   let data;
   try { data = JSON.parse(text); } catch { data = text; }
