@@ -10,13 +10,15 @@ CRUD operations on Sales Navigator lead lists and account lists.
 ## Prerequisites
 
 - Node.js 22+
-- Chrome with remote debugging enabled (only for `auth` step)
-- [chrome-cdp skill] (only for `auth` step)
+- Chrome with remote debugging enabled, and a logged-in `www.linkedin.com/sales/...` tab kept open
+- [chrome-cdp skill]
 - LinkedIn Sales Navigator subscription
+
+Requests run **inside your Chrome tab** (via CDP), not from Node — this is what lets them past LinkedIn's `sales-api` edge. So a Sales Navigator tab must stay open for **every** command (reads and mutations), not just `auth`. If no `/sales/` tab is open, open one (see chrome-cdp "Agent guidance"): `node skills/chrome-cdp/scripts/cdp.mjs open https://www.linkedin.com/sales/home`.
 
 ## Setup
 
-One-time auth — extracts session cookies from an open Sales Navigator tab:
+One-time auth — open Sales Navigator in Chrome, then:
 
 ```bash
 node salesnav-lists.mjs auth
@@ -98,7 +100,7 @@ node salesnav-lists.mjs remove 6789012345 "urn:li:fs_salesProfile:(ACwAABCD,NAME
 
 ## How it works
 
-1. **auth** — Uses CDP to connect to an open Chrome tab with Sales Navigator, extracts cookies (`li_at`, `JSESSIONID`) and saves them locally.
+1. **auth** — Uses CDP to find an open Sales Navigator tab, validates the session (`li_at` + `JSESSIONID`), and writes a marker `session.json`. Cookies stay in Chrome — every request (reads and mutations) runs in-page with `credentials:'include'`.
 2. **list** — Calls `GET /sales-api/salesApiLists?q=listType&listType=LEAD|ACCOUNT` with sort/filter/decoration params.
 3. **view** — Calls `GET /sales-api/salesApiLists/<listId>` with decoration for metadata.
 4. **members** — Determines list type, then runs a lead search (`salesApiLeadSearch`) or account search (`salesApiAccountSearch`) filtered by LEAD_LIST or ACCOUNT_LIST.
@@ -111,7 +113,7 @@ node salesnav-lists.mjs remove 6789012345 "urn:li:fs_salesProfile:(ACwAABCD,NAME
 
 ```
 ~/.local/share/showrun/data/salesnav-lists/
-├── session.json          Auth cookies and CSRF token
+├── session.json          Session marker (cookies stay in Chrome)
 └── cache/
     ├── lists-lead.json   Cached lead lists
     ├── lists-account.json Cached account lists

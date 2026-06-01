@@ -12,13 +12,14 @@
 //          node salesnav-lead-profile.mjs warm-intro <profileId>
 //          node salesnav-lead-profile.mjs insights <profileId>
 //
-// Requires Node 22+ (built-in fetch).
+// Requires Node 22+ and the chrome-cdp skill. Requests run inside your logged-in
+// Chrome tab (via CDP), so keep a Sales Navigator tab open.
 
-import { execFileSync } from 'child_process';
-import { resolve, dirname } from 'path';
+import { resolve } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { randomUUID } from 'crypto';
+import { apiFetch, doAuth as cdpDoAuth, requireAuth } from '../../_shared/salesnav-cdp.mjs';
 
 // ---------------------------------------------------------------------------
 // Data directory
@@ -27,6 +28,7 @@ import { randomUUID } from 'crypto';
 const DATA_DIR = resolve(homedir(), '.local/share/showrun/data/salesnav-lead-profile');
 const SESSION_FILE = resolve(DATA_DIR, 'session.json');
 const CACHE_DIR = resolve(DATA_DIR, 'cache');
+const AUTH_CMD = 'node salesnav-lead-profile.mjs auth';
 
 function ensureDir(dir) {
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
@@ -40,164 +42,6 @@ function loadJson(path) {
 function saveJson(path, data) {
   ensureDir(resolve(path, '..'));
   writeFileSync(path, JSON.stringify(data, null, 2));
-}
-
-// ---------------------------------------------------------------------------
-// Auth
-// ---------------------------------------------------------------------------
-
-function findCdpScript() {
-  const here = dirname(new URL(import.meta.url).pathname);
-  const ancestorCandidates = [];
-  let dir = here;
-  for (let i = 0; i < 8; i++) {
-    ancestorCandidates.push(resolve(dir, 'skills/chrome-cdp/scripts/cdp.mjs'));
-    ancestorCandidates.push(resolve(dir, 'chrome-cdp/scripts/cdp.mjs'));
-    dir = resolve(dir, '..');
-  }
-  const candidates = [
-    process.env.SHOWRUN_ROOT ? resolve(process.env.SHOWRUN_ROOT, 'skills/chrome-cdp/scripts/cdp.mjs') : null,
-    ...ancestorCandidates,
-    resolve(homedir(), '.claude/skills/chrome-cdp/scripts/cdp.mjs'),
-  ].filter(Boolean);
-  return process.env.CDP_SCRIPT || candidates.find(p => existsSync(p))
-    || (() => { throw new Error('chrome-cdp skill not found. Install it or set CDP_SCRIPT env var.'); })();
-}
-
-function cdp(...args) {
-  return execFileSync('node', [findCdpScript(), ...args], { encoding: 'utf8', timeout: 15000, maxBuffer: 100 * 1024 * 1024 }).trim();
-}
-
-
-const LINKEDIN_COOKIE_URLS = [
-  'https://www.linkedin.com/',
-  'https://www.linkedin.com/sales/',
-  'https://www.linkedin.com/sales/home',
-];
-
-function parseCookieResponse(raw, source) {
-  try {
-    const data = JSON.parse(raw || '{}');
-    if (!Array.isArray(data.cookies)) throw new Error('response has no cookies array');
-    return data.cookies;
-  } catch (err) {
-    throw new Error(`${source} cookie extraction failed: ${err.message}`);
-  }
-}
-
-function cookieMapFrom(cookies) {
-  return Object.fromEntries(cookies.map(c => [c.name, c.value]));
-}
-
-function linkedInCookieString(cookies) {
-  return cookies
-    .filter(c => String(c.domain || '').includes('linkedin.com'))
-    .map(c => `${c.name}=${c.value}`)
-    .join('; ');
-}
-
-function activeTabInfo(target, listText = '') {
-  let url = '';
-  let title = '';
-  try {
-    const raw = cdp('evalraw', target, 'Runtime.evaluate', JSON.stringify({
-      expression: 'JSON.stringify({url: location.href, title: document.title})',
-      returnByValue: true,
-    }));
-    const parsed = JSON.parse(raw);
-    const value = parsed?.result?.value || parsed?.result?.description;
-    if (value) {
-      const info = JSON.parse(value);
-      url = info.url || '';
-      title = info.title || '';
-    }
-  } catch {}
-  if (!url) {
-    const line = String(listText || '').split('\n').find(l => l.trim().startsWith(`${target} `) || l.includes(target));
-    if (line) url = line.trim();
-  }
-  return { url, title };
-}
-
-function readLinkedInCookies(target) {
-  const errors = [];
-  try {
-    const cookies = parseCookieResponse(cdp('evalraw', target, 'Storage.getCookies', '{}'), 'Storage.getCookies');
-    return { cookies, source: 'Storage.getCookies' };
-  } catch (err) {
-    errors.push(err.message);
-  }
-
-  try {
-    const cookies = parseCookieResponse(
-      cdp('evalraw', target, 'Network.getCookies', JSON.stringify({ urls: LINKEDIN_COOKIE_URLS })),
-      'Network.getCookies',
-    );
-    return { cookies, source: 'Network.getCookies' };
-  } catch (err) {
-    errors.push(err.message);
-  }
-
-  for (const url of LINKEDIN_COOKIE_URLS) {
-    try {
-      const cookies = parseCookieResponse(
-        cdp('evalraw', target, 'Network.getCookies', JSON.stringify({ urls: [url] })),
-        `Network.getCookies ${url}`,
-      );
-      return { cookies, source: `Network.getCookies ${url}` };
-    } catch (err) {
-      errors.push(err.message);
-    }
-  }
-
-  throw new Error(`LinkedIn/Sales Nav cookie extraction failure in active CDP session: ${errors.join(' | ')}`);
-}
-
-function getLinkedInAuthCookies(target, listText = '') {
-  const { cookies, source } = readLinkedInCookies(target);
-  const cookieMap = cookieMapFrom(cookies);
-  const csrfToken = (cookieMap['JSESSIONID'] || '').replace(/"/g, '');
-  const missing = ['li_at', 'JSESSIONID'].filter(name => !cookieMap[name]);
-  if (missing.length) {
-    const info = activeTabInfo(target, listText);
-    const activeUrl = info.url || '';
-    const activeTitle = info.title || '';
-    if (/\/login(?:[/?#]|$)|\/sales\/login(?:[/?#]|$)/i.test(activeUrl)) {
-      throw new Error('LinkedIn/Sales Nav is showing login page in the active CDP session; log in through the same live Browser Use URL or pass the exact live CDP endpoint.');
-    }
-    throw new Error(
-      `LinkedIn/Sales Nav auth cookies missing (${missing.join(', ')}) after ${source}. ` +
-      `Active tab URL/title: ${activeUrl || '<unknown>'}${activeTitle ? ` / ${activeTitle}` : ''}. ` +
-      'This is not enough to claim generic logged-out state: distinguish wrong CDP session/profile, actual logged-out state, or cookie extraction failure. For human login handoff, use the exact live Browser Use CDP endpoint.',
-    );
-  }
-  return { cookieStr: linkedInCookieString(cookies), csrfToken, cookieSource: source };
-}
-
-async function doAuth() {
-  console.log('Finding Sales Navigator tab...');
-  const list = cdp('list');
-  let target;
-  for (const line of list.split('\n')) {
-    if (line.includes('linkedin.com/sales')) {
-      target = line.trim().split(/\s+/)[0];
-      break;
-    }
-  }
-  if (!target) {
-    for (const line of list.split('\n')) {
-      if (line.includes('linkedin.com')) { target = line.trim().split(/\s+/)[0]; break; }
-    }
-  }
-  if (!target) throw new Error('No LinkedIn/Sales Navigator tab found.');
-
-  console.log(`Using tab: ${target}`);
-
-  const { cookieStr, csrfToken, cookieSource } = getLinkedInAuthCookies(target, list);
-  console.log(`Extracted LinkedIn cookies via ${cookieSource}`);
-
-  saveJson(SESSION_FILE, { cookie: cookieStr, csrfToken, extractedAt: new Date().toISOString() });
-  console.log(`Auth saved to: ${SESSION_FILE}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -231,44 +75,6 @@ function encodeUrnParam(urn) {
   return encodeURIComponent(urn)
     .replace(/\(/g, '%28')
     .replace(/\)/g, '%29');
-}
-
-// ---------------------------------------------------------------------------
-// HTTP helpers
-// ---------------------------------------------------------------------------
-
-function getAuth() {
-  const auth = loadJson(SESSION_FILE);
-  if (!auth.cookie) {
-    console.error('No auth found. Run: node salesnav-lead-profile.mjs auth');
-    process.exit(1);
-  }
-  return auth;
-}
-
-function baseHeaders(auth) {
-  return {
-    'accept': 'application/json',
-    'x-restli-protocol-version': '2.0.0',
-    'x-li-lang': 'en_US',
-    'csrf-token': auth.csrfToken,
-    'cookie': auth.cookie,
-    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  };
-}
-
-async function apiFetch(auth, url) {
-  const resp = await fetch(url, { headers: baseHeaders(auth) });
-  const text = await resp.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = text; }
-  if (!resp.ok) {
-    if (resp.status === 401 || resp.status === 403) {
-      console.error('Session expired. Run: node salesnav-lead-profile.mjs auth');
-    }
-    throw new Error(`API error (HTTP ${resp.status}): ${JSON.stringify(data).substring(0, 300)}`);
-  }
-  return data;
 }
 
 // ---------------------------------------------------------------------------
@@ -368,7 +174,7 @@ const BATCH_DECORATION = encodeDecoration(BATCH_DECORATION_RAW);
 /**
  * Fetch main profile data (basic + extended + insights decorations).
  */
-async function fetchProfile(auth, parsed, sections) {
+function fetchProfile(parsed, sections) {
   const key = profileKey(parsed);
   const allSections = !sections || sections.length === 0;
 
@@ -387,13 +193,13 @@ async function fetchProfile(auth, parsed, sections) {
   const decoration = encodeDecoration(`(${decorationParts.join(',')})`);
 
   const url = `https://www.linkedin.com/sales-api/salesApiProfiles/${key}?decoration=${decoration}`;
-  return apiFetch(auth, url);
+  return apiFetch(url, {}, { authCmd: AUTH_CMD });
 }
 
 /**
  * Batch fetch profile data (max 25 per batch).
  */
-async function fetchBatchProfiles(auth, profileIds) {
+async function fetchBatchProfiles(profileIds) {
   const BATCH_SIZE = 25;
   const allProfiles = [];
 
@@ -407,7 +213,7 @@ async function fetchBatchProfiles(auth, profileIds) {
       + `?ids=List(${idsParam})`
       + `&decoration=${BATCH_DECORATION}`;
 
-    const data = await apiFetch(auth, url);
+    const data = apiFetch(url, {}, { authCmd: AUTH_CMD });
     const results = data.results || {};
     for (const [, profile] of Object.entries(results)) {
       allProfiles.push(profile);
@@ -424,48 +230,48 @@ async function fetchBatchProfiles(auth, profileIds) {
 /**
  * Fetch profile spotlights (job changes, shared connections, etc.).
  */
-async function fetchSpotlights(auth, parsed) {
+async function fetchSpotlights(parsed) {
   const url = `https://www.linkedin.com/sales-api/salesApiProfileSpotlights/${parsed.profileId}`
     + `?authType=${parsed.authType}&authToken=${parsed.authToken}`;
-  return apiFetch(auth, url);
+  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
  * Fetch Lead IQ (AI-generated insights).
  */
-async function fetchLeadIq(auth, parsed) {
+async function fetchLeadIq(parsed) {
   const requestId = randomUUID();
   const url = `https://www.linkedin.com/sales-api/salesApiLeadIq/${parsed.profileId}`
     + `?requestId=${requestId}&isPreview=true`;
-  return apiFetch(auth, url);
+  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
  * Fetch profile highlights (shared connections, team members).
  */
-async function fetchHighlights(auth, parsed) {
+async function fetchHighlights(parsed) {
   const decoration = encodeDecoration('(sharedConnection(sharedConnectionUrns*~fs_salesProfile(entityUrn,firstName,lastName,fullName,pictureInfo,profilePictureDisplayImage)),teamlinkInfo(totalCount),sharedEducations*(overlapInfo,entityUrn~fs_salesSchool(entityUrn,logoId,name,url,schoolPictureDisplayImage)),sharedExperiences*(overlapInfo,entityUrn~fs_salesCompany(entityUrn,pictureInfo,name,companyPictureDisplayImage)),sharedGroups*(entityUrn~fs_salesGroup(entityUrn,name,largeLogoId,smallLogoId,groupPictureDisplayImage)))');
   const url = `https://www.linkedin.com/sales-api/salesApiProfileHighlights/${parsed.profileId}`
     + `?decoration=${decoration}`;
-  return apiFetch(auth, url);
+  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
  * Fetch warm introduction paths.
  */
-async function fetchWarmIntro(auth, parsed, spotlightType = 'FIRST_DEGREE') {
+async function fetchWarmIntro(parsed, spotlightType = 'FIRST_DEGREE') {
   const key = profileKey(parsed);
   const url = `https://www.linkedin.com/sales-api/salesApiWarmIntro`
     + `?profileAuthKey=${key}`
     + `&q=warmIntroBySeniority`
     + `&warmIntroSpotlightType=${spotlightType}`;
-  return apiFetch(auth, url);
+  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
  * Fetch lead insights (posts and comments).
  */
-async function fetchInsights(auth, parsed) {
+async function fetchInsights(parsed) {
   const urn = encodeUrnParam(profileUrn(parsed));
   const now = Date.now();
   const ninetyDaysAgo = now - 90 * 24 * 60 * 60 * 1000;
@@ -475,13 +281,13 @@ async function fetchInsights(auth, parsed) {
     + `&profile=${urn}`
     + `&timeRange=(start:${ninetyDaysAgo},end:${now})`
     + `&start=0&count=10`;
-  return apiFetch(auth, url);
+  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
  * Fetch profile timeline/activity.
  */
-async function fetchTimeline(auth, parsed) {
+async function fetchTimeline(parsed) {
   const urn = encodeUrnParam(profileUrn(parsed));
   const timelineDec = encodeDecoration('(actorProfileUrn~fs_salesProfile(entityUrn,objectUrn,degree,firstName,lastName,fullName),targetProfileUrn~fs_salesProfile(entityUrn,objectUrn,degree,firstName,lastName,fullName),entityUrn(salesAssetBundleUrn,listUrn~fs_salesList(id,name,listSource,role)),entityCount,performedAt,domainSource,type)');
   const url = `https://www.linkedin.com/sales-api/salesApiProfileTimeline`
@@ -490,13 +296,13 @@ async function fetchTimeline(auth, parsed) {
     + `&profile=${urn}`
     + `&timelineActivityFilters=List(ALL)`
     + `&decoration=${timelineDec}`;
-  return apiFetch(auth, url);
+  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
  * Fetch notes on a lead.
  */
-async function fetchNotes(auth, parsed) {
+async function fetchNotes(parsed) {
   const urn = encodeUrnParam(profileUrn(parsed));
   const url = `https://www.linkedin.com/sales-api/salesApiEntityNote`
     + `?count=20`
@@ -504,65 +310,65 @@ async function fetchNotes(auth, parsed) {
     + `&q=entity`
     + `&start=0`
     + `&visibility=ALL`;
-  return apiFetch(auth, url);
+  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
  * Fetch full profile with all sub-endpoints merged.
  */
-async function fetchFullProfile(auth, parsed, sections) {
+async function fetchFullProfile(parsed, sections) {
   const allSections = !sections || sections.length === 0;
   const result = {};
 
   // Always fetch main profile
   console.log('  Fetching profile data...');
-  result.profile = await fetchProfile(auth, parsed, sections);
+  result.profile = await fetchProfile(parsed, sections);
 
   if (allSections || sections.includes('spotlights')) {
     console.log('  Fetching spotlights...');
-    try { result.spotlights = await fetchSpotlights(auth, parsed); }
+    try { result.spotlights = await fetchSpotlights(parsed); }
     catch (e) { result.spotlights = { error: e.message }; }
     await new Promise(r => setTimeout(r, 300));
   }
 
   if (allSections || sections.includes('lead-iq')) {
     console.log('  Fetching Lead IQ...');
-    try { result.leadIq = await fetchLeadIq(auth, parsed); }
+    try { result.leadIq = await fetchLeadIq(parsed); }
     catch (e) { result.leadIq = { error: e.message }; }
     await new Promise(r => setTimeout(r, 300));
   }
 
   if (allSections || sections.includes('highlights')) {
     console.log('  Fetching highlights...');
-    try { result.highlights = await fetchHighlights(auth, parsed); }
+    try { result.highlights = await fetchHighlights(parsed); }
     catch (e) { result.highlights = { error: e.message }; }
     await new Promise(r => setTimeout(r, 300));
   }
 
   if (allSections || sections.includes('insights')) {
     console.log('  Fetching insights (posts/comments)...');
-    try { result.insights = await fetchInsights(auth, parsed); }
+    try { result.insights = await fetchInsights(parsed); }
     catch (e) { result.insights = { error: e.message }; }
     await new Promise(r => setTimeout(r, 300));
   }
 
   if (allSections || sections.includes('timeline')) {
     console.log('  Fetching timeline...');
-    try { result.timeline = await fetchTimeline(auth, parsed); }
+    try { result.timeline = await fetchTimeline(parsed); }
     catch (e) { result.timeline = { error: e.message }; }
     await new Promise(r => setTimeout(r, 300));
   }
 
   if (allSections || sections.includes('notes')) {
     console.log('  Fetching notes...');
-    try { result.notes = await fetchNotes(auth, parsed); }
+    try { result.notes = await fetchNotes(parsed); }
     catch (e) { result.notes = { error: e.message }; }
     await new Promise(r => setTimeout(r, 300));
   }
 
   if (allSections || sections.includes('warm-intro')) {
     console.log('  Fetching warm intro paths...');
-    try { result.warmIntro = await fetchWarmIntro(auth, parsed); }
+    try { result.warmIntro = await fetchWarmIntro(parsed); }
     catch (e) { result.warmIntro = { error: e.message }; }
   }
 
@@ -652,7 +458,7 @@ function parseFlags(args) {
 
 switch (command) {
   case 'auth': {
-    await doAuth();
+    cdpDoAuth(SESSION_FILE, saveJson);
     break;
   }
 
@@ -667,10 +473,10 @@ switch (command) {
 
     const parsed = parseProfileId(rawId);
     const sections = flags.sections ? flags.sections.split(',').map(s => s.trim()) : [];
-    const auth = getAuth();
+    requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
 
     console.log(`Fetching profile: ${parsed.profileId} (auth: ${parsed.authType})...`);
-    const result = await fetchFullProfile(auth, parsed, sections);
+    const result = await fetchFullProfile(parsed, sections);
 
     const outFile = resolve(CACHE_DIR, `profile-${parsed.profileId}.json`);
     saveJson(outFile, result);
@@ -702,9 +508,9 @@ switch (command) {
       process.exit(1);
     }
 
-    const auth = getAuth();
+    requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Batch fetching ${profileIds.length} profiles...`);
-    const profiles = await fetchBatchProfiles(auth, profileIds);
+    const profiles = await fetchBatchProfiles(profileIds);
     const formatted = profiles.map(formatProfile);
 
     const outFile = resolve(CACHE_DIR, `batch-${Date.now()}.json`);
@@ -727,9 +533,9 @@ switch (command) {
     }
 
     const parsed = parseProfileId(rawId);
-    const auth = getAuth();
+    requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching Lead IQ for: ${parsed.profileId}...`);
-    const data = await fetchLeadIq(auth, parsed);
+    const data = await fetchLeadIq(parsed);
 
     const outFile = resolve(CACHE_DIR, `lead-iq-${parsed.profileId}.json`);
     saveJson(outFile, data);
@@ -746,9 +552,9 @@ switch (command) {
     }
 
     const parsed = parseProfileId(rawId);
-    const auth = getAuth();
+    requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching spotlights for: ${parsed.profileId}...`);
-    const data = await fetchSpotlights(auth, parsed);
+    const data = await fetchSpotlights(parsed);
 
     const outFile = resolve(CACHE_DIR, `spotlights-${parsed.profileId}.json`);
     saveJson(outFile, data);
@@ -765,9 +571,9 @@ switch (command) {
     }
 
     const parsed = parseProfileId(rawId);
-    const auth = getAuth();
+    requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching highlights for: ${parsed.profileId}...`);
-    const data = await fetchHighlights(auth, parsed);
+    const data = await fetchHighlights(parsed);
 
     const outFile = resolve(CACHE_DIR, `highlights-${parsed.profileId}.json`);
     saveJson(outFile, data);
@@ -784,9 +590,9 @@ switch (command) {
     }
 
     const parsed = parseProfileId(rawId);
-    const auth = getAuth();
+    requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching timeline for: ${parsed.profileId}...`);
-    const data = await fetchTimeline(auth, parsed);
+    const data = await fetchTimeline(parsed);
 
     const outFile = resolve(CACHE_DIR, `timeline-${parsed.profileId}.json`);
     saveJson(outFile, data);
@@ -803,9 +609,9 @@ switch (command) {
     }
 
     const parsed = parseProfileId(rawId);
-    const auth = getAuth();
+    requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching notes for: ${parsed.profileId}...`);
-    const data = await fetchNotes(auth, parsed);
+    const data = await fetchNotes(parsed);
 
     const outFile = resolve(CACHE_DIR, `notes-${parsed.profileId}.json`);
     saveJson(outFile, data);
@@ -822,9 +628,9 @@ switch (command) {
     }
 
     const parsed = parseProfileId(rawId);
-    const auth = getAuth();
+    requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching warm intro paths for: ${parsed.profileId}...`);
-    const data = await fetchWarmIntro(auth, parsed);
+    const data = await fetchWarmIntro(parsed);
 
     const outFile = resolve(CACHE_DIR, `warm-intro-${parsed.profileId}.json`);
     saveJson(outFile, data);
@@ -841,9 +647,9 @@ switch (command) {
     }
 
     const parsed = parseProfileId(rawId);
-    const auth = getAuth();
+    requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching insights (posts/comments) for: ${parsed.profileId}...`);
-    const data = await fetchInsights(auth, parsed);
+    const data = await fetchInsights(parsed);
 
     const outFile = resolve(CACHE_DIR, `insights-${parsed.profileId}.json`);
     saveJson(outFile, data);

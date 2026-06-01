@@ -1,0 +1,7 @@
+{
+  "files": [
+    "SKILL.md",
+    "scripts/salesnav-messaging.mjs",
+    "../_shared/salesnav-cdp.mjs"
+  ]
+}

@@ -10,19 +10,19 @@ Fetch comprehensive Sales Navigator account/company profiles including Account I
 ## Prerequisites
 
 - Node.js 22+
-- Chrome with remote debugging enabled (only for `auth` step)
-- [chrome-cdp skill] (only for `auth` step)
+- Chrome with remote debugging enabled, and a logged-in `www.linkedin.com/sales/...` tab kept open
+- [chrome-cdp skill]
 - LinkedIn Sales Navigator subscription
+
+Requests run **inside your Chrome tab** (via CDP), not from Node — this is what lets them past LinkedIn's `sales-api` edge. So a Sales Navigator tab must stay open for **every** command, not just `auth`. If no `/sales/` tab is open, open one (see chrome-cdp "Agent guidance"): `node skills/chrome-cdp/scripts/cdp.mjs open https://www.linkedin.com/sales/home`.
 
 ## Setup
 
-One-time auth — extract session cookies from Chrome:
+One-time auth — open Sales Navigator in Chrome, then:
 
 ```bash
 node salesnav-account-profile.mjs auth
 ```
-
-Requires a Chrome tab open to `linkedin.com/sales`.
 
 ## Usage
 
@@ -59,8 +59,8 @@ Company ID accepts numeric IDs (e.g., `1035`), `urn:li:fs_salesCompany:1035`, or
 
 ## How it works
 
-1. **auth** — Uses CDP to extract cookies and CSRF token from an open Sales Navigator tab in Chrome.
-2. **view** — Calls all sub-endpoints in parallel (basic company data, Account IQ, employee insights, alerts, similar companies, notes, personas, relationship maps) and merges into one JSON. Use `--sections` to fetch only specific sections.
+1. **auth** — Uses CDP to find an open Sales Navigator tab, validates the session (`li_at` + `JSESSIONID`), and writes a marker `session.json`. Cookies stay in Chrome — every request runs in-page with `credentials:'include'`.
+2. **view** — Calls all sub-endpoints (basic company data, Account IQ, employee insights, alerts, similar companies, notes, personas, relationship maps) and merges into one JSON. Use `--sections` to fetch only specific sections. The basic company fetch is required; optional sections that fail (e.g. no Account IQ) are skipped with a warning. Sections are fetched sequentially since each in-page request blocks the next.
 3. **account-iq** — Fetches the AI-generated Account IQ dossier with strategic priorities, competitive landscape, challenges, revenue details, and executive profiles. Returns null/warning for companies without IQ data.
 4. **employees** — Fetches both TOTAL_HEADCOUNT and FUNCTIONAL_HEADCOUNT employee insight types.
 5. **relationship-map** — Fetches relationship maps for the account.
@@ -73,7 +73,7 @@ Company ID accepts numeric IDs (e.g., `1035`), `urn:li:fs_salesCompany:1035`, or
 
 ```
 ~/.local/share/showrun/data/salesnav-account-profile/
-  session.json                  Auth cookies + CSRF token
+  session.json                  Session marker (cookies stay in Chrome)
   cache/
     company-<id>.json           Full view output (all sections)
     account-iq-<id>.json        Account IQ dossier

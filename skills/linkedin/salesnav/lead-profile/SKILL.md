@@ -10,13 +10,15 @@ Fetch comprehensive Sales Navigator lead profile data including contact info, po
 ## Prerequisites
 
 - Node.js 22+
-- Chrome with remote debugging enabled (only for `auth` step)
-- [chrome-cdp skill] (only for `auth` step)
+- Chrome with remote debugging enabled, and a logged-in `www.linkedin.com/sales/...` tab kept open
+- [chrome-cdp skill]
 - LinkedIn Sales Navigator subscription
+
+Requests run **inside your Chrome tab** (via CDP), not from Node — this is what lets them past LinkedIn's `sales-api` edge. So a Sales Navigator tab must stay open for **every** command, not just `auth`. If no `/sales/` tab is open, open one (see chrome-cdp "Agent guidance"): `node skills/chrome-cdp/scripts/cdp.mjs open https://www.linkedin.com/sales/home`.
 
 ## Setup
 
-One-time auth -- extract session cookies from Chrome:
+One-time auth -- open Sales Navigator in Chrome, then:
 
 ```bash
 node salesnav-lead-profile.mjs auth
@@ -64,7 +66,7 @@ node salesnav-lead-profile.mjs insights ACwAABJVBJEB...
 
 ## How it works
 
-1. **auth** -- Uses Chrome CDP to extract `li_at`, `JSESSIONID`, and other LinkedIn cookies from the browser. Saves them to `session.json`.
+1. **auth** -- Uses CDP to find an open Sales Navigator tab, validates the session (`li_at` + `JSESSIONID`), and writes a marker `session.json`. Cookies stay in Chrome — every request runs in-page with `credentials:'include'`.
 
 2. **view** -- Calls the main `salesApiProfiles` endpoint with a comprehensive decoration string to fetch core profile fields (name, headline, positions, education, skills, contact info). Then calls each sub-endpoint (spotlights, Lead IQ, highlights, insights, timeline, notes, warm intro) and merges all results into a single JSON output. Use `--sections` to limit which sub-endpoints are called.
 
@@ -88,7 +90,7 @@ node salesnav-lead-profile.mjs insights ACwAABJVBJEB...
 
 ```
 ~/.local/share/showrun/data/salesnav-lead-profile/
-  session.json                    Auth cookies and CSRF token
+  session.json                    Session marker (cookies stay in Chrome)
   cache/
     profile-<id>.json             Full profile data (view command)
     batch-<timestamp>.json        Batch profile results
