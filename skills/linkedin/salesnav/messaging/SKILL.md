@@ -10,13 +10,15 @@ Sales Navigator InMail/messaging — list inbox threads, read conversations, rep
 ## Prerequisites
 
 - Node.js 22+
-- Chrome with remote debugging enabled (only for `auth` step)
-- [chrome-cdp skill] (only for `auth` step)
+- Chrome with remote debugging enabled, and a logged-in `www.linkedin.com/sales/...` tab kept open
+- [chrome-cdp skill]
 - LinkedIn Sales Navigator subscription
+
+Requests run **inside your Chrome tab** (via CDP), not from Node — this is what lets them past LinkedIn's `sales-api` edge. So a Sales Navigator tab must stay open for **every** command (reads and sends), not just `auth`. If no `/sales/` tab is open, open one (see chrome-cdp "Agent guidance"): `node skills/chrome-cdp/scripts/cdp.mjs open https://www.linkedin.com/sales/home`.
 
 ## Setup
 
-One-time auth — extracts session cookies from an open Sales Navigator tab:
+One-time auth — open Sales Navigator in Chrome, then:
 
 ```bash
 node salesnav-messaging.mjs auth
@@ -58,7 +60,7 @@ node salesnav-messaging.mjs presence urn:li:fs_salesProfile:ACwAAA...,urn:li:fs_
 
 ## How it works
 
-1. **auth** — Finds a Sales Navigator tab via Chrome CDP, extracts `li_at` + `JSESSIONID` cookies, saves to `session.json`.
+1. **auth** — Uses CDP to find an open Sales Navigator tab, validates the session (`li_at` + `JSESSIONID`), and writes a marker `session.json`. Cookies stay in Chrome — every request (reads and sends) runs in-page with `credentials:'include'`.
 2. **inbox** — Calls `GET /sales-api/salesApiMessagingThreads` with filter and pagination params. Returns thread summaries with participant names, last message preview, and unread counts.
 3. **thread** — Calls `GET /sales-api/salesApiMessagingThreads/<threadId>` with full decoration. Displays all messages in chronological order.
 4. **send** — POSTs to `/sales-api/salesApiMessagingThreads/<threadId>/messages` with a JSON body. This endpoint is **inferred** (not directly observed) — use `--dry-run` first.
@@ -70,7 +72,7 @@ node salesnav-messaging.mjs presence urn:li:fs_salesProfile:ACwAAA...,urn:li:fs_
 
 ```
 ~/.local/share/showrun/data/salesnav-messaging/
-  session.json                          Auth cookies + CSRF token
+  session.json                          Session marker (cookies stay in Chrome)
   cache/
     inbox-inbox-<timestamp>.json        Raw inbox listing responses
     inbox-sent-<timestamp>.json         Raw sent listing responses

@@ -10,9 +10,11 @@ Run ad-hoc Sales Navigator account/company searches with all 15+ filter types vi
 ## Prerequisites
 
 - Node.js 22+
-- Chrome with remote debugging enabled (only for `auth` step)
-- [chrome-cdp skill] (only for `auth` step)
+- Chrome with remote debugging enabled, and a logged-in `www.linkedin.com/sales/...` tab kept open
+- [chrome-cdp skill]
 - LinkedIn Sales Navigator subscription
+
+Requests run **inside your Chrome tab** (via CDP), not from Node — this is what lets them past LinkedIn's `sales-api` edge. So a Sales Navigator tab must stay open for **every** command, not just `auth`. If no `/sales/` tab is open, open one (see chrome-cdp "Agent guidance"): `node skills/chrome-cdp/scripts/cdp.mjs open https://www.linkedin.com/sales/home`.
 
 ## Setup
 
@@ -84,15 +86,15 @@ node salesnav-account-search.mjs filters
 
 ## How it works
 
-1. **auth** — Finds an open Sales Navigator tab in Chrome via CDP, extracts `li_at` + `JSESSIONID` cookies, saves to `session.json`.
-2. **search** — Builds a RESTLI filter query from CLI flags, calls `GET /sales-api/salesApiAccountSearch`, returns company results with metadata.
+1. **auth** — Uses CDP to find an open Sales Navigator tab, validates the session (`li_at` + `JSESSIONID`), and writes a marker `session.json`. Cookies stay in Chrome — every request runs in-page with `credentials:'include'`.
+2. **search** — Builds a RESTLI filter query from CLI flags, calls `GET /sales-api/salesApiAccountSearch` in-page, returns company results with metadata.
 3. **filters** — Prints all filter types with accepted values and usage examples.
 
 ## Data storage
 
 ```
 ~/.local/share/showrun/data/salesnav-account-search/
-  session.json                 Auth cookies + CSRF token
+  session.json                 Session marker (cookies stay in Chrome)
   cache/
     search-<slug>-<ts>.json    Search result snapshots
 ```

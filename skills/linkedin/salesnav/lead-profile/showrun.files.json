@@ -1,0 +1,7 @@
+{
+  "files": [
+    "SKILL.md",
+    "scripts/salesnav-lead-profile.mjs",
+    "../_shared/salesnav-cdp.mjs"
+  ]
+}

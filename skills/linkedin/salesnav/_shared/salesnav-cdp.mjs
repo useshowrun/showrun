@@ -151,7 +151,12 @@ function authCookiesPresent(tabId) {
 // blocks rather than masquerading them as ordinary errors.
 // ---------------------------------------------------------------------------
 
-export function apiFetch(url, options = {}, { authCmd, maxRetries = 2, maxRetryWaitMs = 60_000 } = {}) {
+// softErrors: when true, ordinary HTTP failures (404 and other non-2xx) THROW
+// instead of exiting, so callers can fetch optional/enrichment sections and
+// degrade gracefully per-section. Genuinely global failures — 999, session
+// kill, 401/403, and 429-over-cap — stay fatal regardless, since they doom
+// every subsequent request, not just the one section.
+export function apiFetch(url, options = {}, { authCmd, maxRetries = 2, maxRetryWaitMs = 60_000, softErrors = false } = {}) {
   const tabId = findSalesnavTab();
   if (!tabId) {
     console.error('No LinkedIn/Sales Navigator tab found in Chrome.');
@@ -202,6 +207,7 @@ export function apiFetch(url, options = {}, { authCmd, maxRetries = 2, maxRetryW
       process.exit(1);
     }
     if (status === 404) {
+      if (softErrors) throw new Error('Not found (HTTP 404).');
       console.error('Not found (HTTP 404).');
       process.exit(1);
     }
@@ -211,6 +217,7 @@ export function apiFetch(url, options = {}, { authCmd, maxRetries = 2, maxRetryW
 
     if (status < 200 || status >= 300) {
       const detail = typeof data === 'string' ? data.substring(0, 300) : JSON.stringify(data).substring(0, 300);
+      if (softErrors) throw new Error(`API error (HTTP ${status}): ${detail}`);
       console.error(`API error (HTTP ${status}): ${detail}`);
       process.exit(1);
     }
