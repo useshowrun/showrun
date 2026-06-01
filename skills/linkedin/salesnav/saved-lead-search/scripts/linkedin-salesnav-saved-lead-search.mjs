@@ -54,7 +54,7 @@ async function searchLeads(savedSearchId, { start = 0, count = 50, sessionId } =
     + `&trackingParam=(sessionId:${encodeURIComponent(sid)})`
     + `&decorationId=com.linkedin.sales.deco.desktop.searchv2.LeadSearchResult-14`;
 
-  const data = apiFetch(url, {}, { authCmd: AUTH_CMD });
+  const data = await apiFetch(url, {}, { authCmd: AUTH_CMD });
 
   const leads = (data.elements || []).map(el => {
     const urnMatch = (el.entityUrn || '').match(/\(([^,]+)/);
@@ -101,7 +101,7 @@ async function fetchProfiles(profileIds) {
       + `?ids=List(${idsParam})`
       + `&decoration=${PROFILE_DECORATION}`;
 
-    const data = apiFetch(url, {}, { authCmd: AUTH_CMD });
+    const data = await apiFetch(url, {}, { authCmd: AUTH_CMD });
 
     // Response uses `results` keyed by ID tuple
     const results = data.results || {};

@@ -53,7 +53,7 @@ function encodeDecoration(str) {
 // List saved searches
 // ---------------------------------------------------------------------------
 
-function listSavedSearches(type = 'lead') {
+async function listSavedSearches(type = 'lead') {
   const q = type === 'account' ? 'savedCompanySearches' : 'savedPeopleSearches';
   const url = `https://www.linkedin.com/sales-api/salesApiSavedSearchesV2`
     + `?decoration=${encodeDecoration('(createdAt,id,lastViewedAt,name,newHitsCount,seat,keywords,filters)')}`
@@ -61,7 +61,7 @@ function listSavedSearches(type = 'lead') {
     + `&q=${q}`
     + `&start=0`;
 
-  const data = apiFetch(url, {}, { authCmd: AUTH_CMD });
+  const data = await apiFetch(url, {}, { authCmd: AUTH_CMD });
 
   return (data.elements || []).map(el => ({
     id: el.id,
@@ -88,7 +88,7 @@ function listSavedSearches(type = 'lead') {
 // Run saved search (lead or account)
 // ---------------------------------------------------------------------------
 
-function runSavedSearch(savedSearchId, { type = 'lead', start = 0, count = 25 } = {}) {
+async function runSavedSearch(savedSearchId, { type = 'lead', start = 0, count = 25 } = {}) {
   let url;
   if (type === 'account') {
     url = `https://www.linkedin.com/sales-api/salesApiAccountSearch`
@@ -106,7 +106,7 @@ function runSavedSearch(savedSearchId, { type = 'lead', start = 0, count = 25 } 
       + `&decorationId=com.linkedin.sales.deco.desktop.searchv2.LeadSearchResult-14`;
   }
 
-  const data = apiFetch(url, {}, { authCmd: AUTH_CMD });
+  const data = await apiFetch(url, {}, { authCmd: AUTH_CMD });
 
   if (type === 'account') {
     const accounts = (data.elements || []).map(el => ({
@@ -181,7 +181,7 @@ async function fetchProfiles(profileIds) {
       + `?ids=List(${idsParam})`
       + `&decoration=${encodeDecoration(PROFILE_DECORATION)}`;
 
-    const data = apiFetch(url, {}, { authCmd: AUTH_CMD });
+    const data = await apiFetch(url, {}, { authCmd: AUTH_CMD });
 
     const results = data.results || {};
     for (const [, profile] of Object.entries(results)) {
@@ -233,8 +233,8 @@ function formatProfile(p) {
 // Delete saved search
 // ---------------------------------------------------------------------------
 
-function deleteSavedSearch(savedSearchId) {
-  apiFetch(`/sales-api/salesApiSavedSearchesV2/${savedSearchId}`, { method: 'DELETE' }, { authCmd: AUTH_CMD });
+async function deleteSavedSearch(savedSearchId) {
+  await apiFetch(`/sales-api/salesApiSavedSearchesV2/${savedSearchId}`, { method: 'DELETE' }, { authCmd: AUTH_CMD });
   return true;
 }
 
@@ -271,7 +271,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Listing saved ${type} searches...`);
-    const searches = listSavedSearches(type);
+    const searches = await listSavedSearches(type);
 
     const outFile = resolve(CACHE_DIR, `saved-searches-${type}.json`);
     saveJson(outFile, searches);
@@ -307,7 +307,7 @@ switch (command) {
     const count = parseInt(flags.count || '25');
 
     console.log(`Running saved ${type} search ${savedSearchId} (start=${start}, count=${count})...`);
-    const result = runSavedSearch(savedSearchId, { type, start, count });
+    const result = await runSavedSearch(savedSearchId, { type, start, count });
 
     const outFile = resolve(CACHE_DIR, `run-${type}-${savedSearchId}.json`);
     saveJson(outFile, result);
@@ -339,7 +339,7 @@ switch (command) {
 
     // Step 1: Run the saved lead search
     console.log(`Running saved lead search ${savedSearchId} (start=${start}, count=${count})...`);
-    const searchResult = runSavedSearch(savedSearchId, { type: 'lead', start, count });
+    const searchResult = await runSavedSearch(savedSearchId, { type: 'lead', start, count });
     console.log(`Found ${searchResult.total} total leads, fetching ${searchResult.count} profiles...`);
 
     if (!searchResult.profileIds || searchResult.profileIds.length === 0) {
@@ -375,7 +375,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Deleting saved search ${savedSearchId}...`);
-    deleteSavedSearch(savedSearchId);
+    await deleteSavedSearch(savedSearchId);
     console.log(`Saved search ${savedSearchId} deleted.`);
     break;
   }

@@ -268,7 +268,7 @@ function buildSearchQuery(flags) {
 // Search API
 // ---------------------------------------------------------------------------
 
-function searchLeads(flags, { start = 0, count = 25 } = {}) {
+async function searchLeads(flags, { start = 0, count = 25 } = {}) {
   const query = buildSearchQuery(flags);
   const sid = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('base64');
 
@@ -280,7 +280,7 @@ function searchLeads(flags, { start = 0, count = 25 } = {}) {
     + `&trackingParam=(sessionId:${sid})`
     + `&decorationId=com.linkedin.sales.deco.desktop.searchv2.LeadSearchResult-16`;
 
-  const data = apiFetch(url, {}, { authCmd: AUTH_CMD });
+  const data = await apiFetch(url, {}, { authCmd: AUTH_CMD });
 
   const leads = (data.elements || []).map(el => {
     const urnMatch = (el.entityUrn || '').match(/\(([^,]+)/);
@@ -318,7 +318,7 @@ async function searchAllLeads(flags, { maxResults = 2500, pageSize = 25 } = {}) 
 
   while (start < maxResults) {
     const count = Math.min(pageSize, maxResults - start);
-    const result = searchLeads(flags, { start, count });
+    const result = await searchLeads(flags, { start, count });
     total = result.total;
     allLeads = allLeads.concat(result.leads);
 
@@ -381,7 +381,7 @@ async function fetchProfiles(profileIds) {
       + `?ids=List(${idsParam})`
       + `&decoration=${encodeDecoration(PROFILE_DECORATION)}`;
 
-    const data = apiFetch(url, {}, { authCmd: AUTH_CMD });
+    const data = await apiFetch(url, {}, { authCmd: AUTH_CMD });
     const results = data.results || {};
     for (const [, profile] of Object.entries(results)) {
       allProfiles.push(profile);
@@ -578,7 +578,7 @@ switch (command) {
       .join(', ');
     console.log(`Searching leads: ${filterSummary} (start=${start}, count=${count})...`);
 
-    const result = searchLeads(flags, { start, count });
+    const result = await searchLeads(flags, { start, count });
     console.log(`Found ${result.total} total leads, returned ${result.count}`);
 
     const slug = searchSlug(flags);
