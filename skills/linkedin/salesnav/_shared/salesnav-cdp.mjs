@@ -1,7 +1,7 @@
 // salesnav-cdp.mjs — shared CDP request layer for the Sales Navigator skills.
 //
-// All sales-api requests run INSIDE the logged-in Chrome tab via `cdp eval`
-// (Path A), the same mechanism the Crunchbase skill uses. The browser issues
+// All sales-api requests run INSIDE the logged-in Chrome tab via `cdp eval`,
+// the same mechanism the Crunchbase skill uses. The browser issues
 // the request with its real HTTP/2 connection, TLS fingerprint, header order,
 // origin, and httpOnly cookies — so LinkedIn's sales-api edge sees a normal
 // first-party call instead of a Node-shaped one (which it rejects with HTTP 400).
@@ -89,10 +89,6 @@ export function cdpFetch(tabId, url, options = {}) {
   //
   // redirect:'manual' keeps a session-kill / checkpoint redirect visible as an
   // opaqueredirect (status 0) instead of silently following it to a login page.
-  // We return status, the JS-readable response headers (Retry-After etc.), the
-  // response type, and the body. Note: the browser hides Set-Cookie and
-  // Clear-Site-Data from in-page JS, so a session kill is detected from the
-  // cookie jar (see authCookiesPresent), not from response headers.
   const result = cdp('eval', tabId,
     `(async()=>{` +
     `const m=document.cookie.match(/JSESSIONID="?([^";]+)"?/);` +
