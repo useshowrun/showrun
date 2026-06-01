@@ -9,14 +9,16 @@ Query LinkedIn Sales Navigator saved searches and fetch full profile data from t
 
 ## Prerequisites
 
-- Node.js 22+ (uses built-in `fetch` and `crypto`)
-- Chrome with remote debugging enabled (only for `auth` step)
-- [chrome-cdp](https://github.com/pasky/chrome-cdp-skill/tree/main/skills/chrome-cdp) skill (only for `auth` step)
+- Node.js 22+ (uses built-in `crypto`)
+- Chrome with remote debugging enabled, and a logged-in `www.linkedin.com/sales/...` tab kept open
+- [chrome-cdp](https://github.com/pasky/chrome-cdp-skill/tree/main/skills/chrome-cdp) skill
 - LinkedIn Sales Navigator subscription
+
+Requests run **inside your Chrome tab** (via CDP), not from Node — this is what lets them past LinkedIn's `sales-api` edge. So a Sales Navigator tab must stay open for **every** command, not just `auth`. If no `/sales/` tab is open, open one (see chrome-cdp "Agent guidance"): `node skills/chrome-cdp/scripts/cdp.mjs open https://www.linkedin.com/sales/home`.
 
 ## Setup
 
-One-time authentication — extracts session cookies from an open Sales Navigator tab:
+One-time authentication — validates your logged-in Sales Navigator session:
 
 ```bash
 node scripts/linkedin-salesnav-saved-lead-search.mjs auth
@@ -66,7 +68,7 @@ node scripts/linkedin-salesnav-saved-lead-search.mjs
 
 ## How it works
 
-1. **`auth`** — Connects to Chrome via CDP, extracts all LinkedIn cookies (including httpOnly `li_at`) using `Network.getCookies`, saves to disk.
+1. **`auth`** — Connects to Chrome via CDP, validates the logged-in session (`li_at` + `JSESSIONID` via `Network.getCookies`), and writes a marker `session.json`. Cookies stay in Chrome — every request runs in-page with `credentials:'include'`.
 
 2. **`search`** — Calls `salesApiLeadSearch` with the saved search ID. Returns lead names, current positions, and profile IDs.
 
@@ -86,13 +88,13 @@ All data is stored in:
 
 ```
 ~/.local/share/showrun/data/linkedin-salesnav-saved-lead-search/
-├── session.json                          # Auth cookies & CSRF token
+├── session.json                          # Auth marker (no cookies stored)
 └── cache/
     ├── search-<id>.json                  # Search results (lead list + profile IDs)
     └── search-profiles-<id>.json         # Full profile data from search
 ```
 
-- `session.json` — LinkedIn session cookies. Re-run `auth` if you get 401/403 errors.
+- `session.json` — auth marker only. Re-run `auth` if you get 401/403 errors.
 - `cache/` — Search results and fetched profiles. Each run overwrites the previous result for the same search ID.
 
 ## Session expiry

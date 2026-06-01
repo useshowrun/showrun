@@ -10,9 +10,11 @@ List, run, and delete Sales Navigator saved searches (both lead and account type
 ## Prerequisites
 
 - Node.js 22+
-- Chrome with remote debugging enabled (only for `auth` step)
-- [chrome-cdp skill] (only for `auth` step)
+- Chrome with remote debugging enabled, and a logged-in `www.linkedin.com/sales/...` tab kept open
+- [chrome-cdp skill]
 - LinkedIn Sales Navigator subscription
+
+Requests run **inside your Chrome tab** (via CDP), not from Node — this is what lets them past LinkedIn's `sales-api` edge. So a Sales Navigator tab must stay open for **every** command, not just `auth`. If no `/sales/` tab is open, open one (see chrome-cdp "Agent guidance"): `node skills/chrome-cdp/scripts/cdp.mjs open https://www.linkedin.com/sales/home`.
 
 ## Setup
 
@@ -49,7 +51,7 @@ node salesnav-saved-searches.mjs delete 12345
 
 ## How it works
 
-1. **auth** — Connects to Chrome via CDP, extracts LinkedIn cookies and CSRF token from a Sales Navigator tab, saves them to `session.json`.
+1. **auth** — Connects to Chrome via CDP, validates that a logged-in Sales Navigator session exists (checks `li_at` + `JSESSIONID`), and writes a marker `session.json`. Cookies are never copied out — every later request runs inside your Chrome tab with `credentials:'include'`.
 2. **list** — Calls `salesApiSavedSearchesV2` with `q=savedPeopleSearches` or `q=savedCompanySearches` to retrieve all saved searches with metadata (name, new hits count, filters, keywords).
 3. **run** — Executes a saved search via `salesApiLeadSearch` (leads) or `salesApiAccountSearch` (accounts) using `q=savedSearchId`. Supports pagination with `--start` and `--count`.
 4. **run-profiles** — Runs a saved lead search, then batch-fetches full profiles via `salesApiProfiles` (max 25 per batch) with the full decoration string (positions, education, skills, contact info, etc.).
@@ -59,7 +61,7 @@ node salesnav-saved-searches.mjs delete 12345
 
 ```
 ~/.local/share/showrun/data/salesnav-saved-searches/
-  session.json                          Auth cookies + CSRF token
+  session.json                          Auth marker (no cookies stored)
   cache/
     saved-searches-lead.json            Cached list of saved lead searches
     saved-searches-account.json         Cached list of saved account searches
@@ -76,4 +78,4 @@ If you get a 401 or 403 error, re-run the auth command:
 node salesnav-saved-searches.mjs auth
 ```
 
-LinkedIn sessions typically last several hours. You must have a Sales Navigator tab open in Chrome when running `auth`.
+LinkedIn sessions typically last several hours. A logged-in Sales Navigator tab must stay open in Chrome for all commands (requests run in-page).
