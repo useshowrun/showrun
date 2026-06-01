@@ -84,7 +84,7 @@ const COMPANY_DECORATION = encodeDecoration(
 
 // Primary fetch — fatal on error (if the company itself can't be loaded, the
 // whole view should fail clearly rather than return a hollow result).
-function fetchCompanyMain(companyId) {
+async function fetchCompanyMain(companyId) {
   const url = `https://www.linkedin.com/sales-api/salesApiCompanies/${companyId}?decoration=${COMPANY_DECORATION}`;
   return apiFetch(url, {}, { authCmd: AUTH_CMD });
 }
@@ -95,10 +95,10 @@ function fetchCompanyMain(companyId) {
 
 // Optional sections use softErrors so a per-section HTTP failure throws (caught
 // below / by viewCompany) instead of aborting the process.
-function fetchAccountIQ(companyId) {
+async function fetchAccountIQ(companyId) {
   const url = `https://www.linkedin.com/sales-api/salesApiAccountDossier/${companyId}?accountIQUseCase=SALES_NAVIGATOR`;
   try {
-    return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
+    return await apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
   } catch (err) {
     if (err.message.includes('404')) {
       console.warn(`Account IQ not available for company ${companyId} (404).`);
@@ -112,9 +112,9 @@ function fetchAccountIQ(companyId) {
 // API: Employee insights
 // ---------------------------------------------------------------------------
 
-function fetchEmployeeInsights(companyId) {
-  const total = apiFetch(`https://www.linkedin.com/sales-api/salesApiEmployeeInsights/${companyId}?employeeInsightType=TOTAL_HEADCOUNT`, {}, { authCmd: AUTH_CMD, softErrors: true });
-  const functional = apiFetch(`https://www.linkedin.com/sales-api/salesApiEmployeeInsights/${companyId}?employeeInsightType=FUNCTIONAL_HEADCOUNT`, {}, { authCmd: AUTH_CMD, softErrors: true });
+async function fetchEmployeeInsights(companyId) {
+  const total = await apiFetch(`https://www.linkedin.com/sales-api/salesApiEmployeeInsights/${companyId}?employeeInsightType=TOTAL_HEADCOUNT`, {}, { authCmd: AUTH_CMD, softErrors: true });
+  const functional = await apiFetch(`https://www.linkedin.com/sales-api/salesApiEmployeeInsights/${companyId}?employeeInsightType=FUNCTIONAL_HEADCOUNT`, {}, { authCmd: AUTH_CMD, softErrors: true });
   return { totalHeadcount: total, functionalHeadcount: functional };
 }
 
@@ -122,7 +122,7 @@ function fetchEmployeeInsights(companyId) {
 // API: Relationship maps
 // ---------------------------------------------------------------------------
 
-function fetchRelationshipMaps(companyId) {
+async function fetchRelationshipMaps(companyId) {
   const url = `https://www.linkedin.com/sales-api/salesApiRelationshipMaps?q=account&organizationId=${companyId}&count=20`;
   return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
@@ -131,7 +131,7 @@ function fetchRelationshipMaps(companyId) {
 // API: Entity alerts
 // ---------------------------------------------------------------------------
 
-function fetchAlerts(companyId) {
+async function fetchAlerts(companyId) {
   const urn = encodeURIComponent(companyUrn(companyId));
   const url = `https://www.linkedin.com/sales-api/salesApiEntityAlerts?q=criteria&entityUrn=${urn}&sortBy=TIME&start=0&count=20`;
   return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
@@ -144,7 +144,7 @@ function fetchAlerts(companyId) {
 const ALSO_VIEWED_DECORATION = encodeDecoration(
   '(companiesAlsoViewed*~fs_salesCompany(entityUrn,name,industry,companyPictureDisplayImage,employeeCountRange))');
 
-function fetchSimilarCompanies(companyId) {
+async function fetchSimilarCompanies(companyId) {
   const url = `https://www.linkedin.com/sales-api/salesApiCompanyAlsoViewed/${companyId}?decoration=${ALSO_VIEWED_DECORATION}`;
   return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
@@ -153,7 +153,7 @@ function fetchSimilarCompanies(companyId) {
 // API: Notes
 // ---------------------------------------------------------------------------
 
-function fetchNotes(companyId) {
+async function fetchNotes(companyId) {
   const urn = encodeURIComponent(companyUrn(companyId));
   const url = `https://www.linkedin.com/sales-api/salesApiEntityNote?count=20&entityUrn=${urn}&q=entity&start=0&visibility=ALL`;
   return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
@@ -163,7 +163,7 @@ function fetchNotes(companyId) {
 // API: Personas
 // ---------------------------------------------------------------------------
 
-function fetchPersonas(companyId) {
+async function fetchPersonas(companyId) {
   const url = `https://www.linkedin.com/sales-api/salesApiPersonas?q=seat&targetCompanyId=${companyId}&decorationId=com.linkedin.sales.deco.desktop.common.Persona-3`;
   return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
@@ -174,21 +174,20 @@ function fetchPersonas(companyId) {
 
 const ALL_SECTIONS = ['basic', 'iq', 'employees', 'alerts', 'similar', 'notes', 'personas', 'relationship-map'];
 
-// Requests run in-page via the synchronous shared apiFetch, so sections are
-// fetched sequentially (one cdp eval blocks the next). Each is wrapped so a
-// soft per-section failure is logged and skipped rather than aborting the view.
-function viewCompany(companyId, sections) {
+// Sections are fetched sequentially; each is wrapped so a soft per-section
+// failure is logged and skipped rather than aborting the whole view.
+async function viewCompany(companyId, sections) {
   const result = {};
 
   const fetchers = {
-    'basic': () => { result.company = fetchCompanyMain(companyId); },
-    'iq': () => { result.accountIQ = fetchAccountIQ(companyId); },
-    'employees': () => { result.employees = fetchEmployeeInsights(companyId); },
-    'alerts': () => { result.alerts = fetchAlerts(companyId); },
-    'similar': () => { result.similar = fetchSimilarCompanies(companyId); },
-    'notes': () => { result.notes = fetchNotes(companyId); },
-    'personas': () => { result.personas = fetchPersonas(companyId); },
-    'relationship-map': () => { result.relationshipMaps = fetchRelationshipMaps(companyId); },
+    'basic': async () => { result.company = await fetchCompanyMain(companyId); },
+    'iq': async () => { result.accountIQ = await fetchAccountIQ(companyId); },
+    'employees': async () => { result.employees = await fetchEmployeeInsights(companyId); },
+    'alerts': async () => { result.alerts = await fetchAlerts(companyId); },
+    'similar': async () => { result.similar = await fetchSimilarCompanies(companyId); },
+    'notes': async () => { result.notes = await fetchNotes(companyId); },
+    'personas': async () => { result.personas = await fetchPersonas(companyId); },
+    'relationship-map': async () => { result.relationshipMaps = await fetchRelationshipMaps(companyId); },
   };
 
   for (const s of sections) {
@@ -198,7 +197,7 @@ function viewCompany(companyId, sections) {
       continue;
     }
     try {
-      fn();
+      await fn();
     } catch (err) {
       console.warn(`Failed to fetch section "${s}": ${err.message}`);
     }
@@ -242,7 +241,7 @@ switch (command) {
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
 
     console.log(`Fetching company ${companyId} (sections: ${sections.join(', ')})...`);
-    const result = viewCompany(companyId, sections);
+    const result = await viewCompany(companyId, sections);
 
     const outFile = resolve(CACHE_DIR, `company-${companyId}.json`);
     saveJson(outFile, result);
@@ -291,7 +290,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching Account IQ dossier for company ${companyId}...`);
-    const data = fetchAccountIQ(companyId);
+    const data = await fetchAccountIQ(companyId);
 
     if (!data) {
       console.log('Account IQ not available for this company.');
@@ -329,7 +328,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching employee insights for company ${companyId}...`);
-    const data = fetchEmployeeInsights(companyId);
+    const data = await fetchEmployeeInsights(companyId);
 
     const outFile = resolve(CACHE_DIR, `employees-${companyId}.json`);
     saveJson(outFile, data);
@@ -347,7 +346,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching relationship maps for company ${companyId}...`);
-    const data = fetchRelationshipMaps(companyId);
+    const data = await fetchRelationshipMaps(companyId);
 
     const outFile = resolve(CACHE_DIR, `relationship-map-${companyId}.json`);
     saveJson(outFile, data);
@@ -365,7 +364,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching alerts for company ${companyId}...`);
-    const data = fetchAlerts(companyId);
+    const data = await fetchAlerts(companyId);
 
     const outFile = resolve(CACHE_DIR, `alerts-${companyId}.json`);
     saveJson(outFile, data);
@@ -388,7 +387,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching similar companies for company ${companyId}...`);
-    const data = fetchSimilarCompanies(companyId);
+    const data = await fetchSimilarCompanies(companyId);
 
     const outFile = resolve(CACHE_DIR, `similar-${companyId}.json`);
     saveJson(outFile, data);
@@ -411,7 +410,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching notes for company ${companyId}...`);
-    const data = fetchNotes(companyId);
+    const data = await fetchNotes(companyId);
 
     const outFile = resolve(CACHE_DIR, `notes-${companyId}.json`);
     saveJson(outFile, data);
@@ -435,7 +434,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching personas for company ${companyId}...`);
-    const data = fetchPersonas(companyId);
+    const data = await fetchPersonas(companyId);
 
     const outFile = resolve(CACHE_DIR, `personas-${companyId}.json`);
     saveJson(outFile, data);

@@ -63,7 +63,7 @@ const LIST_SOURCES = [
 // API functions
 // ---------------------------------------------------------------------------
 
-function listLists({ type = 'LEAD', start = 0, count = 25 } = {}) {
+async function listLists({ type = 'LEAD', start = 0, count = 25 } = {}) {
   const listType = type.toUpperCase();
   if (listType !== 'LEAD' && listType !== 'ACCOUNT') {
     throw new Error(`Invalid list type: "${type}". Must be "lead" or "account".`);
@@ -80,25 +80,25 @@ function listLists({ type = 'LEAD', start = 0, count = 25 } = {}) {
     + `&sortOrder=DESCENDING`
     + `&ownership=OWNED_BY_VIEWER`;
 
-  return apiFetch(url, {}, { authCmd: AUTH_CMD });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD });
 }
 
-function viewList(listId) {
+async function viewList(listId) {
   // Fetch the list metadata by listing with a filter — the API does not have
   // a direct GET /salesApiLists/<id> for metadata. Instead we fetch the entity
   // list membership or fall back to listing all and filtering.
   // Actually, REST-li supports GET by ID:
   const url = `${BASE_URL}/sales-api/salesApiLists/${listId}`;
 
-  return apiFetch(url, {}, { authCmd: AUTH_CMD });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD });
 }
 
-function listMembers(listId, { count = 25, start = 0 } = {}) {
+async function listMembers(listId, { count = 25, start = 0 } = {}) {
   // Members of a list are fetched via lead search or account search filtered by list
   // For lead lists, use salesApiLeadSearch with LEAD_LIST filter
   // For account lists, use salesApiAccountSearch with ACCOUNT_LIST filter
   // First, get the list to determine type
-  const listData = viewList(listId);
+  const listData = await viewList(listId);
   const listType = listData.listType || 'LEAD';
 
   if (listType === 'LEAD') {
@@ -111,7 +111,7 @@ function listMembers(listId, { count = 25, start = 0 } = {}) {
       + `&count=${count}`
       + `&decorationId=com.linkedin.sales.deco.desktop.searchv2.LeadSearchResult-14`;
 
-    const data = apiFetch(url, {}, { authCmd: AUTH_CMD });
+    const data = await apiFetch(url, {}, { authCmd: AUTH_CMD });
     return { listType, listName: listData.name, ...data };
   } else {
     const query =
@@ -123,12 +123,12 @@ function listMembers(listId, { count = 25, start = 0 } = {}) {
       + `&count=${count}`
       + `&decorationId=com.linkedin.sales.deco.desktop.searchv2.AccountSearchResult-4`;
 
-    const data = apiFetch(url, {}, { authCmd: AUTH_CMD });
+    const data = await apiFetch(url, {}, { authCmd: AUTH_CMD });
     return { listType, listName: listData.name, ...data };
   }
 }
 
-function createList({ name, type = 'LEAD', description = '' } = {}) {
+async function createList({ name, type = 'LEAD', description = '' } = {}) {
   const listType = type.toUpperCase();
   if (listType !== 'LEAD' && listType !== 'ACCOUNT') {
     throw new Error(`Invalid list type: "${type}". Must be "lead" or "account".`);
@@ -139,14 +139,14 @@ function createList({ name, type = 'LEAD', description = '' } = {}) {
   const body = { listType, name };
   if (description) body.description = description;
 
-  return apiFetch(url, {
+  return await apiFetch(url, {
     method: 'POST',
     headers: { 'X-Restli-Method': 'CREATE' },
     body: JSON.stringify(body),
   }, { authCmd: AUTH_CMD });
 }
 
-function updateList(listId, { name, description } = {}) {
+async function updateList(listId, { name, description } = {}) {
   if (!name && description === undefined) {
     throw new Error('At least --name or --description is required for update.');
   }
@@ -156,31 +156,31 @@ function updateList(listId, { name, description } = {}) {
   if (name) patch.name = { '$set': name };
   if (description !== undefined) patch.description = { '$set': description };
 
-  return apiFetch(url, {
+  return await apiFetch(url, {
     method: 'POST',
     headers: { 'X-Restli-Method': 'PARTIAL_UPDATE' },
     body: JSON.stringify({ patch }),
   }, { authCmd: AUTH_CMD });
 }
 
-function deleteList(listId) {
+async function deleteList(listId) {
   const url = `${BASE_URL}/sales-api/salesApiLists/${listId}`;
   // 2xx returns no body; shared apiFetch surfaces 401/403/errors itself.
-  apiFetch(url, { method: 'DELETE' }, { authCmd: AUTH_CMD });
+  await apiFetch(url, { method: 'DELETE' }, { authCmd: AUTH_CMD });
   return { success: true };
 }
 
-function addEntities(listId, entityUrns) {
+async function addEntities(listId, entityUrns) {
   const url = `${BASE_URL}/sales-api/salesApiLists/${listId}?action=addEntities`;
-  return apiFetch(url, {
+  return await apiFetch(url, {
     method: 'POST',
     body: JSON.stringify({ entities: entityUrns }),
   }, { authCmd: AUTH_CMD });
 }
 
-function removeEntities(listId, entityUrns) {
+async function removeEntities(listId, entityUrns) {
   const url = `${BASE_URL}/sales-api/salesApiLists/${listId}?action=removeEntities`;
-  return apiFetch(url, {
+  return await apiFetch(url, {
     method: 'POST',
     body: JSON.stringify({ entities: entityUrns }),
   }, { authCmd: AUTH_CMD });
@@ -257,7 +257,7 @@ switch (command) {
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching ${type.toLowerCase()} lists (start=${start}, count=${count})...`);
 
-    const data = listLists({ type, start, count });
+    const data = await listLists({ type, start, count });
     const total = data.metadata?.totalCount ?? data.paging?.total ?? data.elements?.length ?? 0;
     console.log(`\nFound ${total} ${type.toLowerCase()} list(s):\n`);
 
@@ -282,7 +282,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching list ${listId}...`);
-    const data = viewList(listId);
+    const data = await viewList(listId);
     printListDetail(data);
 
     const outFile = resolve(CACHE_DIR, `list-${listId}.json`);
@@ -304,7 +304,7 @@ switch (command) {
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching members of list ${listId} (start=${start}, count=${count})...`);
 
-    const data = listMembers(listId, { count, start });
+    const data = await listMembers(listId, { count, start });
     const total = data.paging?.total ?? data.elements?.length ?? 0;
     console.log(`\nList "${data.listName}" (${data.listType}) — ${total} member(s):\n`);
 
@@ -348,7 +348,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Creating ${type} list "${name}"...`);
-    const data = createList({ name, type, description });
+    const data = await createList({ name, type, description });
     console.log('List created successfully.');
     if (typeof data === 'object') {
       console.log(JSON.stringify(data, null, 2));
@@ -387,7 +387,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Updating list ${listId}...`);
-    const data = updateList(listId, { name, description });
+    const data = await updateList(listId, { name, description });
     console.log('List updated successfully.');
     if (typeof data === 'object' && Object.keys(data).length > 0) {
       console.log(JSON.stringify(data, null, 2));
@@ -414,7 +414,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Deleting list ${listId}...`);
-    const result = deleteList(listId);
+    const result = await deleteList(listId);
     console.log(`List ${listId} deleted successfully.`);
     break;
   }
@@ -444,7 +444,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Adding ${entityUrns.length} entity/entities to list ${listId}...`);
-    const data = addEntities(listId, entityUrns);
+    const data = await addEntities(listId, entityUrns);
     console.log('Entities added successfully.');
     if (typeof data === 'object' && Object.keys(data).length > 0) {
       console.log(JSON.stringify(data, null, 2));
@@ -477,7 +477,7 @@ switch (command) {
 
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Removing ${entityUrns.length} entity/entities from list ${listId}...`);
-    const data = removeEntities(listId, entityUrns);
+    const data = await removeEntities(listId, entityUrns);
     console.log('Entities removed successfully.');
     if (typeof data === 'object' && Object.keys(data).length > 0) {
       console.log(JSON.stringify(data, null, 2));

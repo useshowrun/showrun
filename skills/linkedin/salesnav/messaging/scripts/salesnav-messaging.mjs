@@ -64,7 +64,7 @@ const THREAD_DECORATION =
 // API: List inbox threads
 // ---------------------------------------------------------------------------
 
-function listThreads({ count = 20, filter = 'INBOX', pageStartsAt = null } = {}) {
+async function listThreads({ count = 20, filter = 'INBOX', pageStartsAt = null } = {}) {
   // pageStartsAt is required by the API — use current timestamp for the first page
   const cursor = pageStartsAt || Date.now();
   const url = `https://www.linkedin.com/sales-api/salesApiMessagingThreads`
@@ -74,28 +74,28 @@ function listThreads({ count = 20, filter = 'INBOX', pageStartsAt = null } = {})
     + `&pageStartsAt=${cursor}`
     + `&q=filter`;
 
-  return apiFetch(url, {}, { authCmd: AUTH_CMD });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD });
 }
 
 // ---------------------------------------------------------------------------
 // API: Get a single thread
 // ---------------------------------------------------------------------------
 
-function getThread(threadId) {
+async function getThread(threadId) {
   const url = `https://www.linkedin.com/sales-api/salesApiMessagingThreads/${encodeURIComponent(threadId)}`
     + `?decoration=${encodeDecoration(THREAD_DECORATION)}`
     + `&count=1&messageCount=10`;
-  return apiFetch(url, {}, { authCmd: AUTH_CMD });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD });
 }
 
 // ---------------------------------------------------------------------------
 // API: Send reply to existing thread
 // ---------------------------------------------------------------------------
 
-function sendReply(threadId, body) {
+async function sendReply(threadId, body) {
   const url = `https://www.linkedin.com/sales-api/salesApiMessagingThreads/${encodeURIComponent(threadId)}/messages`;
   // softErrors: let the CLI's try/catch surface the "inferred endpoint" guidance.
-  return apiFetch(url, {
+  return await apiFetch(url, {
     method: 'POST',
     headers: { 'x-restli-method': 'create' },
     body: JSON.stringify({ body }),
@@ -106,10 +106,10 @@ function sendReply(threadId, body) {
 // API: Send new InMail
 // ---------------------------------------------------------------------------
 
-function sendNewInmail(profileUrn, subject, body) {
+async function sendNewInmail(profileUrn, subject, body) {
   const url = `https://www.linkedin.com/sales-api/salesApiMessagingThreads`;
   // softErrors: let the CLI's try/catch surface the "inferred endpoint" guidance.
-  return apiFetch(url, {
+  return await apiFetch(url, {
     method: 'POST',
     headers: { 'x-restli-method': 'create' },
     body: JSON.stringify({
@@ -124,19 +124,19 @@ function sendNewInmail(profileUrn, subject, body) {
 // API: Inbox signature
 // ---------------------------------------------------------------------------
 
-function getSignature() {
+async function getSignature() {
   const url = `https://www.linkedin.com/sales-api/salesApiInboxSignature/USER_SIGNATURE`;
-  return apiFetch(url, {}, { authCmd: AUTH_CMD });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD });
 }
 
 // ---------------------------------------------------------------------------
 // API: Presence statuses
 // ---------------------------------------------------------------------------
 
-function getPresence(urns) {
+async function getPresence(urns) {
   const urnList = urns.join(',');
   const url = `https://www.linkedin.com/sales-api/salesApiMessagingPresenceStatuses?ids=List(${urnList})`;
-  return apiFetch(url, {}, { authCmd: AUTH_CMD });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD });
 }
 
 // ---------------------------------------------------------------------------
@@ -240,7 +240,7 @@ switch (command) {
     const pageStartsAt = flags.page || null;
 
     console.log(`Fetching ${filter} threads (count=${count})...`);
-    const data = listThreads({ count, filter, pageStartsAt });
+    const data = await listThreads({ count, filter, pageStartsAt });
     const threads = data.elements || [];
 
     if (threads.length === 0) {
@@ -279,7 +279,7 @@ switch (command) {
     }
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Fetching thread: ${threadId}...`);
-    const thread = getThread(threadId);
+    const thread = await getThread(threadId);
     printThreadFull(thread);
 
     const outFile = resolve(CACHE_DIR, `thread-${threadId.replace(/[^a-zA-Z0-9_-]/g, '_')}-${Date.now()}.json`);
@@ -311,7 +311,7 @@ switch (command) {
     console.log(`Sending reply to thread: ${threadId}...`);
     console.log('NOTE: Send endpoint is inferred and may need adjustment if it fails.');
     try {
-      const result = sendReply(threadId, body);
+      const result = await sendReply(threadId, body);
       console.log('Reply sent successfully.');
       console.log(JSON.stringify(result, null, 2));
     } catch (err) {
@@ -349,7 +349,7 @@ switch (command) {
     console.log(`Sending new InMail to: ${profileUrn}...`);
     console.log('NOTE: New InMail endpoint is inferred and may need adjustment if it fails.');
     try {
-      const result = sendNewInmail(profileUrn, subject, body);
+      const result = await sendNewInmail(profileUrn, subject, body);
       console.log('InMail sent successfully.');
       console.log(JSON.stringify(result, null, 2));
     } catch (err) {
@@ -364,7 +364,7 @@ switch (command) {
   case 'signature': {
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log('Fetching inbox signature...');
-    const data = getSignature();
+    const data = await getSignature();
     console.log(JSON.stringify(data, null, 2));
     break;
   }
@@ -378,7 +378,7 @@ switch (command) {
     }
     requireAuth(SESSION_FILE, loadJson, AUTH_CMD);
     console.log(`Checking presence for ${rawUrns.length} URN(s)...`);
-    const data = getPresence(rawUrns);
+    const data = await getPresence(rawUrns);
 
     const results = data.results || data;
     if (typeof results === 'object' && !Array.isArray(results)) {

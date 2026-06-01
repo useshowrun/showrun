@@ -340,7 +340,7 @@ function buildSearchQuery(flags) {
   return `(spellCorrectionEnabled:true,recentSearchParam:(doLogHistory:false),filters:${filtersStr})`;
 }
 
-function searchAccounts(flags, { start = 0, count = 25 } = {}) {
+async function searchAccounts(flags, { start = 0, count = 25 } = {}) {
   const query = buildSearchQuery(flags);
   const sid = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('base64');
 
@@ -352,7 +352,7 @@ function searchAccounts(flags, { start = 0, count = 25 } = {}) {
     + `&trackingParam=(sessionId:${sid})`
     + `&decorationId=com.linkedin.sales.deco.desktop.searchv2.AccountSearchResult-4`;
 
-  const data = apiFetch(url, {}, { authCmd: AUTH_CMD });
+  const data = await apiFetch(url, {}, { authCmd: AUTH_CMD });
 
   const accounts = (data.elements || []).map(el => {
     const urnMatch = (el.entityUrn || '').match(/fs_salesCompany:(\d+)/);
@@ -524,7 +524,7 @@ switch (command) {
       .join(', ');
     console.log(`Searching accounts: ${filterSummary} (start=${start}, count=${count})...`);
 
-    const result = searchAccounts(flags, { start, count });
+    const result = await searchAccounts(flags, { start, count });
     console.log(`Found ${result.total} total accounts, returned ${result.count}`);
 
     // Save results

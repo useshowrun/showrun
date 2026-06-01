@@ -174,7 +174,7 @@ const BATCH_DECORATION = encodeDecoration(BATCH_DECORATION_RAW);
 /**
  * Fetch main profile data (basic + extended + insights decorations).
  */
-function fetchProfile(parsed, sections) {
+async function fetchProfile(parsed, sections) {
   const key = profileKey(parsed);
   const allSections = !sections || sections.length === 0;
 
@@ -193,7 +193,7 @@ function fetchProfile(parsed, sections) {
   const decoration = encodeDecoration(`(${decorationParts.join(',')})`);
 
   const url = `https://www.linkedin.com/sales-api/salesApiProfiles/${key}?decoration=${decoration}`;
-  return apiFetch(url, {}, { authCmd: AUTH_CMD });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD });
 }
 
 /**
@@ -213,7 +213,7 @@ async function fetchBatchProfiles(profileIds) {
       + `?ids=List(${idsParam})`
       + `&decoration=${BATCH_DECORATION}`;
 
-    const data = apiFetch(url, {}, { authCmd: AUTH_CMD });
+    const data = await apiFetch(url, {}, { authCmd: AUTH_CMD });
     const results = data.results || {};
     for (const [, profile] of Object.entries(results)) {
       allProfiles.push(profile);
@@ -233,7 +233,7 @@ async function fetchBatchProfiles(profileIds) {
 async function fetchSpotlights(parsed) {
   const url = `https://www.linkedin.com/sales-api/salesApiProfileSpotlights/${parsed.profileId}`
     + `?authType=${parsed.authType}&authToken=${parsed.authToken}`;
-  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
@@ -243,7 +243,7 @@ async function fetchLeadIq(parsed) {
   const requestId = randomUUID();
   const url = `https://www.linkedin.com/sales-api/salesApiLeadIq/${parsed.profileId}`
     + `?requestId=${requestId}&isPreview=true`;
-  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
@@ -253,7 +253,7 @@ async function fetchHighlights(parsed) {
   const decoration = encodeDecoration('(sharedConnection(sharedConnectionUrns*~fs_salesProfile(entityUrn,firstName,lastName,fullName,pictureInfo,profilePictureDisplayImage)),teamlinkInfo(totalCount),sharedEducations*(overlapInfo,entityUrn~fs_salesSchool(entityUrn,logoId,name,url,schoolPictureDisplayImage)),sharedExperiences*(overlapInfo,entityUrn~fs_salesCompany(entityUrn,pictureInfo,name,companyPictureDisplayImage)),sharedGroups*(entityUrn~fs_salesGroup(entityUrn,name,largeLogoId,smallLogoId,groupPictureDisplayImage)))');
   const url = `https://www.linkedin.com/sales-api/salesApiProfileHighlights/${parsed.profileId}`
     + `?decoration=${decoration}`;
-  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
@@ -265,7 +265,7 @@ async function fetchWarmIntro(parsed, spotlightType = 'FIRST_DEGREE') {
     + `?profileAuthKey=${key}`
     + `&q=warmIntroBySeniority`
     + `&warmIntroSpotlightType=${spotlightType}`;
-  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
@@ -281,7 +281,7 @@ async function fetchInsights(parsed) {
     + `&profile=${urn}`
     + `&timeRange=(start:${ninetyDaysAgo},end:${now})`
     + `&start=0&count=10`;
-  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
@@ -296,7 +296,7 @@ async function fetchTimeline(parsed) {
     + `&profile=${urn}`
     + `&timelineActivityFilters=List(ALL)`
     + `&decoration=${timelineDec}`;
-  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
@@ -310,7 +310,7 @@ async function fetchNotes(parsed) {
     + `&q=entity`
     + `&start=0`
     + `&visibility=ALL`;
-  return apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
+  return await apiFetch(url, {}, { authCmd: AUTH_CMD, softErrors: true });
 }
 
 /**
