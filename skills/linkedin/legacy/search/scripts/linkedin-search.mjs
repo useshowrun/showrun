@@ -15,6 +15,7 @@ import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
+import { applySetCookies, cookieMapFrom, linkedInCookieString } from '../../../_shared/linkedin-fetch.mjs';
 
 // ---------------------------------------------------------------------------
 // Data directory
@@ -82,17 +83,6 @@ function parseCookieResponse(raw, source) {
   } catch (err) {
     throw new Error(`${source} cookie extraction failed: ${err.message}`);
   }
-}
-
-function cookieMapFrom(cookies) {
-  return Object.fromEntries(cookies.map(c => [c.name, c.value]));
-}
-
-function linkedInCookieString(cookies) {
-  return cookies
-    .filter(c => String(c.domain || '').includes('linkedin.com'))
-    .map(c => `${c.name}=${c.value}`)
-    .join('; ');
 }
 
 function activeTabInfo(target, listText = '') {
@@ -235,6 +225,7 @@ function baseHeaders(auth) {
 
 async function apiFetch(auth, url) {
   const resp = await fetch(url, { headers: baseHeaders(auth) });
+  applySetCookies(auth, resp, SESSION_FILE);
   if (resp.status === 401 || resp.status === 403) {
     console.error('Session expired. Run: node linkedin-search.mjs auth');
     process.exit(1);

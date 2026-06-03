@@ -16,6 +16,7 @@ import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
+import { applySetCookies, cookieMapFrom, linkedInCookieString } from '../../../_shared/linkedin-fetch.mjs';
 
 // ---------------------------------------------------------------------------
 // Data directory: ~/.local/share/showrun/data/linkedin-msg/
@@ -101,16 +102,6 @@ function parseCookieResponse(raw, source) {
   }
 }
 
-function cookieMapFrom(cookies) {
-  return Object.fromEntries(cookies.map(c => [c.name, c.value]));
-}
-
-function linkedInCookieString(cookies) {
-  return cookies
-    .filter(c => String(c.domain || '').includes('linkedin.com'))
-    .map(c => `${c.name}=${c.value}`)
-    .join('; ');
-}
 
 function activeTabInfo(target, listText = '') {
   let url = '';
@@ -195,7 +186,7 @@ async function doAuth() {
   const target = findLinkedInTab();
   console.log(`Using tab: ${target}`);
 
-  const { cookieStr, csrfToken, cookieSource } = getLinkedInAuthCookies(target, list);
+  const { cookieStr, csrfToken, cookieSource } = getLinkedInAuthCookies(target);
   console.log(`Extracted LinkedIn cookies via ${cookieSource}`);
 
   // Get own profile URN (use application/json to get flat response)
@@ -250,6 +241,7 @@ async function apiFetch(auth, url, options = {}) {
     ...options,
     headers: { ...baseHeaders(auth), ...options.headers },
   });
+  applySetCookies(auth, resp, SESSION_FILE);
   const text = await resp.text();
   let data;
   try { data = JSON.parse(text); } catch { data = text; }
