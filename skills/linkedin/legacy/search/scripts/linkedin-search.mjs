@@ -15,7 +15,7 @@ import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
-import { applySetCookies, cookieMapFrom, linkedInCookieString } from '../../../_shared/linkedin-fetch.mjs';
+import { applySetCookies, cookieMapFrom, linkedInCookieString, chromeFetch } from '../../../_shared/linkedin-fetch.mjs';
 
 // ---------------------------------------------------------------------------
 // Data directory
@@ -224,14 +224,15 @@ function baseHeaders(auth) {
 }
 
 async function apiFetch(auth, url) {
-  const resp = await fetch(url, { headers: baseHeaders(auth) });
-  applySetCookies(auth, resp, SESSION_FILE);
+  // Route every API call through Chrome's logged-in LinkedIn tab so cookies
+  // (including JSESSIONID rotation) come from Chrome's single jar — no Node-vs-
+  // Chrome drift, no anti-abuse trips, no surprise logouts.
+  const resp = await chromeFetch(url, { headers: baseHeaders(auth) });
   if (resp.status === 401 || resp.status === 403) {
     console.error('Session expired. Run: node linkedin-search.mjs auth');
     process.exit(1);
   }
-  const text = await resp.text();
-  try { return JSON.parse(text); } catch { return text; }
+  try { return JSON.parse(resp.body); } catch { return resp.body; }
 }
 
 // ---------------------------------------------------------------------------
