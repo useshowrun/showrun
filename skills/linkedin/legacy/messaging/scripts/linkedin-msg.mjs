@@ -355,8 +355,16 @@ function encodeRestliValue(val) {
   return encodeURIComponent(val).replace(/\(/g, '%28').replace(/\)/g, '%29');
 }
 
-async function listConversations(auth, { count = 20, category = 'PRIMARY_INBOX' } = {}) {
-  const variables = `(query:(predicateUnions:List((conversationCategoryPredicate:(category:${category})))),count:${count},mailboxUrn:${encodeRestliValue(auth.myUrn)})`;
+// LinkedIn's messengerConversations endpoint silently returns an EMPTY result
+// for count >= ~30 and exposes no offset param — you page backwards with the
+// opaque `nextCursor` token in each response's metadata. So we always request a
+// safe page size and follow the cursor. Requesting count=40 (as the old code
+// did) returned nothing, which made search/inbox appear empty rather than deep.
+const CONVERSATION_PAGE_SIZE = 20;
+
+async function fetchConversationPage(auth, { category = 'PRIMARY_INBOX', cursor = null } = {}) {
+  const cursorPart = cursor ? `,nextCursor:${encodeRestliValue(cursor)}` : '';
+  const variables = `(query:(predicateUnions:List((conversationCategoryPredicate:(category:${category})))),count:${CONVERSATION_PAGE_SIZE}${cursorPart},mailboxUrn:${encodeRestliValue(auth.myUrn)})`;
   const url = `https://www.linkedin.com/voyager/api/voyagerMessagingGraphQL/graphql?queryId=messengerConversations.9501074288a12f3ae9e3c7ea243bccbf&variables=${variables}`;
 
   const result = await apiFetch(auth, url);
@@ -366,15 +374,46 @@ async function listConversations(auth, { count = 20, category = 'PRIMARY_INBOX' 
   }
 
   const conversations = extractConversations(result.data);
+  const nextCursor = result.data?.data?.data?.messengerConversationsByCategoryQuery?.metadata?.nextCursor || null;
+  return { conversations, nextCursor };
+}
+
+// Page through conversations newest-first, calling onPage with each fresh
+// (de-duplicated) batch. Stops when onPage returns true, the cursor runs out,
+// or maxPages is reached — whichever comes first.
+async function paginateConversations(auth, { category = 'PRIMARY_INBOX', maxPages = 50, onPage } = {}) {
+  const seen = new Set();
+  let cursor = null;
+  for (let page = 0; page < maxPages; page++) {
+    const { conversations, nextCursor } = await fetchConversationPage(auth, { category, cursor });
+    const fresh = conversations.filter(c => c.entityUrn && !seen.has(c.entityUrn));
+    for (const c of fresh) seen.add(c.entityUrn);
+    const stop = onPage ? onPage(fresh, page) : false;
+    if (stop || !nextCursor || fresh.length === 0) break;
+    cursor = nextCursor;
+  }
+}
+
+async function listConversations(auth, { count = 20, category = 'PRIMARY_INBOX' } = {}) {
+  const conversations = [];
+  await paginateConversations(auth, {
+    category,
+    maxPages: Math.ceil(count / CONVERSATION_PAGE_SIZE) + 1,
+    onPage: (fresh) => {
+      conversations.push(...fresh);
+      return conversations.length >= count;
+    },
+  });
+  const sliced = conversations.slice(0, count);
 
   // Save to cache
   saveJson(CONVERSATIONS_FILE, {
     fetchedAt: new Date().toISOString(),
     category,
-    conversations,
+    conversations: sliced,
   });
 
-  return conversations;
+  return sliced;
 }
 
 async function listMessages(auth, conversationUrn) {
@@ -435,13 +474,33 @@ function resolveConversationUrn(input) {
   return `urn:li:msg_conversation:${input}`;
 }
 
-async function searchConversations(auth, query) {
-  // Fetch conversations and search by participant name
-  const conversations = await listConversations(auth, { count: 40 });
+async function searchConversations(auth, query, { maxPages = 40 } = {}) {
+  // Page through conversations by participant name. A thread with no reply is
+  // sorted by its last activity, so old outreach falls far down the list —
+  // hence we page (and fall through to INMAIL/OTHER) instead of a single fetch,
+  // otherwise we'd falsely report "no conversation" for anyone messaged a while
+  // ago. Stops as soon as a category yields a hit.
   const q = query.toLowerCase();
-  return conversations.filter(c =>
-    c.participants.some(p => p.name.toLowerCase().includes(q))
-  );
+  const matches = [];
+  const seenUrns = new Set();
+  for (const category of ['PRIMARY_INBOX', 'INMAIL', 'OTHER']) {
+    await paginateConversations(auth, {
+      category,
+      maxPages,
+      onPage: (fresh) => {
+        for (const c of fresh) {
+          if (seenUrns.has(c.entityUrn)) continue;
+          if (c.participants.some(p => p.name.toLowerCase().includes(q))) {
+            seenUrns.add(c.entityUrn);
+            matches.push({ ...c, category });
+          }
+        }
+        return matches.length > 0;
+      },
+    });
+    if (matches.length) break;
+  }
+  return matches;
 }
 
 async function resolveProfileFromConversations(auth, nameQuery) {
