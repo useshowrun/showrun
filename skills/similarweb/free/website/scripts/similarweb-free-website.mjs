@@ -185,6 +185,17 @@ function defaultMonthRange() {
   return { from: dateParam(first), to: dateParam(last) };
 }
 
+// Range spanning the N most recent complete months. Free tier's `SingleMetric`
+// endpoint rejects historical months (HTTP 400), but the `Graph` endpoint at
+// Weekly granularity happily serves multi-month history — which the `visits`
+// command exploits when --months=N is passed.
+function monthsBackRange(monthsBack) {
+  const now = new Date();
+  const first = new Date(now.getFullYear(), now.getMonth() - monthsBack, 1);
+  const last = new Date(now.getFullYear(), now.getMonth(), 0);
+  return { from: dateParam(first), to: dateParam(last) };
+}
+
 function fmtLarge(val) {
   if (val == null) return 'N/A';
   const abs = Math.abs(val);
@@ -314,23 +325,44 @@ async function fetchTraffic(auth, domain, country) {
 // visits — weekly visit trend graph
 // ---------------------------------------------------------------------------
 
-async function fetchVisits(auth, domain, country) {
-  console.log(`Fetching weekly visit trend for ${domain}...`);
-  const { from, to } = defaultMonthRange();
+async function fetchVisits(auth, domain, country, { months = 1 } = {}) {
+  const label = months > 1 ? `${months}-month weekly` : 'weekly';
+  console.log(`Fetching ${label} visit trend for ${domain}...`);
+  const { from, to } = months > 1 ? monthsBackRange(months) : defaultMonthRange();
   const url = `${WIDGET_API_BASE}/WebsiteOverview/EngagementVisits/Graph?country=${country}&from=${from}&to=${to}&timeGranularity=Weekly&ShouldGetVerifiedData=false&includeSubDomains=true&isWindow=false&keys=${domain}&webSource=Total`;
   const { data } = await apiFetch(auth, url);
   const series = data?.Data?.[domain]?.Total?.[0] || [];
+
+  const weeks = series.map(p => ({
+    weekStarting: p.Key || null,
+    visits: p.Value ?? null,
+    visitsFormatted: fmtLarge(p.Value),
+  }));
 
   const result = {
     domain,
     country,
     granularity: 'Weekly',
-    weeks: series.map(p => ({
-      weekStarting: p.Key || null,
-      visits: p.Value ?? null,
-      visitsFormatted: fmtLarge(p.Value),
-    })),
+    weeks,
   };
+
+  // When >1 month requested, aggregate weekly points into whole-month totals
+  // for easy month-over-month reads. Weekly series is always primary output.
+  if (months > 1) {
+    const byMonth = new Map();
+    for (const w of weeks) {
+      const key = w.weekStarting?.slice(0, 7); // YYYY-MM
+      if (!key || w.visits == null) continue;
+      byMonth.set(key, (byMonth.get(key) || 0) + w.visits);
+    }
+    result.months = [...byMonth.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([month, visits]) => ({
+        month,
+        visits,
+        visitsFormatted: fmtLarge(visits),
+      }));
+  }
   cacheWrite(domain, 'visits', result);
   return result;
 }
@@ -545,9 +577,13 @@ try {
     case 'traffic':
       console.log(JSON.stringify(await fetchTraffic(getAuth(), requireDomain('traffic <domain>'), country), null, 2));
       break;
-    case 'visits':
-      console.log(JSON.stringify(await fetchVisits(getAuth(), requireDomain('visits <domain>'), country), null, 2));
+    case 'visits': {
+      // Free tier's `EngagementVisits/Graph` endpoint caps at 6 complete months
+      // (verified: API rejects wider ranges with "Allowed interval is YYYY-MM--YYYY-MM").
+      const months = Math.max(1, Math.min(6, parseInt(flags.months || '1', 10) || 1));
+      console.log(JSON.stringify(await fetchVisits(getAuth(), requireDomain('visits <domain>'), country, { months }), null, 2));
       break;
+    }
     case 'channels':
       console.log(JSON.stringify(await fetchChannels(getAuth(), requireDomain('channels <domain>'), country), null, 2));
       break;
@@ -576,7 +612,7 @@ Setup:
 Commands:
   node ${SCRIPT} overview <domain>         Site header: title, description, category, ranks, related apps
   node ${SCRIPT} traffic <domain>          Visits, bounce rate, pages/visit, duration, device split, ranks
-  node ${SCRIPT} visits <domain>           Weekly visit trend for the month
+  node ${SCRIPT} visits <domain>           Weekly visit trend                    [--months=1..6]
   node ${SCRIPT} channels <domain>         Marketing channel breakdown (direct, search, social, referrals, ...)
   node ${SCRIPT} geography <domain>        Top countries by traffic share        [--count=10]
   node ${SCRIPT} similar <domain>          Similar/competing websites with rank  [--count=20]
@@ -587,7 +623,10 @@ Commands:
 Domain formats: google.com | www.google.com | https://google.com/path
 
 Free-tier limits:
-  - Data covers a SINGLE most recent complete month (SimilarWeb lags ~1 month).
+  - Most commands cover a SINGLE most recent complete month (SimilarWeb lags ~1 month).
+  - visits accepts --months=N (up to 6) — the Graph endpoint honors historical
+    ranges even on free accounts, unlike the single-metric endpoints. Free-tier
+    accounts cap at 6 complete months of history.
   - Worldwide only. The --country flag exists but non-999 values need a paid plan.
 
 Data stored in: ${DATA_DIR}

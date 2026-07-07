@@ -40,6 +40,9 @@ node similarweb-free-website.mjs traffic netflix.com
 # Weekly visit trend across the month
 node similarweb-free-website.mjs visits netflix.com
 
+# Multi-month history — weekly points + monthly rollup (up to 6 months back)
+node similarweb-free-website.mjs visits netflix.com --months=6
+
 # Marketing channel breakdown (Direct, Organic/Paid Search, Social, Referrals, Email, Display, Gen AI, ...)
 node similarweb-free-website.mjs channels netflix.com
 
@@ -71,13 +74,19 @@ Domain input accepts `netflix.com`, `www.netflix.com`, or full URLs like `https:
 | `auth` | CDP cookie extraction | Saves session cookies |
 | `overview` | `/api/WebsiteOverview/getheader` | Title, description, category, global & category rank, related mobile apps |
 | `traffic` | `widgetApi/WebsiteOverview/{EngagementOverview/Table, EngagementVisits/SingleMetric, WebRanks/SingleMetric, EngagementDesktopVsMobileVisits/PieChart}` | Monthly visits + MoM change, bounce rate, pages/visit, avg duration, page views, desktop/mobile split, ranks |
-| `visits` | `widgetApi/WebsiteOverview/EngagementVisits/Graph` | Weekly visit counts within the month |
+| `visits` | `widgetApi/WebsiteOverview/EngagementVisits/Graph` | Weekly visit counts within the month, or across N months with `--months=N` (adds a `months` array with monthly totals) |
 | `channels` | `widgetApi/MarketingMixTotal/TrafficSourcesOverview/PieChart` | Per-channel visits and share |
 | `geography` | `widgetApi/WebsiteGeography/Geography/Table` | Top countries with traffic share and MoM change |
 | `similar` | `/api/WebsiteOverview/getsimilarsites` | Competing domains with global rank |
 | `referrals` | `widgetApi/WebsiteOverview/{TopReferrals/Table, TrafficDestinationReferrals/Table, TopReferringCategories/Table}` | Incoming + outgoing referral domains, referring categories |
 | `social` | `widgetApi/WebsiteOverviewDesktop/TrafficSourcesSocial/PieChart` | Social network traffic share |
 | `ads` | `/api/AdIntelligence/Advertiser/Publishers/breakdown` + `widgetApi/WebsiteOverviewDesktop/TrafficDestinationAds/Table` | Ad publishers (impressions/visits/spend share) + ad-driven traffic destinations |
+
+## Free-tier limits
+
+- Most commands cover a **single most recent complete month** (SimilarWeb data lags ~1 month).
+- **`visits` is an exception**: pass `--months=N` (1..6) to get weekly points across N months plus a monthly rollup. Free-tier accounts cap the `Graph` endpoint at 6 complete months of history — wider ranges get a `400 "Interval is invalid — Allowed interval is …"` from SimilarWeb. The `SingleMetric` endpoints backing `traffic` and `channels` are stricter still and return HTTP 400 for anything but the single most recent month.
+- **Worldwide only.** The `--country` flag exists but non-`999` values require a paid plan.
 
 ## Data storage
 
