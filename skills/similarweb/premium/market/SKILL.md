@@ -10,7 +10,7 @@ Industry/market analysis from SimilarWeb: website rankings by industry, market l
 ## Prerequisites
 - Node.js 22+
 - Chrome with remote debugging (only for `auth`)
-- [chrome-cdp skill](../../chrome-cdp/scripts/cdp.mjs) (only for `auth`)
+- [chrome-cdp skill](../../../chrome-cdp/scripts/cdp.mjs) (only for `auth`)
 - A SimilarWeb Pro account (logged in at pro.similarweb.com)
 
 ## Setup
