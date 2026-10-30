@@ -7,75 +7,65 @@
 //   node instagram-search.mjs hashtags <query>      Hashtags-only filter
 //   node instagram-search.mjs places <query>        Places-only filter
 //
-// Auth is shared with instagram-user.mjs (~/.local/share/showrun/data/instagram/session.json).
+// Runs the same GraphQL query as the instagram.com search box
+// (PolarisSearchBoxRefetchableQuery -> xdt_api__v1__fbsearch__topsearch_connection)
+// inside the logged-in Chrome tab. See ../../_shared/instagram-fetch.mjs.
 
 import { resolve } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { homedir } from 'os';
+import { randomUUID } from 'crypto';
+import {
+  CACHE_DIR, ensureDir, saveJson, igGraphql, rememberUserPk, InstagramStopError,
+} from '../../_shared/instagram-fetch.mjs';
 
-const DATA_DIR = resolve(homedir(), '.local/share/showrun/data/instagram');
-const SESSION_FILE = resolve(DATA_DIR, 'session.json');
-const CACHE_DIR = resolve(DATA_DIR, 'cache');
+// PolarisSearchConstants.SEARCH_CONTEXT in the web app. Places are not a
+// topsearch context (context "location" fails with a server field_exception
+// and blended results rarely carry places on web); the web app's location
+// search uses PolarisAPILocationSearchQuery instead — see placeSearch().
+const CONTEXTS = { top: 'blended', users: 'user', hashtags: 'hashtag' };
 
-function ensureDir(d) { if (!existsSync(d)) mkdirSync(d, { recursive: true }); }
-function loadJson(p) { return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null; }
-function saveJson(p, d) { ensureDir(resolve(p, '..')); writeFileSync(p, JSON.stringify(d, null, 2)); }
-
-function loadSession() {
-  const s = loadJson(SESSION_FILE);
-  if (!s || !s.cookie || !s.csrftoken) {
-    console.error('No valid session. Run: instagram-user.mjs auth');
-    process.exit(1);
-  }
-  return s;
+function topsearch(query, context) {
+  const data = igGraphql('PolarisSearchBoxRefetchableQuery', {
+    data: {
+      context,
+      include_reel: 'true',
+      query,
+      rank_token: '',
+      search_session_id: randomUUID(),
+      search_surface: 'web_top_search',
+    },
+    hasQuery: true,
+  });
+  const conn = data.xdt_api__v1__fbsearch__topsearch_connection;
+  if (!conn) throw new Error('Search returned no results object');
+  return conn;
 }
 
-const IG_APP_ID = '936619743392459';
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
-
-function baseHeaders(session) {
-  return {
-    'accept': '*/*',
-    'accept-language': 'en-US,en;q=0.9',
-    'cookie': session.cookie,
-    'referer': 'https://www.instagram.com/',
-    'user-agent': UA,
-    'x-asbd-id': '129477',
-    'x-csrftoken': session.csrftoken,
-    'x-ig-app-id': IG_APP_ID,
-    'x-requested-with': 'XMLHttpRequest',
-    'sec-fetch-site': 'same-origin',
-  };
-}
-
-async function apiGet(session, path) {
-  const resp = await fetch(`https://www.instagram.com${path}`, { headers: baseHeaders(session) });
-  if (!resp.ok) {
-    if (resp.status === 429) { console.error('Rate limited.'); process.exit(1); }
-    if (resp.status === 401 || resp.status === 403) {
-      console.error(`HTTP ${resp.status}. Re-auth: instagram-user.mjs auth`);
-      process.exit(1);
-    }
-    const body = await resp.text().catch(() => '');
-    throw new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
-  }
-  return resp.json();
+// Same request as PolarisAPILocationSearch in the web app (no coordinates =
+// global text search). Returns Facebook place pages, not IG location pks.
+function placeSearch(query) {
+  const data = igGraphql('PolarisAPILocationSearchQuery', {
+    request: { latitude: null, longitude: null, search_query: query },
+  });
+  return data.ig_place_search?.meta_places || [];
 }
 
 // ---------------------------------------------------------------------------
 // Formatters
 // ---------------------------------------------------------------------------
 
+// The web search query does not return is_private / follower_count; those
+// keys stay null so the output shape matches the old REST version.
 function formatUserHit(entry) {
   const u = entry.user || entry;
   return {
     id: u.pk || u.id,
     username: u.username,
     full_name: u.full_name,
-    is_private: u.is_private,
+    is_private: u.is_private ?? null,
     is_verified: u.is_verified,
-    profile_pic_url: u.profile_pic_url,
-    follower_count: u.follower_count,
+    profile_pic_url: u.hd_profile_pic_url_info?.url || u.profile_pic_url,
+    follower_count: u.follower_count ?? null,
+    social_context: u.search_social_context || null,
     position: entry.position,
   };
 }
@@ -86,6 +76,7 @@ function formatHashtagHit(entry) {
     id: h.id,
     name: h.name,
     media_count: h.media_count,
+    subtitle: h.search_result_subtitle || null,
     position: entry.position,
   };
 }
@@ -97,38 +88,66 @@ function formatPlaceHit(entry) {
     title: p.title,
     subtitle: p.subtitle,
     name: p.location?.name,
-    lat: p.location?.lat,
-    lng: p.location?.lng,
-    city: p.location?.city,
-    address: p.location?.address,
+    facebook_places_id: p.location?.facebook_places_id || null,
+    lat: p.location?.lat ?? null,
+    lng: p.location?.lng ?? null,
+    city: p.location?.city ?? null,
+    address: p.location?.address ?? null,
     position: entry.position,
   };
+}
+
+// ig_place_search meta_places entry -> same keys as formatPlaceHit.
+function formatMetaPlace(p, position) {
+  // subtitle is "<distance from viewer> · <address>"; keep just the address.
+  const address = String(p.subtitle || '').replace(/^\s*[<~]?[\d.,]+\s?(?:mi|km|m|ft)\b\s*(?:·\s*)?/, '').trim() || null;
+  return {
+    id: null, // no IG location pk on this surface
+    title: p.name,
+    subtitle: p.subtitle || null,
+    name: p.name,
+    facebook_places_id: p.best_page_fbid || null,
+    lat: p.latitude ?? null,
+    lng: p.longitude ?? null,
+    city: null,
+    address,
+    position,
+  };
+}
+
+function cacheIds(users) {
+  for (const u of users) if (u.username && u.id) rememberUserPk(u.username, u.id);
 }
 
 // ---------------------------------------------------------------------------
 // Commands
 // ---------------------------------------------------------------------------
 
-async function cmdTop(session, query) {
+function cmdTop(query) {
   if (!query) { console.error('Usage: top <query>'); process.exit(1); }
-  const data = await apiGet(session, `/api/v1/web/search/topsearch/?context=blended&query=${encodeURIComponent(query)}&include_reel=true`);
+  const conn = topsearch(query, CONTEXTS.top);
   const result = {
-    users: (data.users || []).map(formatUserHit),
-    hashtags: (data.hashtags || []).map(formatHashtagHit),
-    places: (data.places || []).map(formatPlaceHit),
+    users: (conn.users || []).map(formatUserHit),
+    hashtags: (conn.hashtags || []).map(formatHashtagHit),
+    places: (conn.places || []).map(formatPlaceHit),
   };
+  cacheIds(result.users);
   saveJson(resolve(CACHE_DIR, `search-${query.toLowerCase().replace(/\W+/g, '_')}-${Date.now()}.json`), result);
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function cmdScoped(session, query, scope) {
+function cmdScoped(query, scope) {
   if (!query) { console.error(`Usage: ${scope} <query>`); process.exit(1); }
-  const ctxMap = { users: 'user', hashtags: 'hashtag', places: 'place' };
-  const data = await apiGet(session, `/api/v1/web/search/topsearch/?context=${ctxMap[scope]}&query=${encodeURIComponent(query)}`);
   let result;
-  if (scope === 'users') result = { users: (data.users || []).map(formatUserHit) };
-  else if (scope === 'hashtags') result = { hashtags: (data.hashtags || []).map(formatHashtagHit) };
-  else result = { places: (data.places || []).map(formatPlaceHit) };
+  if (scope === 'places') {
+    result = { places: placeSearch(query).map(formatMetaPlace) };
+  } else {
+    const conn = topsearch(query, CONTEXTS[scope]);
+    if (scope === 'users') {
+      result = { users: (conn.users || []).map(formatUserHit) };
+      cacheIds(result.users);
+    } else result = { hashtags: (conn.hashtags || []).map(formatHashtagHit) };
+  }
   console.log(JSON.stringify(result, null, 2));
 }
 
@@ -155,10 +174,10 @@ Commands:
   hashtags <query>   Hashtags only
   places <query>     Places only
 
-Auth shared with instagram-user.mjs.`);
+Requests run inside the logged-in instagram.com tab in Chrome (chrome-cdp).`);
 }
 
-async function main() {
+function main() {
   const { positional } = parseFlags(process.argv.slice(2));
   const command = positional[0];
   const arg1 = positional.slice(1).join(' ');
@@ -167,14 +186,15 @@ async function main() {
 
   try {
     switch (command) {
-      case 'top':       await cmdTop(loadSession(), arg1); break;
-      case 'users':     await cmdScoped(loadSession(), arg1, 'users'); break;
-      case 'hashtags':  await cmdScoped(loadSession(), arg1, 'hashtags'); break;
-      case 'places':    await cmdScoped(loadSession(), arg1, 'places'); break;
+      case 'top':       cmdTop(arg1); break;
+      case 'users':     cmdScoped(arg1, 'users'); break;
+      case 'hashtags':  cmdScoped(arg1, 'hashtags'); break;
+      case 'places':    cmdScoped(arg1, 'places'); break;
       default: printUsage();
     }
   } catch (err) {
-    console.error(`Error: ${err.message}`);
+    if (err instanceof InstagramStopError) console.error(`STOP: ${err.message}`);
+    else console.error(`Error: ${err.message}`);
     process.exit(1);
   }
 }

@@ -10,7 +10,7 @@ Single-post operations on Instagram. Accepts both shortcodes (`DYkCUGmjfMc`) and
 ## Prerequisites
 
 - Node.js 22+
-- Session captured via the `instagram-user` skill — `auth` is shared.
+- [chrome-cdp](../../chrome-cdp) skill installed, plus a logged-in instagram.com tab in the CDP-connected Chrome. Requests run inside that tab (see `instagram-user` → How it works).
 
 ## Usage
 
@@ -40,4 +40,4 @@ Instagram post URLs use a base64-encoded `media_id` (the shortcode). The script 
 - `GET /api/v1/media/<media_id>/comments/`
 - `GET /api/v1/media/<media_id>/likers/`
 
-Auth (cookies + csrftoken) is loaded from the shared session file at `~/.local/share/showrun/data/instagram/session.json`.
+These still answer web clients (verified 2026-10-30). The requests run in-page from the logged-in Chrome tab through `../_shared/instagram-fetch.mjs`, with the browser's own cookies and the live `csrftoken` / app id / ASBD id headers. Nothing is sent from Node. Requests are paced and stop on rate-limit or checkpoint signals (see `instagram-user` SKILL.md).
