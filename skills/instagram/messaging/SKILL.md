@@ -1,6 +1,6 @@
 ---
 name: instagram-msg
-description: "Instagram DM operations — inbox, single-thread history, and send. Send drives the live Chrome tab via CDP; inbox and thread use the read-only web API."
+description: "Instagram DM operations — inbox, single-thread history, and send. Send drives the live Chrome tab via CDP; inbox and thread use the read-only web API (currently 404 for web clients)."
 ---
 
 # instagram-msg
@@ -10,8 +10,12 @@ Instagram direct-message operations.
 ## Prerequisites
 
 - Node.js 22+
-- Session captured via the `instagram-user` skill — `auth` is shared.
-- For `send`: [chrome-cdp](../../chrome-cdp) skill installed, plus an instagram.com tab open in the CDP-connected Chrome (the script opens one automatically if missing).
+- [chrome-cdp](../../chrome-cdp) skill installed, plus a logged-in instagram.com tab in the CDP-connected Chrome. All requests run inside that tab via `../_shared/instagram-fetch.mjs` (no cookies are copied out of the browser). `send` opens a tab automatically if none is open.
+
+## Status (2026-10-30)
+
+- `inbox` / `thread`: **broken.** `GET /api/v1/direct_v2/inbox/` returns HTTP 404 for web clients. The web app now loads DMs over its realtime messaging stack, which these scripts do not implement yet.
+- `send`: the UI-driving flow is unchanged. Username targets now resolve through the profile page, because `web_profile_info` is blocked for web. The final inbox verification cannot run while the inbox API 404s, so `send` stops after one attempt and prints a warning. Check the thread in Chrome.
 
 ## Usage
 
@@ -44,7 +48,7 @@ The working alternative is to drive the live Chrome tab via CDP:
 1. Navigate to the target's profile (or `/direct/t/<thread_id>/` for an existing thread).
 2. Click the profile-level "Message" button (skipped for thread targets — the URL itself opens the composer).
 3. Wait for the `div[contenteditable=true]` composer, click it to focus, `Input.insertText` the message, then `Input.dispatchKeyEvent` Enter.
-4. Verify via the inbox API that a new message with our text and `sender_id` appears in the matching thread.
+4. Verify via the inbox API that a new message with our text and `sender_id` appears in the matching thread (currently unavailable, see Status).
 
 This is brittle (any IG DOM change can break it) but it's the only path that ships real messages without burning the session.
 
@@ -53,12 +57,11 @@ This is brittle (any IG DOM change can break it) but it's the only path that shi
 - **Target must allow DMs from you.** If the profile shows no "Message" button (Instagram hides it when the user doesn't accept DMs from your relationship tier), `send` will fail fast with a clear error. Follow them first if mutual-follow unlocks DMs, or send through an existing thread instead.
 - **Rate-limit yourself.** UI-driven sends look more like real activity than REST POSTs, but rapid back-to-back sends still trip anti-abuse. Pace runs at minutes-apart, not seconds.
 - **The composer takes a beat to render** after navigation; the script polls for up to 12s.
-- **The inbox API can lag the WebSocket send by a few seconds**; the script polls inbox for up to 6s before reporting success. If you see `ok: false` with `composer_cleared: true`, the send likely landed and the inbox just hadn't caught up — re-run `inbox` after a few seconds to confirm.
+- **The inbox API can lag the WebSocket send by a few seconds**; the script polls inbox (paced) for up to 15s before reporting success. If you see `ok: false` with `composer_cleared: true`, the send likely landed and the inbox just hadn't caught up — re-run `inbox` after a few seconds to confirm.
 
 ## Data storage
 
     ~/.local/share/showrun/data/instagram/
-    ├── session.json                # Shared with all instagram skills
     └── cache/
         ├── inbox.json
         ├── pending_inbox.json

@@ -1,0 +1,7 @@
+{
+  "files": [
+    "SKILL.md",
+    "scripts/instagram-msg.mjs",
+    "../_shared/instagram-fetch.mjs"
+  ]
+}
