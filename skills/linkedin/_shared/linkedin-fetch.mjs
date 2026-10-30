@@ -148,8 +148,10 @@ export function findOrOpenLinkedInTab({ force = false } = {}) {
   return cachedTabId;
 }
 
-// Route a fetch through Chrome's page context. Returns `{ ok, status, headers, body }`
-// where body is text (caller parses JSON if needed). Set-Cookie is handled by Chrome.
+// Route a fetch through Chrome's page context. Returns
+// `{ ok, status, url, redirected, headers, body }` where body is text (caller
+// parses JSON if needed) and url is the final URL after redirects (lets callers
+// spot a bounce to /login or /checkpoint). Set-Cookie is handled by Chrome.
 // The expression also reads the live JSESSIONID from document.cookie so that
 // `csrf-token` always matches whatever Chrome currently has.
 export async function chromeFetch(url, options = {}) {
@@ -182,7 +184,7 @@ export async function chromeFetch(url, options = {}) {
       const text = await r.text();
       const headers = {};
       for (const [k, v] of r.headers.entries()) headers[k] = v;
-      return { ok: r.ok, status: r.status, headers, body: text };
+      return { ok: r.ok, status: r.status, url: r.url, redirected: r.redirected, headers, body: text };
     } catch (e) {
       return { ok: false, status: 0, headers: {}, body: '', error: String(e && e.message || e) };
     }
