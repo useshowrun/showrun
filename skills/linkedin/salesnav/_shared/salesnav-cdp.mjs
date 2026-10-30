@@ -197,9 +197,14 @@ export function apiFetch(url, options = {}, { authCmd, maxRetries = 2, maxRetryW
 
     if (status === 401 || status === 403) {
       const killed = !authCookiesPresent(tabId);
+      // sales-api also answers some malformed queries (e.g. a search filter
+      // value without its canonical id/text) with 401, so with li_at still in
+      // the jar "session expired" is usually the wrong diagnosis.
       console.error(killed
         ? `LinkedIn session was terminated (li_at cleared). Re-open Sales Navigator in Chrome, log in, then re-run: ${authCmd || 'auth'}`
-        : `Session expired. Run: ${authCmd || 'auth'}`);
+        : `HTTP ${status} from sales-api, but the li_at session cookie is still present — the request may be malformed ` +
+          `(e.g. an unsupported filter value) rather than the session expired. Check the query/filters; ` +
+          `if an unfiltered request fails too, re-run: ${authCmd || 'auth'}`);
       process.exit(1);
     }
     if (status === 404) {

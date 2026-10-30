@@ -51,16 +51,19 @@ function saveJson(path, data) {
  *   AGGREGATED      -> sub-filters (REGION + POSTAL_CODE under HEADQUARTERS_LOCATION)
  */
 
+// Canonical labels from /sales-api/salesApiFacetTypeahead?type=COMPANY_SIZE.
+// The UI sends COMPANY_HEADCOUNT values as (id:B,text:1-10,...); the same
+// filter sent id-only from lead search made sales-api answer HTTP 401.
 const HEADCOUNT_LABELS = {
   'A': 'Self-employed',
   'B': '1-10',
   'C': '11-50',
   'D': '51-200',
   'E': '201-500',
-  'F': '501-1000',
-  'G': '1001-5000',
-  'H': '5001-10000',
-  'I': '10001+',
+  'F': '501-1,000',
+  'G': '1,001-5,000',
+  'H': '5,001-10,000',
+  'I': '10,001+',
 };
 
 const REVENUE_RANGES = {
@@ -207,9 +210,19 @@ function resolveId(value, lookupMap) {
 // Search: build RESTLI query from CLI flags
 // ---------------------------------------------------------------------------
 
-function buildMultiSelectFilter(type, csvValues) {
+// `labels` (id -> display text) adds the text field for filters whose values
+// sales-api only accepts in the UI's (id,text) form, e.g. COMPANY_HEADCOUNT.
+function buildMultiSelectFilter(type, csvValues, labels = null) {
   const ids = csvValues.split(',').map(v => v.trim()).filter(Boolean);
-  const valuesStr = ids.map(id => `(id:${encodeURIComponent(id)},selectionType:INCLUDED)`).join(',');
+  const valuesStr = ids.map(raw => {
+    const id = labels ? raw.toUpperCase() : raw;
+    if (labels && !labels[id]) {
+      console.error(`Unknown ${type} value "${raw}". Valid: ${Object.entries(labels).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+      process.exit(1);
+    }
+    const text = labels ? `,text:${encodeURIComponent(labels[id])}` : '';
+    return `(id:${encodeURIComponent(id)}${text},selectionType:INCLUDED)`;
+  }).join(',');
   return `(type:${type},values:List(${valuesStr}))`;
 }
 
@@ -238,7 +251,7 @@ function buildSearchQuery(flags) {
 
   // 2. COMPANY_HEADCOUNT (MULTI_SELECT) -- expects letter codes like "B,C,D"
   if (flags['headcount']) {
-    filters.push(buildMultiSelectFilter('COMPANY_HEADCOUNT', flags['headcount']));
+    filters.push(buildMultiSelectFilter('COMPANY_HEADCOUNT', flags['headcount'], HEADCOUNT_LABELS));
   }
 
   // 3. COMPANY_HEADCOUNT_GROWTH (RANGE_TEXT) -- expects "min-max" percentage
