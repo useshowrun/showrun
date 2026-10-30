@@ -79,13 +79,18 @@ node salesnav-lead-search.mjs search-profiles --title="CTO" --headcount="E,F" --
 
 ## All 33+ Filter Types
 
+Fixed-list filters (headcount, company type, seniority, years-*) are sent the way the
+Sales Navigator UI sends them — `(id:<id>,text:<label>,selectionType:…)` — and the CLI
+value is matched to the canonical id; an unknown value exits with the valid choices.
+(COMPANY_HEADCOUNT sent id-only made sales-api answer HTTP 401.)
+
 ### Company group
 | Flag | Filter Type | Notes |
 |------|-------------|-------|
 | `--company="Microsoft"` | CURRENT_COMPANY | typeahead, multi, supports `--exclude-company` |
-| `--headcount="B,C,D"` | COMPANY_HEADCOUNT | B=1-10, C=11-50, D=51-200, E=201-500, F=501-1000, G=1001-5000, H=5001-10000, I=10001+ |
+| `--headcount="B,C,D"` | COMPANY_HEADCOUNT | A=Self-employed, B=1-10, C=11-50, D=51-200, E=201-500, F=501-1000, G=1001-5000, H=5001-10000, I=10001+ (code or label) |
 | `--past-company="Google"` | PAST_COMPANY | typeahead, multi, supports `--exclude-past-company` |
-| `--company-type="PUBLIC"` | COMPANY_TYPE | multi |
+| `--company-type="PUBLIC"` | COMPANY_TYPE | C/PUBLIC, P/PRIVATE, N/NONPROFIT, D/EDUCATIONAL, S=Partnership, E=Self Employed, O=Self Owned, G/GOVERNMENT |
 | `--company-hq="United States"` | COMPANY_HEADQUARTERS | typeahead, multi, supports `--exclude-company-hq` |
 
 ### Role group
@@ -93,10 +98,10 @@ node salesnav-lead-search.mjs search-profiles --title="CTO" --headcount="E,F" --
 |------|-------------|-------|
 | `--function="Engineering"` | FUNCTION | multi |
 | `--title="CTO,VP Engineering"` | CURRENT_TITLE | multi |
-| `--seniority="VP,CXO"` | SENIORITY_LEVEL | multi |
+| `--seniority="VP,CXO"` | SENIORITY_LEVEL | OWNER(320), CXO(310), VP(300), DIRECTOR(220), EXPERIENCED MANAGER(210), ENTRY LEVEL MANAGER(200), STRATEGIC(130), SENIOR(120), ENTRY LEVEL(110), IN TRAINING(100); supports `--exclude-seniority` |
 | `--past-title="Software Engineer"` | PAST_TITLE | multi |
-| `--years-at-company="1-2,3-5"` | YEARS_AT_CURRENT_COMPANY | multi |
-| `--years-in-position="1-2,3-5"` | YEARS_IN_CURRENT_POSITION | multi |
+| `--years-at-company="1-2,3-5"` | YEARS_AT_CURRENT_COMPANY | buckets: <1, 1-2, 3-5, 6-10, 10+ (ids 1-5) |
+| `--years-in-position="1-2,3-5"` | YEARS_IN_CURRENT_POSITION | same buckets |
 
 ### Personal group
 | Flag | Filter Type | Notes |
@@ -107,7 +112,7 @@ node salesnav-lead-search.mjs search-profiles --title="CTO" --headcount="E,F" --
 | `--first-name="John"` | FIRST_NAME | text |
 | `--last-name="Smith"` | LAST_NAME | text |
 | `--profile-language="en,es"` | PROFILE_LANGUAGE | multi |
-| `--years-experience="5-10"` | YEARS_OF_EXPERIENCE | multi |
+| `--years-experience="6-10"` | YEARS_OF_EXPERIENCE | same buckets |
 | `--group="..."` | GROUP | multi |
 | `--school="Stanford"` | SCHOOL | multi |
 

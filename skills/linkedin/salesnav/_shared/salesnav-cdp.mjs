@@ -50,16 +50,26 @@ export function cdp(...args) {
 
 // Prefer a Sales Navigator tab so the in-page Referer/Origin matches /sales/;
 // fall back to any LinkedIn tab (still same-origin for sales-api requests).
+// `cdp list` rows are "<targetId>  <title>  <url>". Check only the URL column, and only an
+// https://www.linkedin.com origin: a substring match on the row would also accept a tab whose title or
+// query string merely contains "linkedin.com" (and run in-page fetches there).
+function linkedInTabs() {
+  const tabs = [];
+  for (const line of cdp('list').split('\n')) {
+    const cols = line.trim().split(/\s+/);
+    if (cols.length < 2) continue;
+    try {
+      const u = new URL(cols[cols.length - 1]);
+      if (u.origin === 'https://www.linkedin.com') tabs.push({ id: cols[0], path: u.pathname });
+    } catch { /* not a URL column */ }
+  }
+  return tabs;
+}
+
 export function findSalesnavTab() {
-  const list = cdp('list');
-  const lines = list.split('\n');
-  for (const line of lines) {
-    if (line.includes('linkedin.com/sales')) return line.trim().split(/\s+/)[0];
-  }
-  for (const line of lines) {
-    if (line.includes('linkedin.com')) return line.trim().split(/\s+/)[0];
-  }
-  return null;
+  const tabs = linkedInTabs();
+  const sales = tabs.find(t => t.path.startsWith('/sales'));
+  return (sales || tabs[0] || {}).id || null;
 }
 
 // ---------------------------------------------------------------------------
@@ -91,6 +101,7 @@ export function cdpFetch(tabId, url, options = {}) {
   // opaqueredirect (status 0) instead of silently following it to a login page.
   const result = cdp('eval', tabId,
     `(async()=>{` +
+    `if(location.origin!=='https://www.linkedin.com')return JSON.stringify({status:-1,type:'wrong-origin',headers:{},body:location.href});` +
     `const m=document.cookie.match(/JSESSIONID="?([^";]+)"?/);` +
     `const h=Object.assign({'csrf-token':m?m[1]:''},${hdrsLiteral});` +
     `const r=await fetch(${urlLiteral},{method:'${method}',credentials:'include',redirect:'manual',headers:h${bodyPart}});` +
@@ -163,6 +174,10 @@ export function apiFetch(url, options = {}, { authCmd, maxRetries = 2, maxRetryW
   let attempt = 0;
   while (true) {
     const { status, type, headers, body } = cdpFetch(tabId, url, options);
+    if (type === 'wrong-origin') {
+      console.error(`Tab ${tabId} is not on www.linkedin.com (${body}); not running there. Open Sales Navigator and retry.`);
+      process.exit(1);
+    }
 
     // LinkedIn's classic anti-automation block — back off hard, do not retry.
     if (status === 999) {
@@ -197,9 +212,14 @@ export function apiFetch(url, options = {}, { authCmd, maxRetries = 2, maxRetryW
 
     if (status === 401 || status === 403) {
       const killed = !authCookiesPresent(tabId);
+      // sales-api also answers some malformed queries (e.g. a search filter
+      // value without its canonical id/text) with 401, so with li_at still in
+      // the jar "session expired" is usually the wrong diagnosis.
       console.error(killed
         ? `LinkedIn session was terminated (li_at cleared). Re-open Sales Navigator in Chrome, log in, then re-run: ${authCmd || 'auth'}`
-        : `Session expired. Run: ${authCmd || 'auth'}`);
+        : `HTTP ${status} from sales-api, but the li_at session cookie is still present — the request may be malformed ` +
+          `(e.g. an unsupported filter value) rather than the session expired. Check the query/filters; ` +
+          `if an unfiltered request fails too, re-run: ${authCmd || 'auth'}`);
       process.exit(1);
     }
     if (status === 404) {
@@ -236,10 +256,18 @@ function parseCookieResponse(raw, source) {
   }
 }
 
+// Storage.getCookies returns the whole browser jar; keep LinkedIn's own cookies only (suffix match).
+function onlyLinkedIn(cookies) {
+  return cookies.filter(c => {
+    const d = String(c.domain || '').toLowerCase().replace(/^\./, '');
+    return d === 'linkedin.com' || d.endsWith('.linkedin.com');
+  });
+}
+
 function readLinkedInCookies(target) {
   const errors = [];
   try {
-    return parseCookieResponse(cdp('evalraw', target, 'Storage.getCookies', '{}'), 'Storage.getCookies');
+    return onlyLinkedIn(parseCookieResponse(cdp('evalraw', target, 'Storage.getCookies', '{}'), 'Storage.getCookies'));
   } catch (err) { errors.push(err.message); }
   try {
     return parseCookieResponse(

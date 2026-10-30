@@ -39,6 +39,17 @@ Valid types: `PEOPLE`, `COMPANIES`, `GROUPS`, `SCHOOLS`, `EVENTS`, `PRODUCTS`, `
 
 For each result: name, headline/subtitle, location, profile/page URL, and connection degree (for people).
 
+## How it works
+
+LinkedIn's search results pages are server-rendered (the old voyager `searchDashClusters`
+GraphQL call now returns no result entities). The script fetches the same
+`/search/results/<vertical>/?keywords=...` page from inside your logged-in Chrome tab
+(no navigation) and parses the result cards. Notes:
+
+- LinkedIn serves 10 results per page; `--count` above 10 fetches several pages ~10 s apart (max 50).
+- People search no longer shows a total result count; companies/groups/etc. do.
+- `POSTS` returns only the first server-rendered batch (a few posts); `--page` > 1 is not supported for posts.
+
 ## Session expiry
 
 Re-run `auth` on 401/403 errors.

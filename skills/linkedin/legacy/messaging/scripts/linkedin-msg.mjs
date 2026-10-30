@@ -16,7 +16,7 @@ import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
-import { applySetCookies, cookieMapFrom, linkedInCookieString, chromeFetch } from '../../../_shared/linkedin-fetch.mjs';
+import { applySetCookies, cookieMapFrom, linkedInCookieString, chromeFetch, isLinkedInUrl } from '../../../_shared/linkedin-fetch.mjs';
 
 // ---------------------------------------------------------------------------
 // Data directory: ~/.local/share/showrun/data/linkedin-msg/
@@ -74,13 +74,13 @@ function findLinkedInTab() {
   const lines = list.split('\n');
   for (const pref of ['/messaging', '/feed', 'linkedin.com/in/']) {
     for (const line of lines) {
-      if (line.includes('linkedin.com') && line.includes(pref)) {
+      if (isLinkedInUrl(line.trim().split(/\s+/).pop()) && line.includes(pref)) {
         return line.trim().split(/\s+/)[0];
       }
     }
   }
   for (const line of lines) {
-    if (line.includes('linkedin.com')) return line.trim().split(/\s+/)[0];
+    if (isLinkedInUrl(line.trim().split(/\s+/).pop())) return line.trim().split(/\s+/)[0];
   }
   throw new Error('No LinkedIn tab found. Open LinkedIn in Chrome first.');
 }

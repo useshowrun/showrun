@@ -15,7 +15,8 @@ import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
-import { applySetCookies, cookieMapFrom, linkedInCookieString, chromeFetch } from '../../../_shared/linkedin-fetch.mjs';
+import { cookieMapFrom, linkedInCookieString, isLinkedInUrl } from '../../../_shared/linkedin-fetch.mjs';
+import { searchFlagship } from '../../../_shared/linkedin-search-html.mjs';
 
 // ---------------------------------------------------------------------------
 // Data directory
@@ -169,7 +170,7 @@ async function doAuth() {
   let target;
   for (const pref of ['/feed', '/in/', 'linkedin.com']) {
     for (const line of list.split('\n')) {
-      if (line.includes('linkedin.com') && line.includes(pref)) {
+      if (isLinkedInUrl(line.trim().split(/\s+/).pop()) && line.includes(pref)) {
         target = line.trim().split(/\s+/)[0];
         break;
       }
@@ -178,7 +179,7 @@ async function doAuth() {
   }
   if (!target) {
     for (const line of list.split('\n')) {
-      if (line.includes('linkedin.com')) { target = line.trim().split(/\s+/)[0]; break; }
+      if (isLinkedInUrl(line.trim().split(/\s+/).pop())) { target = line.trim().split(/\s+/)[0]; break; }
     }
   }
   if (!target) throw new Error('No LinkedIn tab found. Open LinkedIn in Chrome first.');
@@ -193,7 +194,7 @@ async function doAuth() {
 }
 
 // ---------------------------------------------------------------------------
-// HTTP helpers
+// Auth guard (requests themselves run in Chrome via chromeFetch)
 // ---------------------------------------------------------------------------
 
 function getAuth() {
@@ -205,42 +206,16 @@ function getAuth() {
   return auth;
 }
 
-function baseHeaders(auth) {
-  return {
-    'accept': 'application/vnd.linkedin.normalized+json+2.1',
-    'x-restli-protocol-version': '2.0.0',
-    'X-LI-Lang': 'en_US',
-    'X-LI-Track': JSON.stringify({
-      clientVersion: '1.13.42849', mpVersion: '1.13.42849', osName: 'web',
-      timezoneOffset: new Date().getTimezoneOffset() / -60,
-      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-      deviceFormFactor: 'DESKTOP', mpName: 'voyager-web',
-      displayDensity: 1, displayWidth: 3440, displayHeight: 1440,
-    }),
-    'Csrf-Token': auth.csrfToken,
-    'cookie': auth.cookie,
-    'user-agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-  };
-}
-
-async function apiFetch(auth, url) {
-  // Route every API call through Chrome's logged-in LinkedIn tab so cookies
-  // (including JSESSIONID rotation) come from Chrome's single jar — no Node-vs-
-  // Chrome drift, no anti-abuse trips, no surprise logouts.
-  const resp = await chromeFetch(url, { headers: baseHeaders(auth) });
-  if (resp.status === 401 || resp.status === 403) {
-    console.error('Session expired. Run: node linkedin-search.mjs auth');
-    process.exit(1);
-  }
-  try { return JSON.parse(resp.body); } catch { return resp.body; }
-}
-
 // ---------------------------------------------------------------------------
 // Search
 // ---------------------------------------------------------------------------
 
-const QUERY_ID = 'voyagerSearchDashClusters.05111e1b90ee7fea15bebe9f9410ced9';
+// LinkedIn's /search/results/* pages are now server-rendered; the voyager
+// `voyagerSearchDashClusters` GraphQL query they used to call returns metadata
+// with zero result entities. Results come from the server-rendered page itself
+// (fetched in-page through Chrome, parsed in Node) — see linkedin-search-html.mjs.
 const VALID_TYPES = ['PEOPLE', 'COMPANIES', 'GROUPS', 'SCHOOLS', 'EVENTS', 'PRODUCTS', 'SERVICES', 'POSTS'];
+const MAX_COUNT = 50; // 5 result pages per invocation
 
 async function doSearch(keywords, { type = 'PEOPLE', count = 10, page = 1 } = {}) {
   type = type.toUpperCase();
@@ -248,59 +223,33 @@ async function doSearch(keywords, { type = 'PEOPLE', count = 10, page = 1 } = {}
     console.error(`Invalid type: ${type}. Valid types: ${VALID_TYPES.join(', ')}`);
     process.exit(1);
   }
-
-  const auth = getAuth();
-  const start = (page - 1) * count;
-  const encodedKeywords = encodeURIComponent(keywords);
-  const apiType = type === 'POSTS' ? 'CONTENT' : type;
-  const variables = `(start:${start},origin:GLOBAL_SEARCH_HEADER,query:(keywords:${encodedKeywords},flagshipSearchIntent:SEARCH_SRP,queryParameters:List((key:resultType,value:List(${apiType}))),includeFiltersInResponse:false),count:${count})`;
-  const url = `https://www.linkedin.com/voyager/api/graphql?variables=${variables}&queryId=${QUERY_ID}`;
-
-  const data = await apiFetch(auth, url);
-
-  // Validate response shape
-  const meta = data?.data?.data?.searchDashClustersByAll?.metadata;
-  if (!meta) {
-    console.error('ERROR: Unexpected response shape — LinkedIn may have changed the search API.');
-    console.error('Raw keys:', JSON.stringify(Object.keys(data?.data?.data || data?.data || data || {})));
-    process.exit(1);
+  if (!Number.isFinite(count) || count < 1) count = 10;
+  if (count > MAX_COUNT) {
+    console.error(`--count capped at ${MAX_COUNT} (LinkedIn serves 10 results per page; use --page for more).`);
+    count = MAX_COUNT;
   }
+  if (!Number.isFinite(page) || page < 1) page = 1;
 
-  const included = data?.included || [];
-  const total = meta.totalResultCount || 0;
-  const totalPages = Math.ceil(total / count);
+  getAuth();
+  const start = (page - 1) * count;
+  const { results, total } = await searchFlagship(type, keywords, { start, count });
 
-  console.log(`\n${type} search: "${keywords}" — ${total.toLocaleString()} results (page ${page}/${totalPages || '?'})\n`);
+  // Companies/groups/etc. render an exact "N results" count; people search
+  // no longer does (only pagination, capped at 10 pages of 10).
+  const totalText = total != null ? `${total.toLocaleString()} results` : 'total not reported by LinkedIn';
+  const totalPages = total != null ? Math.ceil(total / count) : null;
 
-  if (type === 'POSTS') {
-    const updates = included.filter(e => e.$type?.includes('feed.Update'));
-    if (updates.length === 0) { console.log('No results found.'); return; }
-    for (const u of updates) {
-      const author = u.actor?.name?.text || '(unknown)';
-      const text = (u.commentary?.text?.text || '').substring(0, 300);
-      console.log(`  ${author}`);
-      if (text) console.log(`    ${text}${text.length >= 300 ? '...' : ''}`);
-      console.log();
-    }
-  } else {
-    const entities = included.filter(e => e.$type?.includes('EntityResultViewModel'));
-    if (entities.length === 0) { console.log('No results found.'); return; }
-    for (const e of entities) {
-      const name = e.title?.text || '(unknown)';
-      const subtitle = e.primarySubtitle?.text || '';
-      const secondary = e.secondarySubtitle?.text || '';
-      const summary = e.summary?.text || '';
-      const url = e.navigationUrl?.split('?')[0] || '';
-      const distance = e.entityCustomTrackingInfo?.memberDistance || '';
+  console.log(`\n${type} search: "${keywords}" — ${totalText} (page ${page}/${totalPages || '?'})\n`);
 
-      console.log(`  ${name}`);
-      if (subtitle) console.log(`    ${subtitle}`);
-      if (secondary) console.log(`    ${secondary}`);
-      if (summary) console.log(`    ${summary}`);
-      if (distance) console.log(`    [${distance.replace('DISTANCE_', '').toLowerCase()} connection]`);
-      if (url) console.log(`    ${url}`);
-      console.log();
-    }
+  if (results.length === 0) { console.log('No results found.'); return; }
+  for (const r of results) {
+    console.log(`  ${r.name}`);
+    if (r.subtitle) console.log(`    ${r.subtitle}`);
+    if (r.secondary) console.log(`    ${r.secondary}`);
+    if (r.summary) console.log(`    ${r.summary.length > 300 ? r.summary.substring(0, 300) + '...' : r.summary}`);
+    if (r.distance) console.log(`    [${r.distance} connection]`);
+    if (r.url || r.authorUrl) console.log(`    ${r.url || r.authorUrl}`);
+    console.log();
   }
 }
 

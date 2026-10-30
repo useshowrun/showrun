@@ -15,7 +15,7 @@ import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
-import { applySetCookies, cookieMapFrom, linkedInCookieString, chromeFetch } from '../../../_shared/linkedin-fetch.mjs';
+import { applySetCookies, cookieMapFrom, linkedInCookieString, chromeFetch, isLinkedInUrl } from '../../../_shared/linkedin-fetch.mjs';
 
 // ---------------------------------------------------------------------------
 // Data directory
@@ -170,7 +170,7 @@ async function doAuth() {
   const list = cdp('list');
   let target;
   for (const line of list.split('\n')) {
-    if (line.includes('linkedin.com')) { target = line.trim().split(/\s+/)[0]; break; }
+    if (isLinkedInUrl(line.trim().split(/\s+/).pop())) { target = line.trim().split(/\s+/)[0]; break; }
   }
   if (!target) throw new Error('No LinkedIn tab found. Open LinkedIn in Chrome first.');
 

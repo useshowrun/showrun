@@ -5,6 +5,7 @@
 //   node linkedin-profile.mjs auth
 //
 // Commands:
+//   node linkedin-profile.mjs search <keywords>      Search people/companies by keyword
 //   node linkedin-profile.mjs view <profile>         Full profile via API
 //   node linkedin-profile.mjs resolve <profile>      Resolve vanity name to URN
 //   node linkedin-profile.mjs posts <profile>        Fetch recent posts
@@ -21,7 +22,8 @@ import { execFileSync } from 'child_process';
 import { resolve, dirname } from 'path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
 import { homedir } from 'os';
-import { applySetCookies, cookieMapFrom, linkedInCookieString, chromeFetch } from '../../../_shared/linkedin-fetch.mjs';
+import { applySetCookies, cookieMapFrom, linkedInCookieString, chromeFetch, isLinkedInUrl } from '../../../_shared/linkedin-fetch.mjs';
+import { searchFlagship } from '../../../_shared/linkedin-search-html.mjs';
 
 // ---------------------------------------------------------------------------
 // Data directory
@@ -178,7 +180,7 @@ async function doAuth() {
   let target;
   for (const pref of ['/feed', '/in/', 'linkedin.com']) {
     for (const line of list.split('\n')) {
-      if (line.includes('linkedin.com') && line.includes(pref)) {
+      if (isLinkedInUrl(line.trim().split(/\s+/).pop()) && line.includes(pref)) {
         target = line.trim().split(/\s+/)[0];
         break;
       }
@@ -187,7 +189,7 @@ async function doAuth() {
   }
   if (!target) {
     for (const line of list.split('\n')) {
-      if (line.includes('linkedin.com')) { target = line.trim().split(/\s+/)[0]; break; }
+      if (isLinkedInUrl(line.trim().split(/\s+/).pop())) { target = line.trim().split(/\s+/)[0]; break; }
     }
   }
   if (!target) throw new Error('No LinkedIn tab found. Open LinkedIn in Chrome first.');
@@ -729,6 +731,36 @@ switch (command) {
     break;
   }
 
+  case 'search': {
+    // Same server-rendered search as linkedin-search.mjs (voyager search
+    // clusters no longer return results).
+    const { flags, positional } = parseFlags(args);
+    const keywords = positional.join(' ');
+    if (!keywords) {
+      console.error('Usage: node linkedin-profile.mjs search <keywords> [--type=people|companies|groups|schools] [--count=10] [--start=0]');
+      process.exit(1);
+    }
+    getAuth();
+    const TYPES = { people: 'PEOPLE', companies: 'COMPANIES', company: 'COMPANIES', groups: 'GROUPS', group: 'GROUPS', schools: 'SCHOOLS', school: 'SCHOOLS' };
+    const type = flags.type || 'people';
+    const count = Math.min(parseInt(flags.count || '10', 10) || 10, 50);
+    const start = parseInt(flags.start || '0', 10) || 0;
+    console.log(`Searching ${type}: "${keywords}"...`);
+    const { results, total } = await searchFlagship(TYPES[type.toLowerCase()] || 'PEOPLE', keywords, { start, count });
+    console.log(`\nFound ${total ?? 'an unreported number of'} result(s) (showing ${results.length}):\n`);
+    for (const r of results) {
+      console.log(`${r.name}`);
+      if (r.subtitle) console.log(`  ${r.subtitle}`);
+      if (r.secondary) console.log(`  ${r.secondary}`);
+      if (r.distance) console.log(`  [${r.distance} connection]`);
+      console.log(`  ${r.url}`);
+      const vanity = r.url.match(/\/in\/([^/]+)/);
+      if (vanity) console.log(`  vanity: ${decodeURIComponent(vanity[1])}`);
+      console.log('');
+    }
+    break;
+  }
+
   case 'resolve': {
     const input = args[0];
     if (!input) {
@@ -1010,6 +1042,8 @@ switch (command) {
 
 Commands:
   auth                              Authenticate via Chrome (one-time)
+  search <keywords> [--type=people|companies|groups|schools] [--count=10] [--start=0]
+                                    Keyword search (server-rendered results page)
   view <profile>                    Fetch full profile via API
   resolve <profile>                 Resolve vanity name to URN
   posts <profile> [--count=10]      Fetch recent posts/activity

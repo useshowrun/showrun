@@ -47,24 +47,29 @@ function saveJson(path, data) {
  *   'text'     — free-text value, sent as (id:<val>,text:<val>,selectionType:INCLUDED)
  *   'text-only'— free-text value, sent as (text:<val>,selectionType:INCLUDED) — NO id field
  *   'id-only'  — value is an ID/code, sent as (id:<val>,selectionType:INCLUDED) — NO text field
+ *   'static'   — fixed option list (STATIC_FILTER_OPTIONS); the CLI value is matched
+ *                to a canonical id and sent as (id:<id>,text:<label>,selectionType:…),
+ *                exactly like the Sales Navigator UI. (COMPANY_HEADCOUNT sent id-only
+ *                made sales-api answer HTTP 401; friendly values like "VP" or "1-2"
+ *                were never valid ids.)
  *   'id-text'  — value is "id:text" or just text, sent as (id:<val>,text:<val>,selectionType:INCLUDED)
  *   'toggle'   — boolean flag, sent as (id:true,selectionType:INCLUDED)
  */
 const FILTER_REGISTRY = [
   // --- Company group ---
   { flag: 'company',        type: 'CURRENT_COMPANY',            kind: 'id-text', excludeFlag: 'exclude-company' },
-  { flag: 'headcount',      type: 'COMPANY_HEADCOUNT',          kind: 'id-only' },
+  { flag: 'headcount',      type: 'COMPANY_HEADCOUNT',          kind: 'static' },
   { flag: 'past-company',   type: 'PAST_COMPANY',               kind: 'id-text', excludeFlag: 'exclude-past-company' },
-  { flag: 'company-type',   type: 'COMPANY_TYPE',               kind: 'id-only' },
+  { flag: 'company-type',   type: 'COMPANY_TYPE',               kind: 'static' },
   { flag: 'company-hq',     type: 'COMPANY_HEADQUARTERS',       kind: 'id-text', excludeFlag: 'exclude-company-hq' },
 
   // --- Role group ---
   { flag: 'function',       type: 'FUNCTION',                   kind: 'text-only' },
   { flag: 'title',          type: 'CURRENT_TITLE',              kind: 'text-only' },
-  { flag: 'seniority',      type: 'SENIORITY_LEVEL',            kind: 'id-only' },
+  { flag: 'seniority',      type: 'SENIORITY_LEVEL',            kind: 'static', excludeFlag: 'exclude-seniority' },
   { flag: 'past-title',     type: 'PAST_TITLE',                 kind: 'text-only' },
-  { flag: 'years-at-company',    type: 'YEARS_AT_CURRENT_COMPANY',   kind: 'id-only' },
-  { flag: 'years-in-position',   type: 'YEARS_IN_CURRENT_POSITION',  kind: 'id-only' },
+  { flag: 'years-at-company',    type: 'YEARS_AT_CURRENT_COMPANY',   kind: 'static' },
+  { flag: 'years-in-position',   type: 'YEARS_IN_CURRENT_POSITION',  kind: 'static' },
 
   // --- Personal group ---
   { flag: 'region',         type: 'REGION',                     kind: 'id-text', excludeFlag: 'exclude-region' },
@@ -73,7 +78,7 @@ const FILTER_REGISTRY = [
   { flag: 'first-name',     type: 'FIRST_NAME',                 kind: 'text' },
   { flag: 'last-name',      type: 'LAST_NAME',                  kind: 'text' },
   { flag: 'profile-language', type: 'PROFILE_LANGUAGE',          kind: 'id-only' },
-  { flag: 'years-experience', type: 'YEARS_OF_EXPERIENCE',       kind: 'id-only' },
+  { flag: 'years-experience', type: 'YEARS_OF_EXPERIENCE',       kind: 'static' },
   { flag: 'group',          type: 'GROUP',                      kind: 'text-only' },
   { flag: 'school',         type: 'SCHOOL',                     kind: 'text-only' },
 
@@ -110,11 +115,73 @@ for (const f of FILTER_REGISTRY) {
   if (f.excludeFlag) ALL_FILTER_FLAGS.add(f.excludeFlag);
 }
 
-// Headcount code lookup
-const HEADCOUNT_LABELS = {
-  'B': '1-10', 'C': '11-50', 'D': '51-200', 'E': '201-500',
-  'F': '501-1000', 'G': '1001-5000', 'H': '5001-10000', 'I': '10001+',
+// Canonical options for the fixed-list filters, as served by
+// /sales-api/salesApiFacetTypeahead?q=query&type=<COMPANY_SIZE|COMPANY_TYPE|SENIORITY_V2|TENURE>
+// (verified 2026-10). Each entry: [id, label, ...aliases]. Values on the CLI may be
+// the id, the label, or an alias; matching ignores case, spaces and punctuation.
+const TENURE_OPTIONS = [
+  ['1', 'Less than 1 year', '<1', '0-1'],
+  ['2', '1 to 2 years', '1-2'],
+  ['3', '3 to 5 years', '3-5'],
+  ['4', '6 to 10 years', '6-10'],
+  ['5', 'More than 10 years', '10+', '11+', '>10'],
+];
+const STATIC_FILTER_OPTIONS = {
+  COMPANY_HEADCOUNT: [
+    ['A', 'Self-employed'],
+    ['B', '1-10'],
+    ['C', '11-50'],
+    ['D', '51-200'],
+    ['E', '201-500'],
+    ['F', '501-1,000', '501-1000'],
+    ['G', '1,001-5,000', '1001-5000'],
+    ['H', '5,001-10,000', '5001-10000'],
+    ['I', '10,001+', '10001+', '10000+'],
+  ],
+  COMPANY_TYPE: [
+    ['C', 'Public Company', 'public'],
+    ['P', 'Privately Held', 'private'],
+    ['N', 'Non Profit', 'nonprofit'],
+    ['D', 'Educational Institution', 'educational', 'education'],
+    ['S', 'Partnership'],
+    ['E', 'Self Employed'],
+    ['O', 'Self Owned'],
+    ['G', 'Government Agency', 'government'],
+  ],
+  SENIORITY_LEVEL: [
+    ['320', 'Owner / Partner', 'owner', 'partner'],
+    ['310', 'CXO', 'cxo', 'c-level', 'chief'],
+    ['300', 'Vice President', 'vp'],
+    ['220', 'Director'],
+    ['210', 'Experienced Manager', 'manager'],
+    ['200', 'Entry Level Manager'],
+    ['130', 'Strategic'],
+    ['120', 'Senior'],
+    ['110', 'Entry Level', 'entry'],
+    ['100', 'In Training', 'training'],
+  ],
+  YEARS_AT_CURRENT_COMPANY: TENURE_OPTIONS,
+  YEARS_IN_CURRENT_POSITION: TENURE_OPTIONS,
+  YEARS_OF_EXPERIENCE: TENURE_OPTIONS,
 };
+
+const normalizeOption = v => String(v).toLowerCase().replace(/[^a-z0-9<>+]/g, '');
+
+// Resolve one CLI value to its canonical [id, label]; exits with the valid
+// choices on no match (an unknown id would only come back as an opaque 401).
+function resolveStaticOption(type, flag, value) {
+  const options = STATIC_FILTER_OPTIONS[type];
+  const raw = value.trim();
+  const exact = options.find(([id]) => id.toLowerCase() === raw.toLowerCase());
+  if (exact) return [exact[0], exact[1]];
+  const want = normalizeOption(raw);
+  const hit = options.find(([, label, ...aliases]) =>
+    [label, ...aliases].some(a => normalizeOption(a) === want));
+  if (hit) return [hit[0], hit[1]];
+  console.error(`Unknown --${flag} value "${raw}". Valid values (id = label):`);
+  for (const [id, label] of options) console.error(`  ${id} = ${label}`);
+  process.exit(1);
+}
 
 // Region name → LinkedIn geo ID mapping (case-insensitive)
 const REGION_IDS = {
@@ -162,6 +229,14 @@ function buildIdOnlyValues(value, selectionType) {
   });
 }
 
+// static: canonical (id:<id>,text:<label>,selectionType:X) — what the Sales Nav UI sends
+function buildStaticValues(def, flag, value, selectionType) {
+  return value.split(',').filter(v => v.trim()).map(v => {
+    const [id, label] = resolveStaticOption(def.type, flag, v);
+    return `(id:${id},text:${encodeURIComponent(label)},selectionType:${selectionType})`;
+  });
+}
+
 // text-only: (text:<val>,selectionType:X) — for text-search filters (title, function, industry, etc.)
 function buildTextOnlyValues(value, selectionType) {
   return value.split(',').map(v => {
@@ -189,13 +264,13 @@ function buildToggleValues() {
   return ['(id:true,selectionType:INCLUDED)'];
 }
 
+// Rest.li reserves ( ) , : ' inside values, and encodeURIComponent leaves ( ) ' alone.
+function restliText(value) {
+  return encodeURIComponent(value).replace(/[()'!*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+}
+
 function buildSearchQuery(flags) {
   const filters = [];
-
-  // Keywords use text-only format
-  if (flags.keyword) {
-    filters.push(`(type:KEYWORDS,values:List((text:${flags.keyword},selectionType:INCLUDED)))`);
-  }
 
   for (const def of FILTER_REGISTRY) {
     const includeVal = flags[def.flag];
@@ -215,6 +290,9 @@ function buildSearchQuery(flags) {
           break;
         case 'id-only':
           values.push(...buildIdOnlyValues(includeVal, 'INCLUDED'));
+          break;
+        case 'static':
+          values.push(...buildStaticValues(def, def.flag, includeVal, 'INCLUDED'));
           break;
         case 'id-text': {
           // Use geo ID resolver for region/location filters
@@ -240,6 +318,9 @@ function buildSearchQuery(flags) {
         case 'id-only':
           values.push(...buildIdOnlyValues(excludeVal, 'EXCLUDED'));
           break;
+        case 'static':
+          values.push(...buildStaticValues(def, def.excludeFlag, excludeVal, 'EXCLUDED'));
+          break;
         default:
           values.push(...buildIdTextValues(excludeVal, 'EXCLUDED', resolver));
           break;
@@ -254,14 +335,17 @@ function buildSearchQuery(flags) {
     }
   }
 
-  if (filters.length === 0) {
+  if (filters.length === 0 && !flags.keyword) {
     console.error('Error: at least one search filter is required.');
     console.error('Run: node salesnav-lead-search.mjs filters  to see all available filters.');
     process.exit(1);
   }
 
-  const filtersStr = `List(${filters.join(',')})`;
-  return `(spellCorrectionEnabled:true,recentSearchParam:(doLogHistory:false),filters:${filtersStr})`;
+  // Keywords are a top-level query field, as the Sales Navigator UI sends them. Sent as a
+  // (type:KEYWORDS,...) filter they were silently ignored and the search ran unfiltered.
+  const keywords = flags.keyword ? `keywords:${restliText(flags.keyword)},` : '';
+  const filtersStr = filters.length ? `filters:List(${filters.join(',')})` : 'filters:List()';
+  return `(spellCorrectionEnabled:true,recentSearchParam:(doLogHistory:false),${keywords}${filtersStr})`;
 }
 
 // ---------------------------------------------------------------------------
@@ -476,22 +560,28 @@ All available filter types for Sales Navigator lead search:
 COMPANY GROUP:
   --company="Microsoft"              Current company (typeahead, multi)
   --exclude-company="Google"         Exclude current company
-  --headcount="B,C,D"               Company headcount
-                                      B=1-10, C=11-50, D=51-200, E=201-500
+  --headcount="B,C,D"               Company headcount (code or label)
+                                      A=Self-employed, B=1-10, C=11-50, D=51-200, E=201-500
                                       F=501-1000, G=1001-5000, H=5001-10000, I=10001+
   --past-company="Google"            Past company (typeahead, multi)
   --exclude-past-company="Apple"     Exclude past company
-  --company-type="PUBLIC,PRIVATE"    Company type
+  --company-type="PUBLIC,PRIVATE"    Company type: C/PUBLIC, P/PRIVATE, N/NONPROFIT,
+                                      D/EDUCATIONAL, S=Partnership, E=Self Employed,
+                                      O=Self Owned, G/GOVERNMENT
   --company-hq="United States"       Company HQ location (typeahead, multi)
   --exclude-company-hq="China"       Exclude company HQ
 
 ROLE GROUP:
   --function="Engineering,Sales"     Job function
   --title="CTO,VP Engineering"       Current job title (multi)
-  --seniority="VP,CXO,DIRECTOR"     Seniority level
+  --seniority="VP,CXO,DIRECTOR"     Seniority level (name or id): OWNER(320), CXO(310),
+                                      VP(300), DIRECTOR(220), EXPERIENCED MANAGER(210),
+                                      ENTRY LEVEL MANAGER(200), STRATEGIC(130), SENIOR(120),
+                                      ENTRY LEVEL(110), IN TRAINING(100)
+  --exclude-seniority="ENTRY LEVEL"  Exclude seniority level
   --past-title="Software Engineer"   Past job title (multi)
-  --years-at-company="1-2,3-5"      Years at current company
-  --years-in-position="1-2,3-5"     Years in current position
+  --years-at-company="1-2,3-5"      Years at current company: <1, 1-2, 3-5, 6-10, 10+ (or ids 1-5)
+  --years-in-position="1-2,3-5"     Years in current position (same buckets)
 
 PERSONAL GROUP:
   --region="San Francisco Bay Area"  Geography region (typeahead, multi)
@@ -502,7 +592,7 @@ PERSONAL GROUP:
   --first-name="John"               First name (text)
   --last-name="Smith"               Last name (text)
   --profile-language="en,es"         Profile language (multi)
-  --years-experience="5-10,11+"      Years of experience (multi)
+  --years-experience="6-10,10+"      Years of experience (same buckets as --years-at-company)
   --group="..."                      LinkedIn group (multi)
   --school="Stanford"                School (multi)
 

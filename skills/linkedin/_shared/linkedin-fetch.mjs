@@ -38,11 +38,27 @@ const ROTATING_COOKIES = new Set([
 
 // Dedupe by name, preferring the .linkedin.com domain entry (which is the
 // "real" one — host-scoped duplicates come from partitioned/page contexts).
+// Suffix match on domain labels: includes('linkedin.com') would also accept e.g. "notlinkedin.com".
+export function isLinkedInCookieDomain(domain) {
+  const d = String(domain || '').toLowerCase().replace(/^\./, '');
+  return d === 'linkedin.com' || d.endsWith('.linkedin.com');
+}
+
+// True only for an https://www.linkedin.com page. Matching the raw `cdp list` row would also accept a tab
+// whose title or query string merely contains "linkedin.com" (and run our in-page fetches there).
+export function isLinkedInUrl(url) {
+  try {
+    return new URL(url).origin === 'https://www.linkedin.com';
+  } catch {
+    return false;
+  }
+}
+
 export function dedupeLinkedInCookies(cookies) {
   const byName = new Map();
   for (const c of cookies) {
     const domain = String(c.domain || '');
-    if (!domain.includes('linkedin.com')) continue;
+    if (!isLinkedInCookieDomain(domain)) continue;
     const existing = byName.get(c.name);
     if (!existing || (domain.startsWith('.linkedin.com') && !String(existing.domain || '').startsWith('.linkedin.com'))) {
       byName.set(c.name, c);
@@ -133,10 +149,11 @@ function cdp(...args) {
 let cachedTabId = null;
 export function findOrOpenLinkedInTab({ force = false } = {}) {
   if (cachedTabId && !force) return cachedTabId;
-  const list = cdp('list');
-  for (const line of list.split('\n')) {
-    if (line.includes('linkedin.com')) {
-      cachedTabId = line.trim().split(/\s+/)[0];
+  // `cdp list` rows are "<targetId>  <title>  <url>"; check only the URL column.
+  for (const line of cdp('list').split('\n')) {
+    const cols = line.trim().split(/\s+/);
+    if (cols.length >= 2 && isLinkedInUrl(cols[cols.length - 1])) {
+      cachedTabId = cols[0];
       return cachedTabId;
     }
   }
@@ -148,8 +165,10 @@ export function findOrOpenLinkedInTab({ force = false } = {}) {
   return cachedTabId;
 }
 
-// Route a fetch through Chrome's page context. Returns `{ ok, status, headers, body }`
-// where body is text (caller parses JSON if needed). Set-Cookie is handled by Chrome.
+// Route a fetch through Chrome's page context. Returns
+// `{ ok, status, url, redirected, headers, body }` where body is text (caller
+// parses JSON if needed) and url is the final URL after redirects (lets callers
+// spot a bounce to /login or /checkpoint). Set-Cookie is handled by Chrome.
 // The expression also reads the live JSESSIONID from document.cookie so that
 // `csrf-token` always matches whatever Chrome currently has.
 export async function chromeFetch(url, options = {}) {
@@ -171,6 +190,10 @@ export async function chromeFetch(url, options = {}) {
   };
 
   const expr = `(async () => {
+    // The tab may have navigated away since it was picked: never run outside LinkedIn.
+    if (location.origin !== 'https://www.linkedin.com') {
+      return JSON.stringify({ ok: false, status: 0, headers: {}, body: '', error: 'tab is not on www.linkedin.com: ' + location.href });
+    }
     const opts = ${JSON.stringify(fetchOpts)};
     const csrfMatch = document.cookie.match(/(?:^|; )JSESSIONID=([^;]+)/);
     const csrf = csrfMatch ? csrfMatch[1].replace(/"/g, '') : '';
@@ -182,7 +205,7 @@ export async function chromeFetch(url, options = {}) {
       const text = await r.text();
       const headers = {};
       for (const [k, v] of r.headers.entries()) headers[k] = v;
-      return { ok: r.ok, status: r.status, headers, body: text };
+      return { ok: r.ok, status: r.status, url: r.url, redirected: r.redirected, headers, body: text };
     } catch (e) {
       return { ok: false, status: 0, headers: {}, body: '', error: String(e && e.message || e) };
     }
