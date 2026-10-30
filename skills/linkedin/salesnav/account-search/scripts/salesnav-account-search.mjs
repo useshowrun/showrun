@@ -338,19 +338,19 @@ function buildSearchQuery(flags) {
     filters.push(buildMultiSelectFilter('ACCOUNT_LIST', flags['account-list']));
   }
 
-  // Keyword (free-text, not a numbered filter but supported by the API)
-  if (flags['keyword']) {
-    const encoded = encodeURIComponent(flags['keyword']);
-    filters.push(`(type:KEYWORDS,values:List((text:${encoded})))`);
-  }
-
-  if (filters.length === 0) {
+  if (filters.length === 0 && !flags['keyword']) {
     console.error('Error: at least one search filter is required. Run "filters" command for help.');
     process.exit(1);
   }
 
-  const filtersStr = `List(${filters.join(',')})`;
-  return `(spellCorrectionEnabled:true,recentSearchParam:(doLogHistory:false),filters:${filtersStr})`;
+  // Keywords are a top-level query field, as the Sales Navigator UI sends them. Sent as a
+  // (type:KEYWORDS,...) filter they were silently ignored and the search ran unfiltered.
+  // Rest.li reserves ( ) , : ' inside values, and encodeURIComponent leaves ( ) ' alone.
+  const keywords = flags['keyword']
+    ? `keywords:${encodeURIComponent(flags['keyword']).replace(/[()'!*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase())},`
+    : '';
+  const filtersStr = filters.length ? `filters:List(${filters.join(',')})` : 'filters:List()';
+  return `(spellCorrectionEnabled:true,recentSearchParam:(doLogHistory:false),${keywords}${filtersStr})`;
 }
 
 async function searchAccounts(flags, { start = 0, count = 25 } = {}) {

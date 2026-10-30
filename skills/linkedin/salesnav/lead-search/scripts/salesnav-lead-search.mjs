@@ -264,13 +264,13 @@ function buildToggleValues() {
   return ['(id:true,selectionType:INCLUDED)'];
 }
 
+// Rest.li reserves ( ) , : ' inside values, and encodeURIComponent leaves ( ) ' alone.
+function restliText(value) {
+  return encodeURIComponent(value).replace(/[()'!*]/g, c => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+}
+
 function buildSearchQuery(flags) {
   const filters = [];
-
-  // Keywords use text-only format
-  if (flags.keyword) {
-    filters.push(`(type:KEYWORDS,values:List((text:${flags.keyword},selectionType:INCLUDED)))`);
-  }
 
   for (const def of FILTER_REGISTRY) {
     const includeVal = flags[def.flag];
@@ -335,14 +335,17 @@ function buildSearchQuery(flags) {
     }
   }
 
-  if (filters.length === 0) {
+  if (filters.length === 0 && !flags.keyword) {
     console.error('Error: at least one search filter is required.');
     console.error('Run: node salesnav-lead-search.mjs filters  to see all available filters.');
     process.exit(1);
   }
 
-  const filtersStr = `List(${filters.join(',')})`;
-  return `(spellCorrectionEnabled:true,recentSearchParam:(doLogHistory:false),filters:${filtersStr})`;
+  // Keywords are a top-level query field, as the Sales Navigator UI sends them. Sent as a
+  // (type:KEYWORDS,...) filter they were silently ignored and the search ran unfiltered.
+  const keywords = flags.keyword ? `keywords:${restliText(flags.keyword)},` : '';
+  const filtersStr = filters.length ? `filters:List(${filters.join(',')})` : 'filters:List()';
+  return `(spellCorrectionEnabled:true,recentSearchParam:(doLogHistory:false),${keywords}${filtersStr})`;
 }
 
 // ---------------------------------------------------------------------------
