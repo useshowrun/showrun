@@ -144,15 +144,36 @@ export function cdp(...args) {
 let cachedTabId = null;
 // First instagram.com tab in the CDP-connected Chrome. Does not open one:
 // a fresh tab is an extra page load on the user's account, so ask instead.
+const INSTAGRAM_ORIGINS = ['https://www.instagram.com', 'https://instagram.com'];
+
+// True only for a real https instagram.com page. Matching the raw `cdp list` line would also accept a
+// tab whose title or query string merely contains "https://www.instagram.com/" (and run our code there).
+export function isInstagramUrl(url) {
+  try {
+    return INSTAGRAM_ORIGINS.includes(new URL(url).origin);
+  } catch {
+    return false;
+  }
+}
+
 export function findInstagramTab() {
   if (cachedTabId) return cachedTabId;
-  const lines = cdp('list').split('\n');
-  const line = lines.find(l => /https:\/\/(www\.)?instagram\.com\//.test(l));
-  if (!line) {
-    throw new Error(`No instagram.com tab found in Chrome. Open one and log in:\n  ${OPEN_TAB_HINT}`);
+  // `cdp list` rows are "<targetId>  <title>  <url>"; the URL is the last column.
+  for (const line of cdp('list').split('\n')) {
+    const cols = line.trim().split(/\s+/);
+    if (cols.length >= 2 && isInstagramUrl(cols[cols.length - 1])) {
+      cachedTabId = cols[0];
+      return cachedTabId;
+    }
   }
-  cachedTabId = line.trim().split(/\s+/)[0];
-  return cachedTabId;
+  throw new Error(`No instagram.com tab found in Chrome. Open one and log in:\n  ${OPEN_TAB_HINT}`);
+}
+
+// Wrap a page expression so it refuses to run unless the tab is still on instagram.com
+// (the tab may have navigated since it was picked).
+function guarded(expr) {
+  return `(${JSON.stringify(INSTAGRAM_ORIGINS)}.includes(location.origin) ? (${expr}) : ` +
+    `JSON.stringify({ pageError: 'wrong-origin', href: location.href }))`;
 }
 
 function sleepSync(ms) {
@@ -179,9 +200,13 @@ function pace() {
 function runInPage(fn, args) {
   const tabId = findInstagramTab();
   pace();
-  const raw = cdp('eval', tabId, `(${fn.toString()})(${JSON.stringify(args)})`);
+  const raw = cdp('eval', tabId, guarded(`(${fn.toString()})(${JSON.stringify(args)})`));
   let res;
   try { res = JSON.parse(raw); } catch { throw new Error(`Unexpected CDP result: ${raw.slice(0, 300)}`); }
+  if (res.pageError === 'wrong-origin') {
+    cachedTabId = null;
+    throw new InstagramStopError(`Tab ${tabId} is no longer on instagram.com (${res.href}); not running there.`);
+  }
   if (res.pageError) {
     if (res.pageError === 'not-logged-in') {
       throw new InstagramStopError(`Instagram tab (${res.href || tabId}) is not logged in. Log in to instagram.com in Chrome and retry.`);
@@ -424,7 +449,8 @@ export function checkSession() {
   const fn = `(() => { const s = (${pageState.toString()})(); if (s) return JSON.stringify(s); ` +
     `const m = document.cookie.match(/(?:^|;\\s*)ds_user_id=(\\d+)/); ` +
     `return JSON.stringify({ href: location.href, userId: m ? m[1] : null, appLoaded: typeof window.require === 'function' }); })()`;
-  const res = JSON.parse(cdp('eval', tabId, fn));
+  const res = JSON.parse(cdp('eval', tabId, guarded(fn)));
+  if (res.pageError === 'wrong-origin') throw new InstagramStopError(`Tab ${tabId} is not on instagram.com (${res.href}).`);
   if (res.pageError) throw new InstagramStopError(`Instagram tab (${res.href}) is not logged in. Log in to instagram.com in Chrome.`);
   return { tabId, ...res };
 }

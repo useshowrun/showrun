@@ -21,7 +21,7 @@
 import { resolve } from 'path';
 import {
   CACHE_DIR, ensureDir, saveJson, cdp,
-  igApi, igGraphql, resolveUserPk, checkSession, InstagramStopError,
+  igApi, igGraphql, resolveUserPk, checkSession, InstagramStopError, isInstagramUrl,
 } from '../../_shared/instagram-fetch.mjs';
 
 // ---------------------------------------------------------------------------
@@ -31,8 +31,10 @@ import {
 // Find an instagram.com tab; open one (and wait briefly for load) if missing.
 function findOrOpenIgTab() {
   const list = cdp('list');
+  // Check the URL column (last), not the whole row: a title or query string can contain "instagram.com".
   for (const line of list.split('\n')) {
-    if (line.includes('instagram.com')) return line.trim().split(/\s+/)[0];
+    const cols = line.trim().split(/\s+/);
+    if (cols.length >= 2 && isInstagramUrl(cols[cols.length - 1])) return cols[0];
   }
   const out = cdp('open', 'https://www.instagram.com/');
   const m = out.match(/[A-F0-9]{8}/);
