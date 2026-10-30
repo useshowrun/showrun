@@ -6,63 +6,14 @@
 //   node instagram-post.mjs comments <shortcode|url> [--count=20] [--cursor=X]
 //   node instagram-post.mjs likers <shortcode|url>
 //
-// Auth is shared with instagram-user.mjs (~/.local/share/showrun/data/instagram/session.json).
+// Every request runs inside the logged-in instagram.com tab in Chrome (in-page
+// fetch over CDP, see ../../_shared/instagram-fetch.mjs). No cookies are copied
+// out of the browser.
 //
-// Requires Node 22+ (built-in fetch). No external dependencies.
+// Requires Node 22+ and the chrome-cdp skill. No external dependencies.
 
 import { resolve } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { homedir } from 'os';
-
-const DATA_DIR = resolve(homedir(), '.local/share/showrun/data/instagram');
-const SESSION_FILE = resolve(DATA_DIR, 'session.json');
-const CACHE_DIR = resolve(DATA_DIR, 'cache');
-
-function ensureDir(dir) { if (!existsSync(dir)) mkdirSync(dir, { recursive: true }); }
-function loadJson(p) { return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null; }
-function saveJson(p, d) { ensureDir(resolve(p, '..')); writeFileSync(p, JSON.stringify(d, null, 2)); }
-
-function loadSession() {
-  const s = loadJson(SESSION_FILE);
-  if (!s || !s.cookie || !s.csrftoken) {
-    console.error('No valid session. Run: instagram-user.mjs auth');
-    process.exit(1);
-  }
-  return s;
-}
-
-const IG_APP_ID = '936619743392459';
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
-
-function baseHeaders(session) {
-  return {
-    'accept': '*/*',
-    'accept-language': 'en-US,en;q=0.9',
-    'cookie': session.cookie,
-    'referer': 'https://www.instagram.com/',
-    'user-agent': UA,
-    'x-asbd-id': '129477',
-    'x-csrftoken': session.csrftoken,
-    'x-ig-app-id': IG_APP_ID,
-    'x-requested-with': 'XMLHttpRequest',
-    'sec-fetch-site': 'same-origin',
-  };
-}
-
-async function apiGet(session, path) {
-  const resp = await fetch(`https://www.instagram.com${path}`, { headers: baseHeaders(session) });
-  if (!resp.ok) {
-    if (resp.status === 429) { console.error('Rate limited.'); process.exit(1); }
-    if (resp.status === 401 || resp.status === 403) {
-      console.error(`HTTP ${resp.status}. Re-auth: instagram-user.mjs auth`);
-      process.exit(1);
-    }
-    if (resp.status === 404) throw new Error('Not found');
-    const body = await resp.text().catch(() => '');
-    throw new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
-  }
-  return resp.json();
-}
+import { CACHE_DIR, ensureDir, saveJson, igApi, InstagramStopError } from '../../_shared/instagram-fetch.mjs';
 
 // ---------------------------------------------------------------------------
 // Shortcode <-> media_id
@@ -181,11 +132,11 @@ function parseFlags(args) {
 // Commands
 // ---------------------------------------------------------------------------
 
-async function cmdInfo(session, target) {
+function cmdInfo(target) {
   const code = parseTarget(target);
   if (!code) { console.error('Usage: info <shortcode|url>'); process.exit(1); }
   const mediaId = shortcodeToMediaId(code);
-  const data = await apiGet(session, `/api/v1/media/${mediaId}/info/`);
+  const data = igApi(`/api/v1/media/${mediaId}/info/`);
   const item = data.items?.[0];
   if (!item) throw new Error(`Post not found: ${code}`);
   const post = formatMediaItem(item);
@@ -193,13 +144,13 @@ async function cmdInfo(session, target) {
   console.log(JSON.stringify(post, null, 2));
 }
 
-async function cmdComments(session, target, flags) {
+function cmdComments(target, flags) {
   const code = parseTarget(target);
   if (!code) { console.error('Usage: comments <shortcode|url> [--count=20] [--cursor=X]'); process.exit(1); }
   const mediaId = shortcodeToMediaId(code);
   let path = `/api/v1/media/${mediaId}/comments/?can_support_threading=true&permalink_enabled=false`;
   if (flags.cursor) path += `&min_id=${encodeURIComponent(flags.cursor)}`;
-  const data = await apiGet(session, path);
+  const data = igApi(path);
   let comments = (data.comments || []).map(formatComment);
   const requested = parseInt(flags.count || '20', 10);
   if (comments.length > requested) comments = comments.slice(0, requested);
@@ -213,11 +164,11 @@ async function cmdComments(session, target, flags) {
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function cmdLikers(session, target) {
+function cmdLikers(target) {
   const code = parseTarget(target);
   if (!code) { console.error('Usage: likers <shortcode|url>'); process.exit(1); }
   const mediaId = shortcodeToMediaId(code);
-  const data = await apiGet(session, `/api/v1/media/${mediaId}/likers/`);
+  const data = igApi(`/api/v1/media/${mediaId}/likers/`);
   const users = (data.users || []).map(formatUserShort);
   const result = { users, user_count: data.user_count };
   saveJson(resolve(CACHE_DIR, `likers-${code}-${Date.now()}.json`), result);
@@ -236,10 +187,10 @@ Commands:
   comments <shortcode|url> [--count=20] [--cursor=X]  Comments
   likers <shortcode|url>                         Recent likers
 
-Auth shared with instagram-user.mjs.`);
+Requests run inside the logged-in instagram.com tab in Chrome (chrome-cdp).`);
 }
 
-async function main() {
+function main() {
   const { flags, positional } = parseFlags(process.argv.slice(2));
   const command = positional[0];
   const arg1 = positional[1];
@@ -248,13 +199,14 @@ async function main() {
 
   try {
     switch (command) {
-      case 'info':     await cmdInfo(loadSession(), arg1); break;
-      case 'comments': await cmdComments(loadSession(), arg1, flags); break;
-      case 'likers':   await cmdLikers(loadSession(), arg1); break;
+      case 'info':     cmdInfo(arg1); break;
+      case 'comments': cmdComments(arg1, flags); break;
+      case 'likers':   cmdLikers(arg1); break;
       default: printUsage();
     }
   } catch (err) {
-    console.error(`Error: ${err.message}`);
+    if (err instanceof InstagramStopError) console.error(`STOP: ${err.message}`);
+    else console.error(`Error: ${err.message}`);
     process.exit(1);
   }
 }

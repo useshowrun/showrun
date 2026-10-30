@@ -6,109 +6,35 @@
 //   node instagram-msg.mjs thread <thread_id> [--count=20] [--cursor=X]
 //   node instagram-msg.mjs send <username|user_id|thread_id> "text"
 //
-// Auth is shared with instagram-user.mjs.
+// All requests run inside the logged-in instagram.com tab in Chrome (in-page
+// fetch over CDP, see ../../_shared/instagram-fetch.mjs); no cookies are
+// copied out of the browser.
 //
-// `inbox` and `thread` use direct Node fetch against the web API (read-only).
+// `inbox` and `thread` call the read-only web API in-page.
 // `send` drives the live Chrome tab via CDP — Instagram moved web DM send off
 // REST and onto a WebSocket/GraphQL surface that requires tokens we can't
 // reliably replay. Driving the UI (navigate → click Message → type → Enter) is
 // the only path that lands real messages without burning the session.
 //
-// Requires Node 22+ (built-in fetch). chrome-cdp skill must be installed for
-// `send`; `inbox`/`thread` work standalone.
+// Requires Node 22+ and the chrome-cdp skill.
 
-import { resolve, dirname } from 'path';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { homedir } from 'os';
-import { execFileSync } from 'child_process';
-
-const DATA_DIR = resolve(homedir(), '.local/share/showrun/data/instagram');
-const SESSION_FILE = resolve(DATA_DIR, 'session.json');
-const CACHE_DIR = resolve(DATA_DIR, 'cache');
-
-function ensureDir(d) { if (!existsSync(d)) mkdirSync(d, { recursive: true }); }
-function loadJson(p) { return existsSync(p) ? JSON.parse(readFileSync(p, 'utf8')) : null; }
-function saveJson(p, d) { ensureDir(resolve(p, '..')); writeFileSync(p, JSON.stringify(d, null, 2)); }
-
-function loadSession() {
-  const s = loadJson(SESSION_FILE);
-  if (!s || !s.cookie || !s.csrftoken) {
-    console.error('No valid session. Run: instagram-user.mjs auth');
-    process.exit(1);
-  }
-  return s;
-}
-
-const IG_APP_ID = '936619743392459';
-const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36';
-
-function baseHeaders(session) {
-  return {
-    'accept': '*/*',
-    'accept-language': 'en-US,en;q=0.9',
-    'cookie': session.cookie,
-    'referer': 'https://www.instagram.com/direct/inbox/',
-    'user-agent': UA,
-    'x-asbd-id': '129477',
-    'x-csrftoken': session.csrftoken,
-    'x-ig-app-id': IG_APP_ID,
-    'x-requested-with': 'XMLHttpRequest',
-    'sec-fetch-site': 'same-origin',
-  };
-}
-
-async function apiGet(session, path) {
-  const resp = await fetch(`https://www.instagram.com${path}`, { headers: baseHeaders(session) });
-  if (!resp.ok) {
-    if (resp.status === 429) { console.error('Rate limited.'); process.exit(1); }
-    if (resp.status === 401 || resp.status === 403) {
-      console.error(`HTTP ${resp.status}. Re-auth: instagram-user.mjs auth`);
-      process.exit(1);
-    }
-    const body = await resp.text().catch(() => '');
-    throw new Error(`HTTP ${resp.status}: ${body.slice(0, 200)}`);
-  }
-  return resp.json();
-}
+import { resolve } from 'path';
+import {
+  CACHE_DIR, ensureDir, saveJson, cdp,
+  igApi, igGraphql, resolveUserPk, checkSession, InstagramStopError, isInstagramUrl,
+} from '../../_shared/instagram-fetch.mjs';
 
 // ---------------------------------------------------------------------------
-// CDP integration (for `send` only)
-//
-// We don't reinvent the chrome-cdp client — we shell out to its CLI so the
-// already-debugged daemon model (one persistent socket per tab, "Allow
-// debugging?" prompt fires once per tab) keeps working unchanged.
+// CDP helpers for `send` (UI driving)
 // ---------------------------------------------------------------------------
-
-function findCdpScript() {
-  if (process.env.CDP_SCRIPT) return process.env.CDP_SCRIPT;
-  const here = dirname(new URL(import.meta.url).pathname);
-  const candidates = [];
-  let dir = here;
-  for (let i = 0; i < 8; i++) {
-    candidates.push(resolve(dir, 'skills/chrome-cdp/scripts/cdp.mjs'));
-    candidates.push(resolve(dir, 'chrome-cdp/scripts/cdp.mjs'));
-    dir = resolve(dir, '..');
-  }
-  if (process.env.SHOWRUN_ROOT) {
-    candidates.unshift(resolve(process.env.SHOWRUN_ROOT, 'skills/chrome-cdp/scripts/cdp.mjs'));
-  }
-  candidates.push(resolve(homedir(), '.claude/skills/chrome-cdp/scripts/cdp.mjs'));
-  const found = candidates.find(p => existsSync(p));
-  if (!found) throw new Error('chrome-cdp skill not found. Install it or set CDP_SCRIPT.');
-  return found;
-}
-
-function cdp(...args) {
-  return execFileSync('node', [findCdpScript(), ...args], {
-    encoding: 'utf8', timeout: 30000, maxBuffer: 100 * 1024 * 1024,
-  }).trim();
-}
 
 // Find an instagram.com tab; open one (and wait briefly for load) if missing.
 function findOrOpenIgTab() {
   const list = cdp('list');
+  // Check the URL column (last), not the whole row: a title or query string can contain "instagram.com".
   for (const line of list.split('\n')) {
-    if (line.includes('instagram.com')) return line.trim().split(/\s+/)[0];
+    const cols = line.trim().split(/\s+/);
+    if (cols.length >= 2 && isInstagramUrl(cols[cols.length - 1])) return cols[0];
   }
   const out = cdp('open', 'https://www.instagram.com/');
   const m = out.match(/[A-F0-9]{8}/);
@@ -150,18 +76,16 @@ function dispatchEnter(tabId) {
 // are typically 8-12 digits. Treat anything 14+ digits as a thread_id.
 const THREAD_ID_MIN_DIGITS = 14;
 
-async function resolveTarget(session, input) {
+function resolveTarget(input) {
   if (typeof input !== 'string') throw new Error('Target must be a string');
   const cleaned = input.replace(/^@/, '');
   if (/^\d+$/.test(cleaned)) {
     if (cleaned.length >= THREAD_ID_MIN_DIGITS) return { kind: 'thread', thread_id: cleaned };
     return { kind: 'user', user_id: cleaned };
   }
-  // Username: resolve to user_id
-  const data = await apiGet(session, `/api/v1/users/web_profile_info/?username=${encodeURIComponent(cleaned.toLowerCase())}`);
-  const user = data?.data?.user;
-  if (!user?.id) throw new Error(`User not found: ${cleaned}`);
-  return { kind: 'user', user_id: user.id, username: user.username };
+  // Username: resolve to user_id (web_profile_info is blocked for web clients).
+  const username = cleaned.toLowerCase();
+  return { kind: 'user', user_id: resolveUserPk(username), username };
 }
 
 // ---------------------------------------------------------------------------
@@ -226,12 +150,12 @@ function parseFlags(args) {
 // Commands
 // ---------------------------------------------------------------------------
 
-async function cmdInbox(session, flags) {
+function cmdInbox(flags) {
   const count = parseInt(flags.count || '20', 10);
   const which = flags.pending ? 'pending_inbox' : 'inbox';
   let path = `/api/v1/direct_v2/${which}/?visual_message_return_type=unseen&persistentBadging=true&limit=${count}`;
   if (flags.cursor) path += `&cursor=${encodeURIComponent(flags.cursor)}`;
-  const data = await apiGet(session, path);
+  const data = igApi(path);
   const inbox = data.inbox || {};
   const threads = (inbox.threads || []).map(formatThreadSummary);
   const result = {
@@ -245,12 +169,12 @@ async function cmdInbox(session, flags) {
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function cmdThread(session, threadId, flags) {
+function cmdThread(threadId, flags) {
   if (!threadId) { console.error('Usage: thread <thread_id> [--count=20] [--cursor=X]'); process.exit(1); }
   const count = parseInt(flags.count || '20', 10);
   let path = `/api/v1/direct_v2/threads/${encodeURIComponent(threadId)}/?visual_message_return_type=unseen&limit=${count}`;
   if (flags.cursor) path += `&cursor=${encodeURIComponent(flags.cursor)}`;
-  const data = await apiGet(session, path);
+  const data = igApi(path);
   const t = data.thread || {};
   const result = {
     thread_id: t.thread_id,
@@ -264,12 +188,12 @@ async function cmdThread(session, threadId, flags) {
   console.log(JSON.stringify(result, null, 2));
 }
 
-async function cmdSend(session, target, text) {
+async function cmdSend(target, text) {
   if (!target || !text) {
     console.error('Usage: send <username|user_id|thread_id> "text"');
     process.exit(1);
   }
-  const resolved = await resolveTarget(session, target);
+  const resolved = resolveTarget(target);
   const tabId = findOrOpenIgTab();
 
   // 1. Navigate to the right place.
@@ -278,7 +202,7 @@ async function cmdSend(session, target, text) {
   let username = resolved.username;
   if (resolved.kind === 'user' && !username) {
     // user_id only — resolve to username so we have a profile URL
-    const info = await apiGet(session, `/api/v1/users/${resolved.user_id}/info/`);
+    const info = igGraphql('PolarisProfilePageContentQuery', { enable_integrity_filters: true, id: String(resolved.user_id) });
     username = info?.user?.username;
     if (!username) throw new Error(`Could not resolve user_id ${resolved.user_id} to a username`);
   }
@@ -337,14 +261,16 @@ async function cmdSend(session, target, text) {
   })()`, { timeoutMs: 8000 });
 
   // 6. Verify via inbox: look for a thread whose last_message.text matches
-  //    and whose sender is our own user_id. Polls for ~6s because the inbox
-  //    API can lag a beat behind the WebSocket send.
-  const myId = session.userId || '';
+  //    and whose sender is our own user_id. Polls for ~15s because the inbox
+  //    API can lag a beat behind the WebSocket send (each poll is spaced by
+  //    the shared request pacing, so this is only a few requests).
+  const myId = checkSession().userId || '';
   let confirmed = null;
+  let inboxUnavailable = false;
   const start = Date.now();
-  while (Date.now() - start < 6000) {
+  while (Date.now() - start < 15000) {
     try {
-      const data = await apiGet(session, '/api/v1/direct_v2/inbox/?visual_message_return_type=unseen&limit=10');
+      const data = igApi('/api/v1/direct_v2/inbox/?visual_message_return_type=unseen&limit=10');
       const threads = data?.inbox?.threads || [];
       const match = threads.find(t => {
         const last = t.items?.[0];
@@ -358,8 +284,12 @@ async function cmdSend(session, target, text) {
         return false;
       });
       if (match) { confirmed = match; break; }
-    } catch { /* keep polling */ }
-    await new Promise(r => setTimeout(r, 800));
+    } catch (err) {
+      if (err instanceof InstagramStopError) throw err;
+      // The v1 inbox endpoint 404s for web clients now; don't keep hitting it.
+      if (/HTTP 404/.test(err.message)) { inboxUnavailable = true; break; }
+      /* otherwise keep polling */
+    }
   }
 
   const result = {
@@ -372,8 +302,10 @@ async function cmdSend(session, target, text) {
     item_id: confirmed?.items?.[0]?.item_id || null,
     timestamp: confirmed?.items?.[0]?.timestamp || null,
   };
-  if (!confirmed) {
-    console.error('WARNING: UI flow completed but inbox did not show the message within 6s. Could be inbox lag, or the send was silently dropped. Re-run `inbox` after a few seconds to confirm.');
+  if (!confirmed && inboxUnavailable) {
+    console.error('WARNING: UI flow completed but the send could not be verified: the web inbox API (/api/v1/direct_v2/inbox/) returns 404 for web clients. Check the thread in Chrome.');
+  } else if (!confirmed) {
+    console.error('WARNING: UI flow completed but inbox did not show the message within 15s. Could be inbox lag, or the send was silently dropped. Re-run `inbox` after a few seconds to confirm.');
   }
   console.log(JSON.stringify(result, null, 2));
 }
@@ -395,10 +327,10 @@ non-numeric = username (resolved to user_id automatically).
 
 \`send\` drives the live Chrome tab via CDP (chrome-cdp skill required), because
 Instagram moved web DM send onto a WebSocket surface that REST cannot reach.
-\`inbox\` and \`thread\` use the read-only web API directly.
+\`inbox\` and \`thread\` call the read-only web API inside the same tab.
 
-Auth shared with instagram-user.mjs. \`send\` needs an instagram.com tab open in
-the CDP-connected Chrome — it opens one automatically if missing.`);
+All commands need a logged-in instagram.com tab in the CDP-connected Chrome;
+\`send\` opens one automatically if missing.`);
 }
 
 async function main() {
@@ -409,13 +341,14 @@ async function main() {
 
   try {
     switch (command) {
-      case 'inbox':   await cmdInbox(loadSession(), flags); break;
-      case 'thread':  await cmdThread(loadSession(), positional[1], flags); break;
-      case 'send':    await cmdSend(loadSession(), positional[1], positional.slice(2).join(' ')); break;
+      case 'inbox':   cmdInbox(flags); break;
+      case 'thread':  cmdThread(positional[1], flags); break;
+      case 'send':    await cmdSend(positional[1], positional.slice(2).join(' ')); break;
       default: printUsage();
     }
   } catch (err) {
-    console.error(`Error: ${err.message}`);
+    if (err instanceof InstagramStopError) console.error(`STOP: ${err.message}`);
+    else console.error(`Error: ${err.message}`);
     process.exit(1);
   }
 }
