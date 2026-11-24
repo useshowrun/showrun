@@ -325,19 +325,20 @@ function buildSearchQuery(flags) {
     filters.push(buildMultiSelectFilter('ACCOUNT_LIST', flags['account-list']));
   }
 
-  // Keyword (free-text, not a numbered filter but supported by the API)
-  if (flags['keyword']) {
-    const encoded = encodeURIComponent(flags['keyword']);
-    filters.push(`(type:KEYWORDS,values:List((text:${encoded})))`);
-  }
+  // Keyword is a top-level `keywords:` field of the query, not a filter: sent as
+  // (type:KEYWORDS,...) the API ignored it and returned every account.
+  const keyword = flags['keyword'] ? String(flags['keyword']).trim() : '';
 
-  if (filters.length === 0) {
+  if (filters.length === 0 && !keyword) {
     console.error('Error: at least one search filter is required. Run "filters" command for help.');
     process.exit(1);
   }
 
-  const filtersStr = `List(${filters.join(',')})`;
-  return `(spellCorrectionEnabled:true,recentSearchParam:(doLogHistory:false),filters:${filtersStr})`;
+  const parts = ['spellCorrectionEnabled:true', 'recentSearchParam:(doLogHistory:false)'];
+  if (filters.length) parts.push(`filters:List(${filters.join(',')})`);
+  // encodeURIComponent leaves ( ) alone, and Rest.li reserves them inside a value.
+  if (keyword) parts.push(`keywords:${encodeURIComponent(keyword).replace(/\(/g, '%28').replace(/\)/g, '%29')}`);
+  return `(${parts.join(',')})`;
 }
 
 async function searchAccounts(flags, { start = 0, count = 25 } = {}) {
